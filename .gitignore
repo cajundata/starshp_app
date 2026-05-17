@@ -1,0 +1,4 @@
+.superpowers/
+.env
+*.db
+/build/
