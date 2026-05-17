@@ -12,6 +12,8 @@ const modelSel = $('modelSel') as HTMLSelectElement
 const presetSel = $('presetSel') as HTMLSelectElement
 const sendBtn = $('sendBtn') as HTMLButtonElement
 
+let ragStatusEl: HTMLElement | null = null
+
 function addMsg(role: string, text: string): HTMLElement {
   const el = document.createElement('div')
   el.className = `msg ${role}`
@@ -65,8 +67,17 @@ function currentSystemPrompt(): string {
 async function send() {
   if (streaming || !input.value.trim()) return
   if (!activeConv) await newChat()
-  try { await App.EnsureIndexed(activeConv!) }
-  catch (e: any) { addMsg('assistant', `[index] ${e?.userMessage || e}`); }
+  const idxStatus = addMsg('assistant', 'Preparing textbook context…')
+  ragStatusEl = idxStatus
+  try {
+    await App.EnsureIndexed(activeConv!)
+    idxStatus.remove()
+  } catch (e: any) {
+    idxStatus.textContent = `Cannot send: textbook indexing failed — ${e?.userMessage || e}`
+    return
+  } finally {
+    ragStatusEl = null
+  }
   const text = input.value.trim()
   input.value = ''
   addMsg('user', text)
@@ -92,8 +103,7 @@ EventsOn('chat:token', (tok: string) => {
 })
 
 EventsOn('rag:index', (p: any) => {
-  const last = thread.querySelector('.msg.assistant:last-child')
-  if (last) last.textContent = `Indexing ${p.book}… ${p.done}/${p.total} chapters`
+  if (ragStatusEl) ragStatusEl.textContent = `Indexing ${p.book}… ${p.done}/${p.total} chapters`
 })
 
 async function showTextbooks() {
@@ -115,8 +125,10 @@ async function showTextbooks() {
     await App.SetConversationScope(activeConv!, scopes)
     $('tbModal').classList.add('hidden')
     const banner = addMsg('assistant', 'Indexing textbooks…')
+    ragStatusEl = banner
     try { await App.EnsureIndexed(activeConv!); banner.textContent = 'Textbooks ready.' }
     catch (e: any) { banner.textContent = `Indexing failed: ${e?.userMessage || e}` }
+    finally { ragStatusEl = null }
   }
   inner.appendChild(save)
   $('tbModal').classList.remove('hidden')

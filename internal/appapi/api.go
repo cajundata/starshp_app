@@ -143,15 +143,18 @@ func booksToIndex(configured, requested []string) []string {
 // emitting "rag:index" progress events. Safe to call before each send.
 func (a *API) EnsureIndexed(convID string) error {
 	scopes, err := a.st.GetConversationTextbooks(convID)
-	if err != nil || len(scopes) == 0 {
-		return err
+	if err != nil {
+		return provider.NormalizeError(err)
+	}
+	if len(scopes) == 0 {
+		return nil
 	}
 	if a.ragAdpt == nil {
 		return provider.AppError{Code: "rag_unavailable", UserMessage: "Textbook indexing is unavailable (RAG not initialized — check OPENAI_API_KEY).", Retryable: false}
 	}
 	books, err := textbooks.Scan(a.cfg.TextbooksConfig)
 	if err != nil {
-		return err
+		return provider.NormalizeError(err)
 	}
 	var configured, requested []string
 	byName := map[string]textbooks.Book{}

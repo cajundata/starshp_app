@@ -2,7 +2,7 @@ package appapi
 
 import "testing"
 
-// indexBookNames is the pure helper EnsureIndexed delegates to: given the
+// booksToIndex is the pure helper EnsureIndexed delegates to: given the
 // configured books and requested scope names, returns the books to index.
 func TestBooksToIndex(t *testing.T) {
 	all := []string{"ia", "blaw", "audit"}
