@@ -40,6 +40,7 @@ func (p *openAIProvider) Stream(ctx context.Context, req ChatRequest) (<-chan De
 	out := make(chan Delta)
 	go func() {
 		defer close(out)
+		defer stream.Close()
 		for stream.Next() {
 			chunk := stream.Current()
 			if len(chunk.Choices) > 0 {
@@ -47,7 +48,6 @@ func (p *openAIProvider) Stream(ctx context.Context, req ChatRequest) (<-chan De
 					select {
 					case out <- Delta{Text: txt}:
 					case <-ctx.Done():
-						out <- Delta{Err: ctx.Err(), Done: true}
 						return
 					}
 				}
