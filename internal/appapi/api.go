@@ -84,9 +84,9 @@ func (a *API) SendMessage(convID, userText, systemPrompt, modelID string) (strin
 	if err != nil {
 		return "", provider.NormalizeError(err)
 	}
-	scopes, _ := a.st.GetConversationTextbooks(convID)
+	scopes, _ := a.st.GetConversationTextbooks(convID) // failure → no RAG scope, not fatal
 	var retr chat.Retriever
-	if len(scopes) > 0 {
+	if len(scopes) > 0 && a.ragAdpt != nil {
 		retr = ragRetriever{a: a, scopes: scopes}
 	}
 	return a.chatSvc.Send(a.ctx, chat.SendParams{
