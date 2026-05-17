@@ -1,12 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8"/>
-    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-    <title>discussion_engine</title>
-</head>
+<head><meta charset="UTF-8" /><title>Discussion Engine</title></head>
 <body>
-<div id="app"></div>
-<script src="./src/main.ts" type="module"></script>
+  <div id="app">
+    <aside id="sidebar">
+      <button id="newChat">+ New chat</button>
+      <div class="cap">History</div>
+      <div id="convList"></div>
+    </aside>
+    <main id="main">
+      <div id="thread"></div>
+      <div id="composer">
+        <textarea id="input" placeholder="Message…" rows="3"></textarea>
+        <div id="toolbar">
+          <div class="left">
+            <select id="modelSel"></select>
+            <select id="presetSel"></select>
+            <button id="tbBtn">📚 Textbooks</button>
+          </div>
+          <button id="sendBtn">Send ▸</button>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div id="tbModal" class="hidden"><div id="tbModalInner"></div></div>
+  <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
