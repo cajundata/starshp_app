@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 
 	"github.com/cajundata/discussion_engine/internal/rag/chunker"
 	"github.com/cajundata/discussion_engine/internal/rag/embedding"
@@ -117,4 +119,81 @@ func (a *Adapter) IndexBook(ctx context.Context, book textbooks.Book, progress f
 		return IndexResult{}, err
 	}
 	return IndexResult{ChunksIndexed: indexed}, nil
+}
+
+const overfetchFactor = 6
+
+type ScopeFilter struct {
+	Book     string `json:"book"`
+	Chapters []int  `json:"chapters"` // nil/empty = whole book
+}
+
+type Source struct {
+	Book    string `json:"book"`
+	Chapter int    `json:"chapter"`
+	ChunkID string `json:"chunkId"`
+}
+
+type RetrieveResult struct {
+	Context string   `json:"context"`
+	Sources []Source `json:"sources"`
+}
+
+func inScope(book string, chapter int, filters []ScopeFilter) bool {
+	for _, f := range filters {
+		if f.Book != book {
+			continue
+		}
+		if len(f.Chapters) == 0 {
+			return true
+		}
+		for _, c := range f.Chapters {
+			if c == chapter {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Retrieve embeds query, fetches topK*overfetch candidates, filters to the
+// given scope, trims to budgetTokens, and formats a context block. With no
+// scope filters it returns an empty result (RAG skipped) and no error.
+func (a *Adapter) Retrieve(ctx context.Context, query string, filters []ScopeFilter, topK, budgetTokens int) (RetrieveResult, error) {
+	if len(filters) == 0 {
+		return RetrieveResult{}, nil
+	}
+	qv, err := a.embedder.EmbedSingle(ctx, query)
+	if err != nil {
+		return RetrieveResult{}, fmt.Errorf("embed query: %w", err)
+	}
+	cands, err := a.store.QueryTopK(ctx, qv, topK*overfetchFactor)
+	if err != nil {
+		return RetrieveResult{}, fmt.Errorf("query topk: %w", err)
+	}
+	sort.SliceStable(cands, func(i, j int) bool { return cands[i].Score > cands[j].Score })
+
+	var b strings.Builder
+	var sources []Source
+	used, tokens := 0, 0
+	for _, sc := range cands {
+		if used >= topK {
+			break
+		}
+		if !inScope(sc.TextbookTitle, sc.ChapterNum, filters) {
+			continue
+		}
+		if tokens+sc.TokenCount > budgetTokens && used > 0 {
+			break
+		}
+		fmt.Fprintf(&b, "## %s — Chapter %d\n%s\n\n", sc.TextbookTitle, sc.ChapterNum, sc.Content)
+		sources = append(sources, Source{Book: sc.TextbookTitle, Chapter: sc.ChapterNum, ChunkID: sc.ID})
+		tokens += sc.TokenCount
+		used++
+	}
+	out := strings.TrimSpace(b.String())
+	if out != "" && tokens > budgetTokens && len(out) > budgetTokens*4 {
+		out = out[:budgetTokens*4] // hard char cap as a budget backstop
+	}
+	return RetrieveResult{Context: out, Sources: sources}, nil
 }
