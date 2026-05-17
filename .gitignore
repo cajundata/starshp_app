@@ -3,3 +3,6 @@
 *.db
 /build/
 .worktrees/
+node_modules
+frontend/dist
+*.exe
