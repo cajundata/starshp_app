@@ -15,7 +15,9 @@ import (
 // fakeEmbeddings returns a deterministic 3-dim vector per input.
 func fakeEmbeddingServer(t *testing.T) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct{ Input []string `json:"input"` }
+		var req struct {
+			Input []string `json:"input"`
+		}
 		json.NewDecoder(r.Body).Decode(&req)
 		var data []map[string]any
 		for i := range req.Input {
