@@ -42,3 +42,31 @@ func TestConversationLifecycle(t *testing.T) {
 		t.Fatalf("cascade delete failed: %d messages remain", len(msgs))
 	}
 }
+
+func TestListMessagesStableOrderWithinSameSecond(t *testing.T) {
+	s := newTestStore(t)
+	c, _ := s.CreateConversation("order")
+	// Insert several messages rapidly; created_at (unix seconds) will collide.
+	want := []string{"u1", "a1", "u2", "a2", "u3"}
+	for i, txt := range want {
+		role := "user"
+		if i%2 == 1 {
+			role = "assistant"
+		}
+		if _, err := s.AddMessage(c.ID, role, txt, "", "", ""); err != nil {
+			t.Fatalf("AddMessage %d: %v", i, err)
+		}
+	}
+	msgs, err := s.ListMessages(c.ID)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(msgs) != len(want) {
+		t.Fatalf("got %d msgs, want %d", len(msgs), len(want))
+	}
+	for i := range want {
+		if msgs[i].Content != want[i] {
+			t.Fatalf("order mismatch at %d: got %q, want %q (full: %+v)", i, msgs[i].Content, want[i], msgs)
+		}
+	}
+}

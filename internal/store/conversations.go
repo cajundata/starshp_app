@@ -80,7 +80,7 @@ func (s *Store) AddMessage(convID, role, content, model, ragContext, ragSources 
 }
 
 func (s *Store) ListMessages(convID string) ([]Message, error) {
-	rows, err := s.db.Query(`SELECT id,conversation_id,role,content,COALESCE(model,''),created_at,COALESCE(rag_context,''),COALESCE(rag_sources,'') FROM messages WHERE conversation_id=? ORDER BY created_at`, convID)
+	rows, err := s.db.Query(`SELECT id,conversation_id,role,content,COALESCE(model,''),created_at,COALESCE(rag_context,''),COALESCE(rag_sources,'') FROM messages WHERE conversation_id=? ORDER BY created_at, rowid`, convID)
 	if err != nil {
 		return nil, err
 	}
