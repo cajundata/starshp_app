@@ -3,6 +3,7 @@ module github.com/cajundata/discussion_engine
 go 1.25.0
 
 require (
+	github.com/joho/godotenv v1.5.1
 	github.com/openai/openai-go/v3 v3.36.0
 	github.com/stretchr/testify v1.10.0
 	github.com/tiktoken-go/tokenizer v0.7.0
