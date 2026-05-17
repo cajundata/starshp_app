@@ -41,6 +41,15 @@ async function openConversation(id: string) {
   thread.innerHTML = ''
   const msgs = (await App.ListMessages(id)) || []
   for (const m of msgs) addMsg(m.role, m.content)
+  const convs = (await App.ListConversations()) || []
+  const c = convs.find(x => x.id === id)
+  if (c) {
+    if (c.pinnedModel) {
+      const opt = Array.from(modelSel.options).some(o => o.value === c.pinnedModel)
+      if (opt) modelSel.value = c.pinnedModel
+    }
+    presetSel.value = Array.from(presetSel.options).some(o => o.value === c.presetId) ? c.presetId : ''
+  }
   await loadConversations()
 }
 
@@ -87,6 +96,7 @@ async function send() {
   sendBtn.classList.add('streaming')
   try {
     await App.SendMessage(activeConv!, text, currentSystemPrompt(), modelSel.value)
+    await App.SetConversationMeta(activeConv!, presetSel.value, modelSel.value)
   } catch (e: any) {
     asst.textContent += `\n\n[${e?.code || 'error'}] ${e?.userMessage || e}`
   } finally {

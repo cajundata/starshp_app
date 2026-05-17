@@ -62,6 +62,12 @@ func (s *Store) DeleteConversation(id string) error {
 	return err
 }
 
+func (s *Store) SetConversationTitle(id, title string) error {
+	_, err := s.db.Exec(`UPDATE conversations SET title=?, updated_at=? WHERE id=?`,
+		title, time.Now().Unix(), id)
+	return err
+}
+
 func (s *Store) SetConversationMeta(id, presetID, pinnedModel string) error {
 	_, err := s.db.Exec(`UPDATE conversations SET preset_id=?,pinned_model=?,updated_at=? WHERE id=?`,
 		presetID, pinnedModel, time.Now().Unix(), id)

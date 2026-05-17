@@ -38,6 +38,24 @@ func TestSendMessageNilRagAdapterNoPanic(t *testing.T) {
 	}
 }
 
+func TestTitleFromText(t *testing.T) {
+	if got := titleFromText("  Draft a post on ASC 606  "); got != "Draft a post on ASC 606" {
+		t.Fatalf("got %q", got)
+	}
+	if got := titleFromText(""); got != "New conversation" {
+		t.Fatalf("empty: got %q", got)
+	}
+	long := ""
+	for i := 0; i < 100; i++ { long += "x" }
+	got := titleFromText(long)
+	if []rune(got)[len([]rune(got))-1] != '…' || len([]rune(got)) != 61 {
+		t.Fatalf("truncation wrong: len=%d got=%q", len([]rune(got)), got)
+	}
+	if got := titleFromText("line1\nline2"); got != "line1 line2" {
+		t.Fatalf("newline: got %q", got)
+	}
+}
+
 // TestCancelMessageNoInFlightIsNoop ensures that calling CancelMessage when no
 // stream is in flight does not panic (guards the nil cancelInFlight path).
 func TestCancelMessageNoInFlightIsNoop(t *testing.T) {

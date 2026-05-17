@@ -4,6 +4,7 @@ package appapi
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/cajundata/discussion_engine/internal/chat"
@@ -61,6 +62,21 @@ func (a *API) SetConversationMeta(convID, presetID, model string) error {
 	return a.st.SetConversationMeta(convID, presetID, model)
 }
 
+// titleFromText derives a conversation title from the first user message.
+// It collapses newlines, trims whitespace, and truncates to 60 runes.
+func titleFromText(s string) string {
+	s = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(s, "\n", " "), "\r", " "))
+	r := []rune(s)
+	const max = 60
+	if len(r) > max {
+		return strings.TrimSpace(string(r[:max])) + "…"
+	}
+	if s == "" {
+		return "New conversation"
+	}
+	return s
+}
+
 // ragRetriever adapts rag.Adapter to chat.Retriever for one scoped request.
 type ragRetriever struct {
 	a      *API
@@ -87,6 +103,12 @@ func (a *API) SendMessage(convID, userText, systemPrompt, modelID string) (strin
 	if err != nil {
 		return "", provider.NormalizeError(err)
 	}
+	// Auto-title: set title from first user message (best-effort, must not block send).
+	existing, _ := a.st.ListMessages(convID)
+	if len(existing) == 0 {
+		_ = a.st.SetConversationTitle(convID, titleFromText(userText))
+	}
+
 	scopes, _ := a.st.GetConversationTextbooks(convID) // failure → no RAG scope, not fatal
 	var retr chat.Retriever
 	if len(scopes) > 0 && a.ragAdpt != nil {

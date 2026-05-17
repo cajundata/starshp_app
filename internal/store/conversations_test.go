@@ -43,6 +43,18 @@ func TestConversationLifecycle(t *testing.T) {
 	}
 }
 
+func TestSetConversationTitle(t *testing.T) {
+	s := newTestStore(t)
+	c, _ := s.CreateConversation("New conversation")
+	if err := s.SetConversationTitle(c.ID, "Revenue recognition draft"); err != nil {
+		t.Fatalf("SetConversationTitle: %v", err)
+	}
+	list, _ := s.ListConversations()
+	if len(list) != 1 || list[0].Title != "Revenue recognition draft" {
+		t.Fatalf("title not updated: %+v", list)
+	}
+}
+
 func TestListMessagesStableOrderWithinSameSecond(t *testing.T) {
 	s := newTestStore(t)
 	c, _ := s.CreateConversation("order")
