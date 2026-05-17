@@ -4,6 +4,8 @@ import {store} from '../models';
 import {textbooks} from '../models';
 import {provider} from '../models';
 
+export function CancelMessage():Promise<void>;
+
 export function CreateConversation(arg1:string):Promise<store.Conversation>;
 
 export function CreatePreset(arg1:string,arg2:string):Promise<store.Preset>;

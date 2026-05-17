@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/cajundata/discussion_engine/internal/provider"
 	"github.com/cajundata/discussion_engine/internal/store"
@@ -63,5 +65,96 @@ func TestSendPersistsAndAssemblesPrefix(t *testing.T) {
 	var srcs []map[string]any
 	if json.Unmarshal([]byte(msgs[1].RAGSources), &srcs); len(srcs) != 1 {
 		t.Fatalf("rag sources not persisted: %q", msgs[1].RAGSources)
+	}
+}
+
+// cancelProvider sends one token then blocks until ctx is cancelled, then
+// closes the channel — mimicking a real provider that honours context cancellation.
+type cancelProvider struct {
+	firstTokenSent chan struct{} // closed after sending the first delta
+}
+
+func (p *cancelProvider) Stream(ctx context.Context, req provider.ChatRequest) (<-chan provider.Delta, error) {
+	ch := make(chan provider.Delta)
+	go func() {
+		defer close(ch)
+		ch <- provider.Delta{Text: "partial"}
+		close(p.firstTokenSent)
+		// Block until the caller cancels the context (simulating stream abort).
+		<-ctx.Done()
+	}()
+	return ch, nil
+}
+
+// TestSendContextCancelPersistsPartial proves that cancelling the context
+// while a stream is in flight causes Send to return and the partial assistant
+// message ("partial") to be persisted in the store — satisfying the spec
+// requirement "cancel ctx → partial message persisted as-is".
+func TestSendContextCancelPersistsPartial(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "app.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer st.Close()
+	conv, _ := st.CreateConversation("cancel-test")
+
+	firstTokenSent := make(chan struct{})
+	fp := &cancelProvider{firstTokenSent: firstTokenSent}
+	svc := New(st)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	type result struct {
+		text string
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		text, err := svc.Send(ctx, SendParams{
+			ConversationID: conv.ID,
+			UserText:       "hello",
+			SystemPrompt:   "",
+			Model:          "test-model",
+			Provider:       fp,
+		}, nil)
+		done <- result{text, err}
+	}()
+
+	// Wait for the first token to be delivered, then cancel.
+	select {
+	case <-firstTokenSent:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for first token")
+	}
+	cancel()
+
+	// Send must return within 2 seconds of the cancel.
+	select {
+	case res := <-done:
+		// Send may return a nil or context error — both are acceptable.
+		_ = res.err
+		if !strings.Contains(res.text, "partial") {
+			t.Fatalf("expected partial text to contain %q, got %q", "partial", res.text)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Send did not return after context cancel")
+	}
+
+	// Verify the partial message was persisted in the store.
+	msgs, err := st.ListMessages(conv.ID)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	// Expect user + assistant messages.
+	if len(msgs) < 2 {
+		t.Fatalf("expected at least 2 messages, got %d", len(msgs))
+	}
+	asst := msgs[len(msgs)-1]
+	if asst.Role != "assistant" {
+		t.Fatalf("last message role = %q, want assistant", asst.Role)
+	}
+	if !strings.Contains(asst.Content, "partial") {
+		t.Fatalf("persisted assistant content = %q, want it to contain %q", asst.Content, "partial")
 	}
 }

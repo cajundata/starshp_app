@@ -113,7 +113,7 @@ async function showTextbooks() {
 }
 
 $('newChat').onclick = newChat
-sendBtn.onclick = send
+sendBtn.onclick = () => { if (streaming) { App.CancelMessage() } else { void send() } }
 $('tbBtn').onclick = showTextbooks
 $('tbModal').onclick = (e) => { if (e.target === $('tbModal')) $('tbModal').classList.add('hidden') }
 input.addEventListener('keydown', (e) => {

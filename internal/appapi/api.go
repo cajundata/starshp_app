@@ -4,6 +4,7 @@ package appapi
 
 import (
 	"context"
+	"sync"
 
 	"github.com/cajundata/discussion_engine/internal/chat"
 	"github.com/cajundata/discussion_engine/internal/config"
@@ -15,12 +16,14 @@ import (
 )
 
 type API struct {
-	ctx     context.Context
-	cfg     config.Config
-	st      *store.Store
-	reg     provider.Registry
-	ragAdpt *rag.Adapter
-	chatSvc *chat.Service
+	ctx            context.Context
+	cfg            config.Config
+	st             *store.Store
+	reg            provider.Registry
+	ragAdpt        *rag.Adapter
+	chatSvc        *chat.Service
+	mu             sync.Mutex
+	cancelInFlight context.CancelFunc
 }
 
 func NewAPI(cfg config.Config, st *store.Store, reg provider.Registry, ragAdpt *rag.Adapter) *API {
@@ -89,10 +92,33 @@ func (a *API) SendMessage(convID, userText, systemPrompt, modelID string) (strin
 	if len(scopes) > 0 && a.ragAdpt != nil {
 		retr = ragRetriever{a: a, scopes: scopes}
 	}
-	return a.chatSvc.Send(a.ctx, chat.SendParams{
+
+	// Derive a per-request cancellable context so CancelMessage can abort this stream.
+	cctx, cancel := context.WithCancel(a.ctx)
+	a.mu.Lock()
+	a.cancelInFlight = cancel
+	a.mu.Unlock()
+	defer func() {
+		cancel()
+		a.mu.Lock()
+		a.cancelInFlight = nil
+		a.mu.Unlock()
+	}()
+
+	return a.chatSvc.Send(cctx, chat.SendParams{
 		ConversationID: convID, UserText: userText, SystemPrompt: systemPrompt,
 		Model: modelID, Provider: prov, Retriever: retr,
 	}, func(tok string) {
-		wruntime.EventsEmit(a.ctx, "chat:token", tok)
+		wruntime.EventsEmit(a.ctx, "chat:token", tok) // use a.ctx: events always flow to UI
 	})
+}
+
+// CancelMessage aborts the in-flight streaming response, if any.
+func (a *API) CancelMessage() {
+	a.mu.Lock()
+	c := a.cancelInFlight
+	a.mu.Unlock()
+	if c != nil {
+		c()
+	}
 }

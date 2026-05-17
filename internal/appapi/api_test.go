@@ -37,3 +37,17 @@ func TestSendMessageNilRagAdapterNoPanic(t *testing.T) {
 		t.Logf("note: error was %q (acceptable as long as no panic)", err.Error())
 	}
 }
+
+// TestCancelMessageNoInFlightIsNoop ensures that calling CancelMessage when no
+// stream is in flight does not panic (guards the nil cancelInFlight path).
+func TestCancelMessageNoInFlightIsNoop(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "app.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer st.Close()
+	reg := provider.Registry{Models: []provider.ModelInfo{{Display: "X", ID: "m1", Provider: "openai"}}}
+	api := NewAPI(config.Config{}, st, reg, nil)
+	// Must not panic.
+	api.CancelMessage()
+}
