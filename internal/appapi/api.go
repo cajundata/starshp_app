@@ -122,3 +122,54 @@ func (a *API) CancelMessage() {
 		c()
 	}
 }
+
+// booksToIndex returns configured book names that are in the requested set,
+// preserving configured order.
+func booksToIndex(configured, requested []string) []string {
+	want := map[string]bool{}
+	for _, r := range requested {
+		want[r] = true
+	}
+	var out []string
+	for _, c := range configured {
+		if want[c] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// EnsureIndexed indexes (idempotently) every attached book for a conversation,
+// emitting "rag:index" progress events. Safe to call before each send.
+func (a *API) EnsureIndexed(convID string) error {
+	scopes, err := a.st.GetConversationTextbooks(convID)
+	if err != nil || len(scopes) == 0 {
+		return err
+	}
+	if a.ragAdpt == nil {
+		return provider.AppError{Code: "rag_unavailable", UserMessage: "Textbook indexing is unavailable (RAG not initialized — check OPENAI_API_KEY).", Retryable: false}
+	}
+	books, err := textbooks.Scan(a.cfg.TextbooksConfig)
+	if err != nil {
+		return err
+	}
+	var configured, requested []string
+	byName := map[string]textbooks.Book{}
+	for _, b := range books {
+		configured = append(configured, b.Name)
+		byName[b.Name] = b
+	}
+	for _, s := range scopes {
+		requested = append(requested, s.Name)
+	}
+	for _, name := range booksToIndex(configured, requested) {
+		b := byName[name]
+		_, err := a.ragAdpt.IndexBook(a.ctx, b, func(done, total int) {
+			wruntime.EventsEmit(a.ctx, "rag:index", map[string]any{"book": name, "done": done, "total": total})
+		})
+		if err != nil {
+			return provider.NormalizeError(err)
+		}
+	}
+	return nil
+}

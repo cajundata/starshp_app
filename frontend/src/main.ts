@@ -65,6 +65,8 @@ function currentSystemPrompt(): string {
 async function send() {
   if (streaming || !input.value.trim()) return
   if (!activeConv) await newChat()
+  try { await App.EnsureIndexed(activeConv!) }
+  catch (e: any) { addMsg('assistant', `[index] ${e?.userMessage || e}`); }
   const text = input.value.trim()
   input.value = ''
   addMsg('user', text)
@@ -89,6 +91,11 @@ EventsOn('chat:token', (tok: string) => {
   if (last) { last.textContent += tok; thread.scrollTop = thread.scrollHeight }
 })
 
+EventsOn('rag:index', (p: any) => {
+  const last = thread.querySelector('.msg.assistant:last-child')
+  if (last) last.textContent = `Indexing ${p.book}… ${p.done}/${p.total} chapters`
+})
+
 async function showTextbooks() {
   if (!activeConv) await newChat()
   const books = (await App.ListBooks()) || []
@@ -107,6 +114,9 @@ async function showTextbooks() {
     boxes.forEach((b: any) => { if (b.checked) scopes.push({ name: b.dataset.book, chapters: null }) })
     await App.SetConversationScope(activeConv!, scopes)
     $('tbModal').classList.add('hidden')
+    const banner = addMsg('assistant', 'Indexing textbooks…')
+    try { await App.EnsureIndexed(activeConv!); banner.textContent = 'Textbooks ready.' }
+    catch (e: any) { banner.textContent = `Indexing failed: ${e?.userMessage || e}` }
   }
   inner.appendChild(save)
   $('tbModal').classList.remove('hidden')

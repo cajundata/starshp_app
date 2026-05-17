@@ -14,6 +14,8 @@ export function DeleteConversation(arg1:string):Promise<void>;
 
 export function DeletePreset(arg1:string):Promise<void>;
 
+export function EnsureIndexed(arg1:string):Promise<void>;
+
 export function GetConversationScope(arg1:string):Promise<Array<store.TextbookScope>>;
 
 export function ListBooks():Promise<Array<textbooks.Book>>;

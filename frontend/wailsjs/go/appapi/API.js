@@ -22,6 +22,10 @@ export function DeletePreset(arg1) {
   return window['go']['appapi']['API']['DeletePreset'](arg1);
 }
 
+export function EnsureIndexed(arg1) {
+  return window['go']['appapi']['API']['EnsureIndexed'](arg1);
+}
+
 export function GetConversationScope(arg1) {
   return window['go']['appapi']['API']['GetConversationScope'](arg1);
 }
