@@ -22,7 +22,7 @@
 - Create: `wails.json`, `main.go`, `app.go`, `go.mod`, `frontend/` (Wails vanilla-ts template), `.env.example`
 - Verify: `.gitignore` already ignores `.superpowers/`, `.env`, `*.db`, `/build/`
 
-- [ ] **Step 1: Install Wails CLI and scaffold**
+- [x] **Step 1: Install Wails CLI and scaffold**
 
 Run:
 ```bash
@@ -36,7 +36,7 @@ rmdir /S /Q C:/Users/weldo/Projects/discussion_engine_tmp
 ```
 Expected: `main.go`, `app.go`, `wails.json`, `frontend/` now exist in the repo.
 
-- [ ] **Step 2: Set the module path**
+- [x] **Step 2: Set the module path**
 
 Edit `go.mod` line 1 to:
 ```
@@ -45,7 +45,7 @@ module github.com/cajundata/discussion_engine
 Run: `go mod tidy`
 Expected: resolves with no errors.
 
-- [ ] **Step 3: Create `.env.example`**
+- [x] **Step 3: Create `.env.example`**
 
 Create `.env.example`:
 ```
@@ -60,12 +60,12 @@ CONTEXT_TOKEN_BUDGET=2500
 RAG_TOP_K=8
 ```
 
-- [ ] **Step 4: Verify the app builds and runs**
+- [x] **Step 4: Verify the app builds and runs**
 
 Run: `wails build`
 Expected: build succeeds, binary produced in `build/bin/`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
@@ -83,7 +83,7 @@ acctutor's `ragindex` imports `chunker`. Copying changes the module path, so cro
 - Create: `internal/rag/chunker/*` (copy of `acctutor/internal/chunker/`)
 - Create: `internal/rag/ragindex/*` (copy of `acctutor/internal/ragindex/`)
 
-- [ ] **Step 1: Copy the three packages with their tests**
+- [x] **Step 1: Copy the three packages with their tests**
 
 ```bash
 mkdir -p internal/rag
@@ -92,7 +92,7 @@ robocopy C:/Users/weldo/Projects/acctutor/internal/chunker   C:/Users/weldo/Proj
 robocopy C:/Users/weldo/Projects/acctutor/internal/ragindex  C:/Users/weldo/Projects/discussion_engine/internal/rag/ragindex  /E
 ```
 
-- [ ] **Step 2: Rewrite cross-package import paths**
+- [x] **Step 2: Rewrite cross-package import paths**
 
 In every `.go` file under `internal/rag/`, replace:
 - `github.com/cajundata/acctutor/internal/chunker` → `github.com/cajundata/discussion_engine/internal/rag/chunker`
@@ -101,17 +101,17 @@ Use Grep to find occurrences first:
 Run: `grep -rl "cajundata/acctutor" internal/rag`
 Then edit each listed file, replacing the old path with the new one. Re-run the grep; expect zero matches.
 
-- [ ] **Step 3: Add dependencies**
+- [x] **Step 3: Add dependencies**
 
 Run: `go mod tidy`
 Expected: pulls `github.com/openai/openai-go/v3`, `github.com/tiktoken-go/tokenizer`, `modernc.org/sqlite`, etc., matching acctutor's versions.
 
-- [ ] **Step 4: Run the copied packages' own tests (proves the copy works)**
+- [x] **Step 4: Run the copied packages' own tests (proves the copy works)**
 
 Run: `go test ./internal/rag/...`
 Expected: PASS for `embedding`, `chunker`, `ragindex` (these shipped with acctutor's test files).
 
-- [ ] **Step 5: Record the reusable surface for later tasks**
+- [x] **Step 5: Record the reusable surface for later tasks**
 
 Create `internal/rag/REUSED.md`:
 ```markdown
@@ -134,7 +134,7 @@ Create `internal/rag/REUSED.md`:
 Any scope-aware query MUST be a NEW file in our copy, never a modification of an upstream file.
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A
@@ -149,7 +149,7 @@ git commit -m "feat: copy acctutor embedding/chunker/ragindex behind rag boundar
 - Create: `internal/config/config.go`
 - Test: `internal/config/config_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `internal/config/config_test.go`:
 ```go
@@ -199,12 +199,12 @@ func TestLoadReadsEnvFile(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/config/ -run TestLoad -v`
 Expected: FAIL (package/function not defined).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `internal/config/config.go`:
 ```go
@@ -272,12 +272,12 @@ func envInt(k string, def int) int {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/config/ -run TestLoad -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/config/
@@ -292,7 +292,7 @@ git commit -m "feat: config loader with .env support"
 - Create: `internal/store/store.go`, `internal/store/schema.go`
 - Test: `internal/store/store_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `internal/store/store_test.go`:
 ```go
@@ -326,12 +326,12 @@ func TestOpenCreatesSchema(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/store/ -run TestOpenCreatesSchema -v`
 Expected: FAIL (undefined `Open`).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `internal/store/schema.go`:
 ```go
@@ -392,12 +392,12 @@ func Open(dbPath string) (*Store, error) {
 func (s *Store) Close() error { return s.db.Close() }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/store/ -run TestOpenCreatesSchema -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/store/
@@ -412,7 +412,7 @@ git commit -m "feat: app store open + schema"
 - Create: `internal/store/presets.go`
 - Test: `internal/store/presets_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `internal/store/presets_test.go`:
 ```go
@@ -446,12 +446,12 @@ func TestPresetsCRUD(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/store/ -run TestPresetsCRUD -v`
 Expected: FAIL (undefined methods).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `internal/store/presets.go`:
 ```go
@@ -510,12 +510,12 @@ func (s *Store) DeletePreset(id string) error {
 
 Run: `go mod tidy` (adds `github.com/google/uuid`).
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/store/ -run TestPresetsCRUD -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/store/ go.mod go.sum
@@ -530,7 +530,7 @@ git commit -m "feat: store presets CRUD"
 - Create: `internal/store/conversations.go`
 - Test: `internal/store/conversations_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `internal/store/conversations_test.go`:
 ```go
@@ -580,12 +580,12 @@ func TestConversationLifecycle(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/store/ -run TestConversationLifecycle -v`
 Expected: FAIL (undefined methods/types).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `internal/store/conversations.go`:
 ```go
@@ -732,12 +732,12 @@ func (s *Store) GetConversationTextbooks(convID string) ([]TextbookScope, error)
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/store/ -run TestConversationLifecycle -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/store/
@@ -754,7 +754,7 @@ Reads `textbooks.yaml` (acctutor-compatible) and lists books + chapter files. Th
 - Create: `internal/textbooks/textbooks.go`
 - Test: `internal/textbooks/textbooks_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `internal/textbooks/textbooks_test.go`:
 ```go
@@ -789,12 +789,12 @@ func TestScan(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/textbooks/ -run TestScan -v`
 Expected: FAIL (undefined).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `internal/textbooks/textbooks.go`:
 ```go
@@ -871,12 +871,12 @@ func Scan(cfgPath string) ([]Book, error) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/textbooks/ -run TestScan -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/textbooks/
@@ -893,7 +893,7 @@ Indexes a book into the RAG SQLite DB: chunk each chapter (`chunker.ChunkFile`),
 - Create: `internal/rag/adapter.go`
 - Test: `internal/rag/adapter_index_test.go`
 
-- [ ] **Step 1: Write the failing test (uses httptest to fake OpenAI embeddings)**
+- [x] **Step 1: Write the failing test (uses httptest to fake OpenAI embeddings)**
 
 `internal/rag/adapter_index_test.go`:
 ```go
@@ -964,12 +964,12 @@ func TestIndexBook(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/rag/ -run TestIndexBook -v`
 Expected: FAIL (undefined `NewAdapter`).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `internal/rag/adapter.go`:
 ```go
@@ -1095,12 +1095,12 @@ func (a *Adapter) IndexBook(ctx context.Context, book textbooks.Book, progress f
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/rag/ -run TestIndexBook -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/rag/adapter.go internal/rag/adapter_index_test.go
@@ -1117,7 +1117,7 @@ Embed the query, `QueryTopK` with over-fetch, filter to attached book/chapter sc
 - Modify: `internal/rag/adapter.go` (append `Retrieve`)
 - Test: `internal/rag/adapter_retrieve_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `internal/rag/adapter_retrieve_test.go`:
 ```go
@@ -1182,12 +1182,12 @@ func TestRetrieveScopedAndBudgeted(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/rag/ -run TestRetrieveScopedAndBudgeted -v`
 Expected: FAIL (undefined `Retrieve`, `ScopeFilter`).
 
-- [ ] **Step 3: Append implementation to `internal/rag/adapter.go`**
+- [x] **Step 3: Append implementation to `internal/rag/adapter.go`**
 
 ```go
 import (
@@ -1274,12 +1274,12 @@ func (a *Adapter) Retrieve(ctx context.Context, query string, filters []ScopeFil
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/rag/ -v`
 Expected: PASS (all rag tests, including copied-package tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/rag/
@@ -1295,7 +1295,7 @@ git commit -m "feat: rag adapter scoped+budgeted retrieval"
 - Test: `internal/provider/registry_test.go`
 - Create: `models.yaml` (seed)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `internal/provider/registry_test.go`:
 ```go
@@ -1332,12 +1332,12 @@ func TestLoadRegistry(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/provider/ -run TestLoadRegistry -v`
 Expected: FAIL (undefined).
 
-- [ ] **Step 3: Write implementations**
+- [x] **Step 3: Write implementations**
 
 `internal/provider/provider.go`:
 ```go
@@ -1428,12 +1428,12 @@ models:
     provider: openai
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/provider/ -run TestLoadRegistry -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/provider/ models.yaml
@@ -1448,7 +1448,7 @@ git commit -m "feat: provider interface + model registry"
 - Create: `internal/provider/openai.go`
 - Test: `internal/provider/openai_test.go`
 
-- [ ] **Step 1: Write the failing test (mock OpenAI SSE via httptest + base URL)**
+- [x] **Step 1: Write the failing test (mock OpenAI SSE via httptest + base URL)**
 
 `internal/provider/openai_test.go`:
 ```go
@@ -1498,12 +1498,12 @@ func TestOpenAIStream(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/provider/ -run TestOpenAIStream -v`
 Expected: FAIL (undefined `NewOpenAI`).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `internal/provider/openai.go`:
 ```go
@@ -1572,12 +1572,12 @@ func (p *openAIProvider) Stream(ctx context.Context, req ChatRequest) (<-chan De
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/provider/ -run TestOpenAIStream -v`
 Expected: PASS. (If the SDK's `Delta.Content` accessor differs in the pinned `openai-go/v3` version, consult `go doc github.com/openai/openai-go/v3` and adjust the accessor — the test asserts the externally observable behavior.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/provider/openai.go internal/provider/openai_test.go
@@ -1592,12 +1592,12 @@ git commit -m "feat: openai streaming provider"
 - Create: `internal/provider/anthropic.go`
 - Test: `internal/provider/anthropic_test.go`
 
-- [ ] **Step 1: Add the dependency**
+- [x] **Step 1: Add the dependency**
 
 Run: `go get github.com/anthropics/anthropic-sdk-go@latest && go mod tidy`
 Expected: dependency added.
 
-- [ ] **Step 2: Write the failing test (mock Anthropic SSE)**
+- [x] **Step 2: Write the failing test (mock Anthropic SSE)**
 
 `internal/provider/anthropic_test.go`:
 ```go
@@ -1651,12 +1651,12 @@ func TestAnthropicStream(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `go test ./internal/provider/ -run TestAnthropicStream -v`
 Expected: FAIL (undefined `NewAnthropic`).
 
-- [ ] **Step 4: Write minimal implementation**
+- [x] **Step 4: Write minimal implementation**
 
 `internal/provider/anthropic.go`:
 ```go
@@ -1730,12 +1730,12 @@ func (p *anthropicProvider) Stream(ctx context.Context, req ChatRequest) (<-chan
 }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `go test ./internal/provider/ -run TestAnthropicStream -v`
 Expected: PASS. (The pinned `anthropic-sdk-go` event-accessor names may differ slightly; if so, run `go doc github.com/anthropics/anthropic-sdk-go` for the streaming event types and adjust the type assertions. The test asserts observable assembled text, so behavior is the contract.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/provider/anthropic.go internal/provider/anthropic_test.go go.mod go.sum
@@ -1750,7 +1750,7 @@ git commit -m "feat: anthropic streaming provider with prompt caching"
 - Create: `internal/provider/factory.go`, `internal/provider/errors.go`
 - Test: `internal/provider/errors_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `internal/provider/errors_test.go`:
 ```go
@@ -1784,12 +1784,12 @@ func TestNormalizeError(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/provider/ -run TestNormalizeError -v`
 Expected: FAIL (undefined).
 
-- [ ] **Step 3: Write implementations**
+- [x] **Step 3: Write implementations**
 
 `internal/provider/errors.go`:
 ```go
@@ -1854,12 +1854,12 @@ func New(reg Registry, modelID, openAIKey, anthropicKey string) (ChatProvider, e
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/provider/ -v`
 Expected: PASS (all provider tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/provider/
@@ -1876,7 +1876,7 @@ Assembles the cached prefix (`system preset + textbook context`), runs retrieval
 - Create: `internal/chat/chat.go`
 - Test: `internal/chat/chat_test.go`
 
-- [ ] **Step 1: Write the failing test (fake provider + fake retriever)**
+- [x] **Step 1: Write the failing test (fake provider + fake retriever)**
 
 `internal/chat/chat_test.go`:
 ```go
@@ -1950,12 +1950,12 @@ func TestSendPersistsAndAssemblesPrefix(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/chat/ -run TestSendPersistsAndAssemblesPrefix -v`
 Expected: FAIL (undefined).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `internal/chat/chat.go`:
 ```go
@@ -2061,12 +2061,12 @@ func (s *Service) Send(ctx context.Context, p SendParams, onToken func(string)) 
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/chat/ -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/chat/
@@ -2083,7 +2083,7 @@ Single struct bound to Wails. Wraps store/rag/provider/chat; normalizes errors a
 - Create: `internal/appapi/api.go`, `internal/appapi/validate.go`
 - Test: `internal/appapi/validate_test.go`
 
-- [ ] **Step 1: Write the failing test (pure validation logic, no Wails runtime)**
+- [x] **Step 1: Write the failing test (pure validation logic, no Wails runtime)**
 
 `internal/appapi/validate_test.go`:
 ```go
@@ -2111,12 +2111,12 @@ func TestValidateStartup(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/appapi/ -run TestValidateStartup -v`
 Expected: FAIL (undefined).
 
-- [ ] **Step 3: Write implementations**
+- [x] **Step 3: Write implementations**
 
 `internal/appapi/validate.go`:
 ```go
@@ -2262,12 +2262,12 @@ func jsonMarshal(v any) (string, error) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/appapi/ -v`
 Expected: PASS (validation test; the API methods compile but aren't unit-tested here — they're exercised via the manual smoke checklist).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/appapi/
@@ -2281,7 +2281,7 @@ git commit -m "feat: Wails-bound API + startup validation"
 **Files:**
 - Modify: `main.go`, `app.go`
 
-- [ ] **Step 1: Replace `main.go` with wiring**
+- [x] **Step 1: Replace `main.go` with wiring**
 
 `main.go`:
 ```go
@@ -2359,24 +2359,24 @@ func main() {
 }
 ```
 
-- [ ] **Step 2: Remove the template `app.go` if it conflicts**
+- [x] **Step 2: Remove the template `app.go` if it conflicts**
 
 If `app.go` defines a sample `App` bound struct referenced nowhere, delete it:
 ```bash
 rm app.go
 ```
 
-- [ ] **Step 3: Build**
+- [x] **Step 3: Build**
 
 Run: `go build ./...`
 Expected: compiles. (Frontend `dist` may not exist yet — create a placeholder so `//go:embed` works: `mkdir -p frontend/dist && echo "placeholder" > frontend/dist/.keep`.)
 
-- [ ] **Step 4: Run the backend test suite**
+- [x] **Step 4: Run the backend test suite**
 
 Run: `go test ./...`
 Expected: PASS (all packages; frontend not yet built).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add main.go go.mod go.sum
@@ -2393,7 +2393,7 @@ Vanilla TS. Layout matches approved Variant B: dark theme, left history sidebar,
 **Files:**
 - Replace: `frontend/src/main.ts`, `frontend/src/style.css`, `frontend/index.html`
 
-- [ ] **Step 1: Write `frontend/index.html`**
+- [x] **Step 1: Write `frontend/index.html`**
 
 ```html
 <!DOCTYPE html>
@@ -2427,7 +2427,7 @@ Vanilla TS. Layout matches approved Variant B: dark theme, left history sidebar,
 </html>
 ```
 
-- [ ] **Step 2: Write `frontend/src/style.css`**
+- [x] **Step 2: Write `frontend/src/style.css`**
 
 ```css
 * { box-sizing: border-box; margin: 0; }
@@ -2456,7 +2456,7 @@ body { font-family: system-ui, sans-serif; }
 #tbModalInner label { display: block; padding: 4px 0; color: #cfcfd3; }
 ```
 
-- [ ] **Step 3: Commit the static shell**
+- [x] **Step 3: Commit the static shell**
 
 ```bash
 git add frontend/index.html frontend/src/style.css
@@ -2470,7 +2470,7 @@ git commit -m "feat: frontend Grok-style shell (Variant B)"
 **Files:**
 - Replace: `frontend/src/main.ts`
 
-- [ ] **Step 1: Write `frontend/src/main.ts`**
+- [x] **Step 1: Write `frontend/src/main.ts`**
 
 ```ts
 import './style.css'
@@ -2607,7 +2607,7 @@ input.addEventListener('keydown', (e) => {
 
 Note: the duplicate token-append path inside `send()` (`__append`) is dead code from drafting — remove the `function append` block and `(window as any).__append` line; the `EventsOn('chat:token', …)` handler is the single source of truth for streaming.
 
-- [ ] **Step 2: Remove the dead append block**
+- [x] **Step 2: Remove the dead append block**
 
 Delete these lines from `send()`:
 ```ts
@@ -2615,12 +2615,12 @@ Delete these lines from `send()`:
   ;(window as any).__append = append
 ```
 
-- [ ] **Step 3: Generate Wails bindings + build**
+- [x] **Step 3: Generate Wails bindings + build**
 
 Run: `wails build`
 Expected: `wailsjs/` bindings generated, `frontend/dist` built, binary produced with no TypeScript errors.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add frontend/
@@ -2638,7 +2638,7 @@ When a textbook is attached to a conversation, ensure it is indexed (idempotent)
 - Modify: `frontend/src/main.ts` (call `EnsureIndexed` on scope save; show progress)
 - Test: `internal/appapi/ensure_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `internal/appapi/ensure_test.go`:
 ```go
@@ -2657,12 +2657,12 @@ func TestBooksToIndex(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/appapi/ -run TestBooksToIndex -v`
 Expected: FAIL (undefined `booksToIndex`).
 
-- [ ] **Step 3: Add implementation to `internal/appapi/api.go`**
+- [x] **Step 3: Add implementation to `internal/appapi/api.go`**
 
 ```go
 // booksToIndex returns configured book names that are in the requested set,
@@ -2714,12 +2714,12 @@ func (a *API) EnsureIndexed(convID string) error {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./internal/appapi/ -v`
 Expected: PASS.
 
-- [ ] **Step 5: Wire frontend: index on scope save + progress banner**
+- [x] **Step 5: Wire frontend: index on scope save + progress banner**
 
 In `frontend/src/main.ts`, in `showTextbooks()` `save.onclick`, after `await App.SetConversationScope(...)` add:
 ```ts
@@ -2737,7 +2737,7 @@ EventsOn('rag:index', (p: any) => {
 ```
 Also call `await App.EnsureIndexed(activeConv!)` at the start of `send()` (before streaming) so an attached-but-unindexed book is built lazily; wrap in try/catch surfacing the normalized error into the assistant bubble.
 
-- [ ] **Step 6: Build + commit**
+- [x] **Step 6: Build + commit**
 
 Run: `wails build`
 Expected: builds clean.
@@ -2753,7 +2753,7 @@ git commit -m "feat: index-on-attach with progress events"
 **Files:**
 - Create: `docs/SMOKE.md`, `README.md`
 
-- [ ] **Step 1: Write `docs/SMOKE.md`**
+- [x] **Step 1: Write `docs/SMOKE.md`**
 
 ```markdown
 # Manual Smoke Checklist (MVP)
@@ -2775,7 +2775,7 @@ Run: `wails dev`
 10. [ ] Delete a conversation → it and its messages disappear (no orphan rows).
 ```
 
-- [ ] **Step 2: Write `README.md`**
+- [x] **Step 2: Write `README.md`**
 
 ```markdown
 # Discussion Engine
@@ -2799,12 +2799,12 @@ verbatim from acctutor and used only via `internal/rag/adapter.go`. Do not
 modify the copied files; add scope logic as new files in our copy.
 ```
 
-- [ ] **Step 3: Final full test run**
+- [x] **Step 3: Final full test run**
 
 Run: `go test ./...`
 Expected: PASS across all packages.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/SMOKE.md README.md
