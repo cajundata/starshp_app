@@ -177,3 +177,110 @@ is no file-writing migration.
    restored per conversation.
 6. Delete an item's file on disk — it drops from the list and an active
    reference is pruned without crashing.
+
+## Design decisions & rationale
+
+Captured from the brainstorming session that produced this design, so
+the reasoning survives independent of any single conversation. Each
+entry is the fork, the choice made, and what was rejected.
+
+1. **Unified hybrid library.** One library combining insertable
+   snippets and markdown-based presets — not two separate features.
+   - *Why:* the user wanted both a selectable list of insertable
+     prompt/context snippets and markdown-based presets, in one place.
+   - *Rejected:* a snippet shelf alongside untouched presets; a
+     markdown "presets v2" only; a passive browse-and-copy reference
+     panel with no prompt integration.
+
+2. **Full replacement of the SQLite presets feature.** The library
+   retires the `presets` table, its CRUD, and the preset modal
+   entirely.
+   - *Why:* two overlapping prompt systems in the UI is poor UX, and
+     "markdown-based presets" taken literally means presets *become*
+     the library. Pre-release status makes removing the working code
+     acceptable.
+   - *Rejected:* a new library alongside presets (lasting overlap);
+     replacing in two steps (library now, migrate presets later).
+
+3. **Full rich editor in v1.** The separate-window-style raw-markdown
+   editor ships in the first version, not as a later add-on.
+   - *Why:* full replacement retires the preset modal — the only
+     in-app create/edit path — so authoring must be solved up front;
+     the user chose to land it polished in one pass.
+   - *Rejected:* a basic textarea modal now with the rich editor
+     deferred; on-disk file editing only, with no in-app authoring (a
+     regression from today).
+
+4. **Sticky per-conversation activation.** An item's active state
+   belongs to the conversation and is restored when it reopens.
+   - *Why:* mirrors the existing sticky model/preset behaviour, and
+     keeps the cached prompt prefix stable within a conversation so
+     prompt caching keeps working.
+   - *Rejected:* transient per-message activation (defeats prompt
+     caching, re-pick every send); a sticky default with per-message
+     overrides (two activation states to surface — UI complexity).
+
+5. **A single item type.** Every item is one kind of markdown snippet;
+   no "prompt vs context" type field.
+   - *Why:* all active items land in the same cached prefix regardless,
+     so a type system adds a field, a two-section UI, and assembly
+     branching for little functional gain — consistent with how the app
+     already concatenates everything stable into one prefix.
+   - *Rejected:* two types routing prompt items to the system slot and
+     context items to a separate block.
+
+6. **One `.md` file per item.** Item content lives as individual files
+   in a `library/` folder under the app data dir.
+   - *Why:* the cleanest match for a "list of items"; enables editing,
+     adding, and removing items on disk with any editor and syncing via
+     git or Dropbox; follows the existing textbooks-on-disk precedent.
+   - *Rejected:* a single `library.md` split by `##` headings (app must
+     parse and rewrite; messy rename/reorder; on-disk edits fight the
+     in-app editor); a SQLite column (no on-disk editing).
+
+7. **H1 as display name, filename a frozen slug.** The filename is a
+   no-space slug generated from the H1 once at creation and then frozen;
+   the file's single H1 is the display name.
+   - *Why:* the user wants no spaces in filenames but readable, spaced
+     display names. Splitting identity (filename) from display (H1)
+     means editing the display name never breaks activation references.
+     Freezing the filename keeps the `conversation_library_items`
+     references stable — auto-renaming would turn every H1 edit into a
+     multi-step file-rename plus DB update that can half-fail.
+   - *Rejected:* filename = display name (forces spaces in filenames or
+     unreadable names, and renaming orphans activation); auto-renaming
+     the file whenever the H1 changes.
+
+8. **Scan-on-demand listing, no persisted index.** The item list is
+   built by scanning the folder and reading each file's first-line H1.
+   - *Why:* an index (TOC file or DB table) becomes a second source of
+     truth that drifts from the filesystem, and specifically breaks the
+     on-disk editing feature — out-of-app edits, adds, and deletes go
+     unnoticed. Keeping an index correct needs filesystem watching or a
+     reconcile-scan, and a reconcile-scan *is* the full scan. The reads
+     are imperceptible: the first line of tens-to-hundreds of files,
+     only on panel open, never on the send path.
+   - *Escape hatch:* an mtime-keyed in-memory cache — only if a
+     measurement ever demands it.
+   - *Rejected:* a master table-of-contents file or database table
+     updated on every save.
+
+9. **Full-surface in-app editor, not a real OS window.** The editor
+   reads as a separate window but stays inside the single Wails window.
+   - *Why:* Wails v2's multi-window support is weak and historically
+     platform-flaky; true multi-window is effectively a Wails v3
+     feature. The in-app approach carries zero framework risk.
+   - *Rejected:* a true second OS window via Wails v2 multi-window
+     (would need a spike, with a real chance it fails on Windows).
+
+10. **Migration collapses to a schema change.** No data migration of
+    presets; the feature ships only a schema change.
+    - *Why:* the app rename gives a fresh, empty
+      `%APPDATA%\starshp_app\` data dir and pre-release data is
+      disposable, so no preset content carries over. A fresh `app.db`
+      starts with `conversation_library_items` and no `presets` table;
+      a dev DB created between the rename and this feature gets a
+      trivial drop of the old objects.
+    - *Rejected:* a one-time presets→files migration copying preset
+      content into markdown files and converting each conversation's
+      `preset_id` into an active-set row.
