@@ -21,5 +21,10 @@ CREATE TABLE IF NOT EXISTS conversation_textbooks (
   textbook_name TEXT NOT NULL, chapter_nums TEXT,
   PRIMARY KEY (conversation_id, textbook_name)
 );
+CREATE TABLE IF NOT EXISTS conversation_library_items (
+  conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  item_name TEXT NOT NULL,
+  PRIMARY KEY (conversation_id, item_name)
+);
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
 `
