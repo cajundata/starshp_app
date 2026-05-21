@@ -14,7 +14,7 @@ Tags: `[feat]` new feature · `[chg]` change to existing behavior · `[fix]` kno
 
 <!-- triaged, picked for the next cycle -->
 
-[feat] markdown prompt/context library, replacing the SQLite presets system: a multi-select list of saved prompts/context (toggle via checkbox/click, active items highlighted) feeding the current discussion's system prompt, plus a full-surface in-app raw-markdown editor. Design: docs/superpowers/specs/2026-05-21-starshp-prompt-library-design.md. Blocked on the app rename landing first.
+[feat] markdown prompt/context library, replacing the SQLite presets system: a multi-select list of saved prompts/context (toggle via checkbox/click, active items highlighted) feeding the current discussion's system prompt, plus a full-surface in-app raw-markdown editor. Design: docs/superpowers/specs/2026-05-21-starshp-prompt-library-design.md. Ready to implement — app rename complete.
 
 ## Someday
 
