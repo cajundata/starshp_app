@@ -1,3 +1,24 @@
+export namespace library {
+	
+	export class Item {
+	    filename: string;
+	    name: string;
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Item(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.filename = source["filename"];
+	        this.name = source["name"];
+	        this.error = source["error"];
+	    }
+	}
+
+}
+
 export namespace provider {
 	
 	export class ModelInfo {
@@ -26,7 +47,6 @@ export namespace store {
 	    title: string;
 	    createdAt: number;
 	    updatedAt: number;
-	    presetId: string;
 	    pinnedModel: string;
 	
 	    static createFrom(source: any = {}) {
@@ -39,7 +59,6 @@ export namespace store {
 	        this.title = source["title"];
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
-	        this.presetId = source["presetId"];
 	        this.pinnedModel = source["pinnedModel"];
 	    }
 	}
@@ -67,26 +86,6 @@ export namespace store {
 	        this.createdAt = source["createdAt"];
 	        this.ragContext = source["ragContext"];
 	        this.ragSources = source["ragSources"];
-	    }
-	}
-	export class Preset {
-	    id: string;
-	    name: string;
-	    systemPrompt: string;
-	    createdAt: number;
-	    updatedAt: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new Preset(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.name = source["name"];
-	        this.systemPrompt = source["systemPrompt"];
-	        this.createdAt = source["createdAt"];
-	        this.updatedAt = source["updatedAt"];
 	    }
 	}
 	export class TextbookScope {

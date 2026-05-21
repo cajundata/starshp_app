@@ -10,20 +10,24 @@ export function CreateConversation(arg1) {
   return window['go']['appapi']['API']['CreateConversation'](arg1);
 }
 
-export function CreatePreset(arg1, arg2) {
-  return window['go']['appapi']['API']['CreatePreset'](arg1, arg2);
+export function CreateLibraryItem(arg1) {
+  return window['go']['appapi']['API']['CreateLibraryItem'](arg1);
 }
 
 export function DeleteConversation(arg1) {
   return window['go']['appapi']['API']['DeleteConversation'](arg1);
 }
 
-export function DeletePreset(arg1) {
-  return window['go']['appapi']['API']['DeletePreset'](arg1);
+export function DeleteLibraryItem(arg1) {
+  return window['go']['appapi']['API']['DeleteLibraryItem'](arg1);
 }
 
 export function EnsureIndexed(arg1) {
   return window['go']['appapi']['API']['EnsureIndexed'](arg1);
+}
+
+export function GetActiveItems(arg1) {
+  return window['go']['appapi']['API']['GetActiveItems'](arg1);
 }
 
 export function GetConversationScope(arg1) {
@@ -38,24 +42,36 @@ export function ListConversations() {
   return window['go']['appapi']['API']['ListConversations']();
 }
 
-export function ListMessages(arg1) {
-  return window['go']['appapi']['API']['ListMessages'](arg1);
+export function ListLibraryItems() {
+  return window['go']['appapi']['API']['ListLibraryItems']();
 }
 
-export function ListPresets() {
-  return window['go']['appapi']['API']['ListPresets']();
+export function ListMessages(arg1) {
+  return window['go']['appapi']['API']['ListMessages'](arg1);
 }
 
 export function Models() {
   return window['go']['appapi']['API']['Models']();
 }
 
-export function SendMessage(arg1, arg2, arg3, arg4) {
-  return window['go']['appapi']['API']['SendMessage'](arg1, arg2, arg3, arg4);
+export function ReadLibraryItem(arg1) {
+  return window['go']['appapi']['API']['ReadLibraryItem'](arg1);
 }
 
-export function SetConversationMeta(arg1, arg2, arg3) {
-  return window['go']['appapi']['API']['SetConversationMeta'](arg1, arg2, arg3);
+export function SaveLibraryItem(arg1, arg2) {
+  return window['go']['appapi']['API']['SaveLibraryItem'](arg1, arg2);
+}
+
+export function SendMessage(arg1, arg2, arg3) {
+  return window['go']['appapi']['API']['SendMessage'](arg1, arg2, arg3);
+}
+
+export function SetActiveItems(arg1, arg2) {
+  return window['go']['appapi']['API']['SetActiveItems'](arg1, arg2);
+}
+
+export function SetConversationMeta(arg1, arg2) {
+  return window['go']['appapi']['API']['SetConversationMeta'](arg1, arg2);
 }
 
 export function SetConversationScope(arg1, arg2) {
@@ -64,8 +80,4 @@ export function SetConversationScope(arg1, arg2) {
 
 export function StartupIssues() {
   return window['go']['appapi']['API']['StartupIssues']();
-}
-
-export function UpdatePreset(arg1, arg2, arg3) {
-  return window['go']['appapi']['API']['UpdatePreset'](arg1, arg2, arg3);
 }
