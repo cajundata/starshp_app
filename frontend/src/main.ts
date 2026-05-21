@@ -143,6 +143,17 @@ EventsOn('rag:index', (p: any) => {
   if (ragStatusEl) msgText(ragStatusEl).textContent = `Indexing ${p.book}… ${p.done}/${p.total} chapters`
 })
 
+EventsOn('library:notice', (msg: string) => {
+  const note = document.createElement('div')
+  note.className = 'notice'
+  note.textContent = '⚠ ' + msg
+  // Insert before the streaming assistant bubble so chat:token still targets it.
+  const lastAsst = thread.querySelector('.msg.assistant:last-child')
+  if (lastAsst) thread.insertBefore(note, lastAsst)
+  else thread.appendChild(note)
+  thread.scrollTop = thread.scrollHeight
+})
+
 async function showTextbooks() {
   if (!activeConv) await newChat()
   const books = (await App.ListBooks()) || []
@@ -171,10 +182,129 @@ async function showTextbooks() {
   $('tbModal').classList.remove('hidden')
 }
 
+// ---- Prompt / context library ----------------------------------------------
+
+const libModal = $('libModal')
+const editorView = $('editorView')
+const editorArea = $('editorArea') as HTMLTextAreaElement
+const editorTitle = $('editorTitle')
+const editorMsg = $('editorMsg')
+const editorDelete = $('editorDelete') as HTMLButtonElement
+
+let editingFile: string | null = null // null = creating a new item
+
+async function openLibraryPanel() {
+  if (!activeConv) await newChat()
+  const items = (await App.ListLibraryItems()) || []
+  const active = new Set((await App.GetActiveItems(activeConv!)) || [])
+  const inner = $('libModalInner')
+  inner.innerHTML = '<h3>Prompt / context library</h3>'
+  if (items.length === 0) {
+    inner.innerHTML += '<p class="lib-empty">No items yet. Create one to get started.</p>'
+  }
+  for (const it of items) {
+    const row = document.createElement('div')
+    row.className = 'lib-row'
+    const label = document.createElement('label')
+    const cb = document.createElement('input')
+    cb.type = 'checkbox'
+    cb.checked = active.has(it.filename)
+    cb.disabled = !!it.error
+    cb.dataset.file = it.filename
+    cb.onchange = saveActive
+    label.appendChild(cb)
+    const span = document.createElement('span')
+    span.textContent = it.error ? `${it.name} (unreadable)` : it.name
+    label.appendChild(span)
+    row.appendChild(label)
+    const edit = document.createElement('button')
+    edit.className = 'lib-edit'
+    edit.textContent = 'Edit'
+    edit.onclick = () => void openEditor(it.filename)
+    row.appendChild(edit)
+    inner.appendChild(row)
+  }
+  const add = document.createElement('button')
+  add.className = 'lib-new'
+  add.textContent = '+ New item'
+  add.onclick = () => void openEditor(null)
+  inner.appendChild(add)
+  libModal.classList.remove('hidden')
+}
+
+async function saveActive() {
+  const boxes = $('libModalInner').querySelectorAll('input[type=checkbox]')
+  const names: string[] = []
+  boxes.forEach((b) => {
+    const i = b as HTMLInputElement
+    if (i.checked && i.dataset.file) names.push(i.dataset.file)
+  })
+  await App.SetActiveItems(activeConv!, names)
+}
+
+async function openEditor(file: string | null) {
+  editingFile = file
+  editorMsg.textContent = ''
+  if (file) {
+    editorTitle.textContent = 'Edit item'
+    editorDelete.classList.remove('hidden')
+    try {
+      editorArea.value = await App.ReadLibraryItem(file)
+    } catch (e: any) {
+      editorArea.value = ''
+      editorMsg.textContent = e?.userMessage || String(e)
+    }
+  } else {
+    editorTitle.textContent = 'New item'
+    editorDelete.classList.add('hidden')
+    editorArea.value = ''
+  }
+  libModal.classList.add('hidden')
+  editorView.classList.remove('hidden')
+  editorArea.focus()
+}
+
+function closeEditor() {
+  editorView.classList.add('hidden')
+}
+
+async function saveEditor() {
+  const content = editorArea.value
+  try {
+    if (editingFile) {
+      await App.SaveLibraryItem(editingFile, content)
+    } else {
+      await App.CreateLibraryItem(content)
+    }
+  } catch (e: any) {
+    editorMsg.textContent = e?.userMessage || String(e)
+    return
+  }
+  closeEditor()
+  await openLibraryPanel()
+}
+
+async function deleteEditorItem() {
+  if (!editingFile) return
+  try {
+    await App.DeleteLibraryItem(editingFile)
+  } catch (e: any) {
+    editorMsg.textContent = e?.userMessage || String(e)
+    return
+  }
+  closeEditor()
+  await openLibraryPanel()
+}
+
 $('newChat').onclick = newChat
 sendBtn.onclick = () => { if (streaming) { App.CancelMessage() } else { void send() } }
 $('tbBtn').onclick = showTextbooks
 $('tbModal').onclick = (e) => { if (e.target === $('tbModal')) $('tbModal').classList.add('hidden') }
+$('libBtn').onclick = () => void openLibraryPanel()
+libModal.onclick = (e) => { if (e.target === libModal) libModal.classList.add('hidden') }
+$('editorBack').onclick = () => { closeEditor(); void openLibraryPanel() }
+$('editorSave').onclick = () => void saveEditor()
+editorDelete.onclick = () => void deleteEditorItem()
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send()
 })
