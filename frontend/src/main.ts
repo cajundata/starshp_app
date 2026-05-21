@@ -9,7 +9,6 @@ const $ = (id: string) => document.getElementById(id) as HTMLElement
 const thread = $('thread')
 const input = $('input') as HTMLTextAreaElement
 const modelSel = $('modelSel') as HTMLSelectElement
-const presetSel = $('presetSel') as HTMLSelectElement
 const sendBtn = $('sendBtn') as HTMLButtonElement
 
 let ragStatusEl: HTMLElement | null = null
@@ -82,12 +81,10 @@ async function openConversation(id: string) {
   }
   const convs = (await App.ListConversations()) || []
   const c = convs.find(x => x.id === id)
-  if (c) {
-    if (c.pinnedModel) {
-      const opt = Array.from(modelSel.options).some(o => o.value === c.pinnedModel)
-      if (opt) modelSel.value = c.pinnedModel
+  if (c && c.pinnedModel) {
+    if (Array.from(modelSel.options).some(o => o.value === c.pinnedModel)) {
+      modelSel.value = c.pinnedModel
     }
-    presetSel.value = Array.from(presetSel.options).some(o => o.value === c.presetId) ? c.presetId : ''
   }
   await loadConversations()
 }
@@ -100,16 +97,6 @@ async function newChat() {
 async function loadMeta() {
   const models = (await App.Models()) || []
   modelSel.innerHTML = models.map(m => `<option value="${m.id}">${m.display}</option>`).join('')
-  const presets = (await App.ListPresets()) || []
-  presetSel.innerHTML = `<option value="">No preset</option>` +
-    presets.map(p => `<option value="${p.id}">${p.name}</option>`).join('')
-  ;(presetSel as any)._presets = presets
-}
-
-function currentSystemPrompt(): string {
-  const presets = (presetSel as any)._presets || []
-  const p = presets.find((x: any) => x.id === presetSel.value)
-  return p ? p.systemPrompt : ''
 }
 
 async function send() {
@@ -134,8 +121,8 @@ async function send() {
   sendBtn.textContent = 'Stop ◼'
   sendBtn.classList.add('streaming')
   try {
-    await App.SendMessage(activeConv!, text, currentSystemPrompt(), modelSel.value)
-    await App.SetConversationMeta(activeConv!, presetSel.value, modelSel.value)
+    await App.SendMessage(activeConv!, text, modelSel.value)
+    await App.SetConversationMeta(activeConv!, modelSel.value)
   } catch (e: any) {
     msgText(asst).textContent += `\n\n[${e?.code || 'error'}] ${e?.userMessage || e}`
   } finally {

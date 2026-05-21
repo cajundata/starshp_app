@@ -15,7 +15,7 @@
         <div id="toolbar">
           <div class="left">
             <select id="modelSel"></select>
-            <select id="presetSel"></select>
+            <button id="libBtn">≡ Library</button>
             <button id="tbBtn">📚 Textbooks</button>
           </div>
           <button id="sendBtn">Send ▸</button>
@@ -24,6 +24,19 @@
     </main>
   </div>
   <div id="tbModal" class="hidden"><div id="tbModalInner"></div></div>
+  <div id="libModal" class="hidden"><div id="libModalInner"></div></div>
+  <div id="editorView" class="hidden">
+    <div id="editorBar">
+      <button id="editorBack">← Library</button>
+      <span id="editorTitle">New item</span>
+      <span id="editorMsg"></span>
+      <span class="spacer"></span>
+      <button id="editorDelete" class="hidden">Delete</button>
+      <button id="editorSave">Save</button>
+    </div>
+    <textarea id="editorArea" spellcheck="false"
+      placeholder="# Item name&#10;&#10;Write the prompt or context in markdown…"></textarea>
+  </div>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
