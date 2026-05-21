@@ -45,13 +45,7 @@ func (a *API) CreateConversation(title string) (store.Conversation, error) {
 }
 func (a *API) DeleteConversation(id string) error              { return a.st.DeleteConversation(id) }
 func (a *API) ListMessages(id string) ([]store.Message, error) { return a.st.ListMessages(id) }
-func (a *API) ListPresets() ([]store.Preset, error)            { return a.st.ListPresets() }
-func (a *API) CreatePreset(name, prompt string) (store.Preset, error) {
-	return a.st.CreatePreset(name, prompt)
-}
-func (a *API) UpdatePreset(id, name, prompt string) error { return a.st.UpdatePreset(id, name, prompt) }
-func (a *API) DeletePreset(id string) error               { return a.st.DeletePreset(id) }
-func (a *API) Models() []provider.ModelInfo               { return a.reg.Models }
+func (a *API) Models() []provider.ModelInfo { return a.reg.Models }
 func (a *API) ListBooks() ([]textbooks.Book, error) {
 	return textbooks.Scan(a.cfg.TextbooksConfig)
 }
@@ -61,8 +55,8 @@ func (a *API) SetConversationScope(convID string, scopes []store.TextbookScope) 
 func (a *API) GetConversationScope(convID string) ([]store.TextbookScope, error) {
 	return a.st.GetConversationTextbooks(convID)
 }
-func (a *API) SetConversationMeta(convID, presetID, model string) error {
-	return a.st.SetConversationMeta(convID, presetID, model)
+func (a *API) SetConversationMeta(convID, model string) error {
+	return a.st.SetConversationMeta(convID, model)
 }
 
 // titleFromText derives a conversation title from the first user message.
@@ -100,8 +94,9 @@ func (r ragRetriever) Retrieve(ctx context.Context, q string) (string, string, e
 }
 
 // SendMessage streams the assistant reply to the frontend via the
-// "chat:token" event and returns the full text (or a normalized error).
-func (a *API) SendMessage(convID, userText, systemPrompt, modelID string) (string, error) {
+// "chat:token" event and returns the full text (or a normalized error). The
+// system prompt is assembled from the conversation's active library items.
+func (a *API) SendMessage(convID, userText, modelID string) (string, error) {
 	prov, err := provider.New(a.reg, modelID, a.cfg.OpenAIAPIKey, a.cfg.AnthropicAPIKey)
 	if err != nil {
 		return "", provider.NormalizeError(err)
@@ -110,6 +105,16 @@ func (a *API) SendMessage(convID, userText, systemPrompt, modelID string) (strin
 	existing, _ := a.st.ListMessages(convID)
 	if len(existing) == 0 {
 		_ = a.st.SetConversationTitle(convID, titleFromText(userText))
+	}
+
+	systemPrompt, skipped, err := a.assembleSystemPrompt(convID)
+	if err != nil {
+		return "", provider.NormalizeError(err)
+	}
+	if len(skipped) > 0 {
+		// A missing snippet is not fatal — skip it, surface a soft notice.
+		wruntime.EventsEmit(a.ctx, "library:notice",
+			"Skipped missing library items: "+strings.Join(skipped, ", "))
 	}
 
 	scopes, _ := a.st.GetConversationTextbooks(convID) // failure → no RAG scope, not fatal

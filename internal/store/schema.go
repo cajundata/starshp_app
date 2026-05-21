@@ -1,14 +1,10 @@
 package store
 
 const schemaSQL = `
-CREATE TABLE IF NOT EXISTS presets (
-  id TEXT PRIMARY KEY, name TEXT NOT NULL, system_prompt TEXT NOT NULL,
-  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
-);
 CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY, title TEXT NOT NULL,
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-  preset_id TEXT, pinned_model TEXT
+  pinned_model TEXT
 );
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,

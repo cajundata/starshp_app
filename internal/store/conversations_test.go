@@ -30,7 +30,7 @@ func TestConversationLifecycle(t *testing.T) {
 		t.Fatalf("scope mismatch: %+v", scope)
 	}
 
-	if err := s.SetConversationMeta(c.ID, "preset-1", "claude-opus-4-7"); err != nil {
+	if err := s.SetConversationMeta(c.ID, "claude-opus-4-7"); err != nil {
 		t.Fatalf("SetConversationMeta: %v", err)
 	}
 

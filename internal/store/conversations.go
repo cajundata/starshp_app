@@ -12,7 +12,6 @@ type Conversation struct {
 	Title       string `json:"title"`
 	CreatedAt   int64  `json:"createdAt"`
 	UpdatedAt   int64  `json:"updatedAt"`
-	PresetID    string `json:"presetId"`
 	PinnedModel string `json:"pinnedModel"`
 }
 
@@ -41,7 +40,7 @@ func (s *Store) CreateConversation(title string) (Conversation, error) {
 }
 
 func (s *Store) ListConversations() ([]Conversation, error) {
-	rows, err := s.db.Query(`SELECT id,title,created_at,updated_at,COALESCE(preset_id,''),COALESCE(pinned_model,'') FROM conversations ORDER BY updated_at DESC`)
+	rows, err := s.db.Query(`SELECT id,title,created_at,updated_at,COALESCE(pinned_model,'') FROM conversations ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +48,7 @@ func (s *Store) ListConversations() ([]Conversation, error) {
 	var out []Conversation
 	for rows.Next() {
 		var c Conversation
-		if err := rows.Scan(&c.ID, &c.Title, &c.CreatedAt, &c.UpdatedAt, &c.PresetID, &c.PinnedModel); err != nil {
+		if err := rows.Scan(&c.ID, &c.Title, &c.CreatedAt, &c.UpdatedAt, &c.PinnedModel); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -68,9 +67,9 @@ func (s *Store) SetConversationTitle(id, title string) error {
 	return err
 }
 
-func (s *Store) SetConversationMeta(id, presetID, pinnedModel string) error {
-	_, err := s.db.Exec(`UPDATE conversations SET preset_id=?,pinned_model=?,updated_at=? WHERE id=?`,
-		presetID, pinnedModel, time.Now().Unix(), id)
+func (s *Store) SetConversationMeta(id, pinnedModel string) error {
+	_, err := s.db.Exec(`UPDATE conversations SET pinned_model=?,updated_at=? WHERE id=?`,
+		pinnedModel, time.Now().Unix(), id)
 	return err
 }
 

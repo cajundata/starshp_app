@@ -1,4 +1,4 @@
-// Package store persists conversations, messages, and presets in SQLite.
+// Package store persists conversations, messages, and library items in SQLite.
 package store
 
 import (
@@ -19,6 +19,10 @@ func Open(dbPath string) (*Store, error) {
 	if _, err := db.Exec(schemaSQL); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
+	}
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate schema: %w", err)
 	}
 	return &Store{db: db}, nil
 }
