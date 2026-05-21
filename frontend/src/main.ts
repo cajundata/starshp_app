@@ -17,11 +17,16 @@ let ragStatusEl: HTMLElement | null = null
 function addMsg(role: string, text: string): HTMLElement {
   const el = document.createElement('div')
   el.className = `msg ${role}`
-  el.textContent = text
+  const txt = document.createElement('div')
+  txt.className = 'msg-text'
+  txt.textContent = text
+  el.appendChild(txt)
   thread.appendChild(el)
   thread.scrollTop = thread.scrollHeight
   return el
 }
+
+const msgText = (el: HTMLElement) => el.querySelector('.msg-text') as HTMLElement
 
 async function loadConversations() {
   const list = $('convList')
@@ -82,7 +87,7 @@ async function send() {
     await App.EnsureIndexed(activeConv!)
     idxStatus.remove()
   } catch (e: any) {
-    idxStatus.textContent = `Cannot send: textbook indexing failed — ${e?.userMessage || e}`
+    msgText(idxStatus).textContent = `Cannot send: textbook indexing failed — ${e?.userMessage || e}`
     return
   } finally {
     ragStatusEl = null
@@ -98,7 +103,7 @@ async function send() {
     await App.SendMessage(activeConv!, text, currentSystemPrompt(), modelSel.value)
     await App.SetConversationMeta(activeConv!, presetSel.value, modelSel.value)
   } catch (e: any) {
-    asst.textContent += `\n\n[${e?.code || 'error'}] ${e?.userMessage || e}`
+    msgText(asst).textContent += `\n\n[${e?.code || 'error'}] ${e?.userMessage || e}`
   } finally {
     streaming = false
     sendBtn.textContent = 'Send ▸'
@@ -108,12 +113,12 @@ async function send() {
 }
 
 EventsOn('chat:token', (tok: string) => {
-  const last = thread.querySelector('.msg.assistant:last-child')
+  const last = thread.querySelector('.msg.assistant:last-child .msg-text')
   if (last) { last.textContent += tok; thread.scrollTop = thread.scrollHeight }
 })
 
 EventsOn('rag:index', (p: any) => {
-  if (ragStatusEl) ragStatusEl.textContent = `Indexing ${p.book}… ${p.done}/${p.total} chapters`
+  if (ragStatusEl) msgText(ragStatusEl).textContent = `Indexing ${p.book}… ${p.done}/${p.total} chapters`
 })
 
 async function showTextbooks() {
@@ -136,8 +141,8 @@ async function showTextbooks() {
     $('tbModal').classList.add('hidden')
     const banner = addMsg('assistant', 'Indexing textbooks…')
     ragStatusEl = banner
-    try { await App.EnsureIndexed(activeConv!); banner.textContent = 'Textbooks ready.' }
-    catch (e: any) { banner.textContent = `Indexing failed: ${e?.userMessage || e}` }
+    try { await App.EnsureIndexed(activeConv!); msgText(banner).textContent = 'Textbooks ready.' }
+    catch (e: any) { msgText(banner).textContent = `Indexing failed: ${e?.userMessage || e}` }
     finally { ragStatusEl = null }
   }
   inner.appendChild(save)
