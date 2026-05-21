@@ -28,6 +28,31 @@ function addMsg(role: string, text: string): HTMLElement {
 
 const msgText = (el: HTMLElement) => el.querySelector('.msg-text') as HTMLElement
 
+const COPY_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`
+const CHECK_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+
+function attachCopyButton(msgEl: HTMLElement) {
+  if (msgEl.querySelector('.msg-actions')) return
+  const row = document.createElement('div')
+  row.className = 'msg-actions'
+  const btn = document.createElement('button')
+  btn.className = 'copy-btn'
+  btn.title = 'Copy'
+  btn.innerHTML = COPY_ICON
+  btn.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(msgText(msgEl).textContent || '')
+      btn.classList.add('copied')
+      btn.innerHTML = CHECK_ICON
+      setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = COPY_ICON }, 1500)
+    } catch {
+      // clipboard unavailable — leave the icon unchanged, no crash
+    }
+  }
+  row.appendChild(btn)
+  msgEl.appendChild(row)
+}
+
 async function loadConversations() {
   const list = $('convList')
   list.innerHTML = ''
@@ -45,7 +70,10 @@ async function openConversation(id: string) {
   activeConv = id
   thread.innerHTML = ''
   const msgs = (await App.ListMessages(id)) || []
-  for (const m of msgs) addMsg(m.role, m.content)
+  for (const m of msgs) {
+    const el = addMsg(m.role, m.content)
+    if (m.role === 'assistant' && m.content.trim()) attachCopyButton(el)
+  }
   const convs = (await App.ListConversations()) || []
   const c = convs.find(x => x.id === id)
   if (c) {
@@ -108,6 +136,7 @@ async function send() {
     streaming = false
     sendBtn.textContent = 'Send ▸'
     sendBtn.classList.remove('streaming')
+    if (msgText(asst).textContent?.trim()) attachCopyButton(asst)
     await loadConversations()
   }
 }
