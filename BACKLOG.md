@@ -14,11 +14,10 @@ Tags: `[feat]` new feature · `[chg]` change to existing behavior · `[fix]` kno
 
 <!-- triaged, picked for the next cycle -->
 
-create an organized prompt/context library saved in markdown to make frequently used prompts, context, skills, and other information available to the discussion
+[feat] markdown prompt/context library, replacing the SQLite presets system: a multi-select list of saved prompts/context (toggle via checkbox/click, active items highlighted) that feed the current discussion's context, plus a separate-window raw-markdown editor to author/edit them; includes one-time migration of existing presets. Needs a design pass before building.
 
 ## Someday
 
 <!-- maybe-later, not committed to a cycle -->
 
-author, modify, and save prompts/context library contents in separate window in raw markdown
-add syntax highlighting to the markdown editor
+[ui] add syntax highlighting to the library's raw-markdown editor
