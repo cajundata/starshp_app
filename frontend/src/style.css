@@ -21,7 +21,7 @@ body { font-family: system-ui, sans-serif; }
 #toolbar select, #tbBtn { background: #202024; color: #cfcfd3; border: 1px solid #34343a; border-radius: 999px; padding: 6px 11px; font-size: 12px; cursor: pointer; }
 #sendBtn { background: #2f6df0; color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; font-weight: 600; cursor: pointer; }
 #sendBtn.streaming { background: #b23b3b; }
-.hidden { display: none; }
+.hidden { display: none !important; }
 #tbModal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; }
 #tbModalInner { background: #1b1b1e; border: 1px solid #34343a; border-radius: 10px; padding: 18px; min-width: 360px; max-height: 70vh; overflow: auto; }
 #tbModalInner label { display: block; padding: 4px 0; color: #cfcfd3; }
