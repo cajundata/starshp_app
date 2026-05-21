@@ -11,7 +11,7 @@ func TestValidateStartup(t *testing.T) {
 	dir := t.TempDir()
 	good := config.Config{OpenAIAPIKey: "k", AppDBPath: filepath.Join(dir, "a.db"),
 		RAGDBPath: filepath.Join(dir, "r.db"), TextbooksConfig: filepath.Join(dir, "tb.yaml"),
-		ModelsConfig: filepath.Join(dir, "m.yaml")}
+		ModelsConfig: filepath.Join(dir, "m.yaml"), LibraryDir: filepath.Join(dir, "library")}
 	if issues := ValidateStartup(good); len(issues) != 1 { // missing models.yaml only
 		t.Fatalf("expected 1 issue (models.yaml), got %v", issues)
 	}

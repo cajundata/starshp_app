@@ -9,6 +9,7 @@ import (
 
 	"github.com/cajundata/starshp_app/internal/chat"
 	"github.com/cajundata/starshp_app/internal/config"
+	"github.com/cajundata/starshp_app/internal/library"
 	"github.com/cajundata/starshp_app/internal/provider"
 	"github.com/cajundata/starshp_app/internal/rag"
 	"github.com/cajundata/starshp_app/internal/store"
@@ -22,13 +23,15 @@ type API struct {
 	st             *store.Store
 	reg            provider.Registry
 	ragAdpt        *rag.Adapter
+	lib            *library.Library
 	chatSvc        *chat.Service
 	mu             sync.Mutex
 	cancelInFlight context.CancelFunc
 }
 
 func NewAPI(cfg config.Config, st *store.Store, reg provider.Registry, ragAdpt *rag.Adapter) *API {
-	return &API{cfg: cfg, st: st, reg: reg, ragAdpt: ragAdpt, chatSvc: chat.New(st)}
+	return &API{cfg: cfg, st: st, reg: reg, ragAdpt: ragAdpt,
+		lib: library.New(cfg.LibraryDir), chatSvc: chat.New(st)}
 }
 
 // Startup is called by Wails with the app context.

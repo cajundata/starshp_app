@@ -2,6 +2,7 @@ package appapi
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/cajundata/starshp_app/internal/config"
 )
@@ -20,6 +21,23 @@ func ValidateStartup(c config.Config) []string {
 			issues = append(issues, "App database path not writable: "+c.AppDBPath)
 		} else {
 			f.Close()
+		}
+	}
+	if c.LibraryDir != "" {
+		writable := true
+		if err := os.MkdirAll(c.LibraryDir, 0o755); err != nil {
+			writable = false
+		} else {
+			probe := filepath.Join(c.LibraryDir, ".write-probe")
+			if f, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY, 0o600); err != nil {
+				writable = false
+			} else {
+				f.Close()
+				os.Remove(probe)
+			}
+		}
+		if !writable {
+			issues = append(issues, "Library folder is not writable: "+c.LibraryDir)
 		}
 	}
 	return issues
