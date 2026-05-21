@@ -40,6 +40,9 @@ func main() {
 	if cfg.RAGDBPath == "" {
 		cfg.RAGDBPath = filepath.Join(dataDir(), "rag.db")
 	}
+	if cfg.LibraryDir == "" {
+		cfg.LibraryDir = filepath.Join(dataDir(), "library")
+	}
 
 	st, err := store.Open(cfg.AppDBPath)
 	if err != nil {

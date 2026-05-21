@@ -15,6 +15,7 @@ type Config struct {
 	EmbeddingModel     string
 	AppDBPath          string
 	RAGDBPath          string
+	LibraryDir         string
 	TextbooksConfig    string
 	ModelsConfig       string
 	ContextTokenBudget int
@@ -37,6 +38,7 @@ func Load(envPath string) (Config, error) {
 		EmbeddingModel:     envOr("EMBEDDING_MODEL", "text-embedding-3-small"),
 		AppDBPath:          os.Getenv("APP_DB_PATH"),
 		RAGDBPath:          os.Getenv("RAG_DB_PATH"),
+		LibraryDir:         os.Getenv("LIBRARY_DIR"),
 		TextbooksConfig:    envOr("TEXTBOOKS_CONFIG", "textbooks.yaml"),
 		ModelsConfig:       envOr("MODELS_CONFIG", "models.yaml"),
 		ContextTokenBudget: envInt("CONTEXT_TOKEN_BUDGET", 2500),

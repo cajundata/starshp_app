@@ -42,3 +42,14 @@ func TestLoadReadsEnvFile(t *testing.T) {
 		t.Errorf("RAGTopK = %d", c.RAGTopK)
 	}
 }
+
+func TestLoadLibraryDir(t *testing.T) {
+	t.Setenv("LIBRARY_DIR", "/tmp/custom-library")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.LibraryDir != "/tmp/custom-library" {
+		t.Fatalf("LibraryDir = %q, want /tmp/custom-library", cfg.LibraryDir)
+	}
+}
