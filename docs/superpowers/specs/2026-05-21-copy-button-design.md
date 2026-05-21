@@ -20,6 +20,9 @@ manual text selection.
   via `navigator.clipboard.writeText`.
 - On a successful copy, the icon swaps to a **checkmark for ~1.5s**, then
   reverts to the copy icon. No toast, no other notification.
+- If the clipboard write fails (the `writeText` promise rejects), the
+  rejection is caught silently — the icon does not change, nothing crashes,
+  no toast.
 - The icon is a small inline SVG styled to match the existing muted-grey pill
   palette (foreground `#a9a9ad`, subtle border, transparent background).
 
@@ -40,15 +43,20 @@ and the `chat:token` stream handler does `last.textContent += tok` against
 
 The fix:
 
-- `.msg` becomes a **wrapper** containing two children:
-  - `.msg-text` — the actual text node (`white-space: pre-wrap`, carries the
-    bubble text and existing line-height).
-  - `.msg-actions` — the hover-revealed action row (assistant messages only).
+- `.msg` becomes a **positioning wrapper**: it keeps `align-self`
+  (flex-end / flex-start) and `max-width`, and becomes a vertical flex
+  column. It loses the bubble's background, border, border-radius, and
+  padding.
+- `.msg-text` becomes **the visible bubble**: it carries the background,
+  border, border-radius, padding, `white-space: pre-wrap`, and line-height.
+  The role-specific colors move to `.msg.user .msg-text` /
+  `.msg.assistant .msg-text`.
+- `.msg-actions` is a **sibling below `.msg-text`** — the hover-revealed
+  action row, rendered for assistant messages only. Sitting outside
+  `.msg-text` keeps the button visually below the bubble, not inside it.
 - `addMsg` writes text into `.msg-text` instead of `.msg`.
 - The `chat:token` handler appends tokens into
   `.msg.assistant:last-child .msg-text` instead of `.msg`.
-- The bubble's visual styling (background, border, border-radius, padding,
-  `align-self`) stays on `.msg`; `.msg-text` is an unstyled inner span/div.
 
 This touches the streaming token-append path, so a streaming smoke-test is
 required before shipping (see Verification).
@@ -59,8 +67,10 @@ required before shipping (see Verification).
   add a helper that builds and attaches the `.msg-actions` row with the copy
   button; call it for history messages and from `send()`'s `finally` block;
   update the `chat:token` handler's selector.
-- `frontend/src/style.css` — `.msg-text` (move `white-space: pre-wrap` here),
-  `.msg-actions` (hidden, hover-reveal), and the icon-button styling.
+- `frontend/src/style.css` — split `.msg` into a positioning wrapper plus
+  `.msg-text` (the styled bubble: background, border, padding,
+  `white-space: pre-wrap`), add `.msg-actions` (hidden, hover-reveal) and the
+  icon-button styling.
 
 No Go changes. No new Wails bindings. No backend, store, or RAG changes.
 
