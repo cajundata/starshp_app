@@ -1,4 +1,4 @@
-module github.com/cajundata/discussion_engine
+module github.com/cajundata/starshp_app
 
 go 1.25.0
 

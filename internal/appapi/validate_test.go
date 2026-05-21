@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cajundata/discussion_engine/internal/config"
+	"github.com/cajundata/starshp_app/internal/config"
 )
 
 func TestValidateStartup(t *testing.T) {

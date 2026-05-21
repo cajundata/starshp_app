@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cajundata/discussion_engine/internal/textbooks"
+	"github.com/cajundata/starshp_app/internal/textbooks"
 )
 
 // fakeEmbeddings returns a deterministic 3-dim vector per input.

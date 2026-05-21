@@ -8,7 +8,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/cajundata/discussion_engine/internal/rag/chunker"
+	"github.com/cajundata/starshp_app/internal/rag/chunker"
 	_ "modernc.org/sqlite"
 )
 

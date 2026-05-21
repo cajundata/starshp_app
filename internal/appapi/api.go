@@ -7,12 +7,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cajundata/discussion_engine/internal/chat"
-	"github.com/cajundata/discussion_engine/internal/config"
-	"github.com/cajundata/discussion_engine/internal/provider"
-	"github.com/cajundata/discussion_engine/internal/rag"
-	"github.com/cajundata/discussion_engine/internal/store"
-	"github.com/cajundata/discussion_engine/internal/textbooks"
+	"github.com/cajundata/starshp_app/internal/chat"
+	"github.com/cajundata/starshp_app/internal/config"
+	"github.com/cajundata/starshp_app/internal/provider"
+	"github.com/cajundata/starshp_app/internal/rag"
+	"github.com/cajundata/starshp_app/internal/store"
+	"github.com/cajundata/starshp_app/internal/textbooks"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 

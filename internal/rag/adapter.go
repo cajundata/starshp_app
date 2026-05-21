@@ -11,10 +11,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cajundata/discussion_engine/internal/rag/chunker"
-	"github.com/cajundata/discussion_engine/internal/rag/embedding"
-	"github.com/cajundata/discussion_engine/internal/rag/ragindex"
-	"github.com/cajundata/discussion_engine/internal/textbooks"
+	"github.com/cajundata/starshp_app/internal/rag/chunker"
+	"github.com/cajundata/starshp_app/internal/rag/embedding"
+	"github.com/cajundata/starshp_app/internal/rag/ragindex"
+	"github.com/cajundata/starshp_app/internal/textbooks"
 )
 
 const maxChunkTokens = 800

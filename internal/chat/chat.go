@@ -5,8 +5,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/cajundata/discussion_engine/internal/provider"
-	"github.com/cajundata/discussion_engine/internal/store"
+	"github.com/cajundata/starshp_app/internal/provider"
+	"github.com/cajundata/starshp_app/internal/store"
 )
 
 type Retriever interface {

@@ -6,11 +6,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cajundata/discussion_engine/internal/appapi"
-	"github.com/cajundata/discussion_engine/internal/config"
-	"github.com/cajundata/discussion_engine/internal/provider"
-	"github.com/cajundata/discussion_engine/internal/rag"
-	"github.com/cajundata/discussion_engine/internal/store"
+	"github.com/cajundata/starshp_app/internal/appapi"
+	"github.com/cajundata/starshp_app/internal/config"
+	"github.com/cajundata/starshp_app/internal/provider"
+	"github.com/cajundata/starshp_app/internal/rag"
+	"github.com/cajundata/starshp_app/internal/store"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -24,7 +24,7 @@ func dataDir() string {
 	if err != nil {
 		d, _ = os.Getwd()
 	}
-	p := filepath.Join(d, "discussion_engine")
+	p := filepath.Join(d, "starshp_app")
 	os.MkdirAll(p, 0o755)
 	return p
 }
@@ -60,7 +60,7 @@ func main() {
 	api := appapi.NewAPI(cfg, st, reg, ragAdpt)
 
 	if err := wails.Run(&options.App{
-		Title:  "Discussion Engine",
+		Title:  "Starshp",
 		Width:  1100,
 		Height: 760,
 		AssetServer: &assetserver.Options{Assets: assets},

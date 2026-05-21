@@ -1,4 +1,4 @@
-# Discussion Engine
+# Starshp
 
 A Grok-style desktop LLM chat client (Wails v2 + Go) for drafting accounting
 discussion posts. Per-message model choice across OpenAI and Anthropic,
@@ -75,11 +75,11 @@ recompile needed.
 
 ```bash
 wails dev      # hot-reload dev mode
-wails build    # release binary at build/bin/discussion_engine.exe
+wails build    # release binary at build/bin/starshp_app.exe
 ```
 
 On first launch the app creates its data directory at the OS user-config
-location (`%APPDATA%\discussion_engine\` on Windows). Two SQLite DBs live
+location (`%APPDATA%\starshp_app\` on Windows). Two SQLite DBs live
 there: `app.db` (conversations, messages, presets, scope) and `rag.db`
 (textbook chunks + embeddings). They are independent — rebuilding the RAG
 index never endangers chat history.
@@ -95,8 +95,8 @@ All variables read from `.env` (and the environment); see `.env.example`.
 | `OPENAI_API_KEY` | — | OpenAI key (chat + embeddings). |
 | `ANTHROPIC_API_KEY` | — | Anthropic key (chat only). |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI embedding model. |
-| `APP_DB_PATH` | `<user-config>/discussion_engine/app.db` | Chat history DB. |
-| `RAG_DB_PATH` | `<user-config>/discussion_engine/rag.db` | RAG index DB. |
+| `APP_DB_PATH` | `<user-config>/starshp_app/app.db` | Chat history DB. |
+| `RAG_DB_PATH` | `<user-config>/starshp_app/rag.db` | RAG index DB. |
 | `TEXTBOOKS_CONFIG` | `textbooks.yaml` | Path to textbook YAML. |
 | `MODELS_CONFIG` | `models.yaml` | Path to model registry. |
 | `CONTEXT_TOKEN_BUDGET` | `2500` | Max textbook context tokens injected per turn. |
@@ -118,7 +118,7 @@ streaming, or RAG.
 ## Project structure
 
 ```
-discussion_engine/
+starshp_app/
 ├── main.go                     # Wails bootstrap (config → store → rag → api)
 ├── models.yaml                 # selectable model registry (display + id + provider)
 ├── wails.json

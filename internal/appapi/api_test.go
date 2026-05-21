@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cajundata/discussion_engine/internal/config"
-	"github.com/cajundata/discussion_engine/internal/provider"
-	"github.com/cajundata/discussion_engine/internal/store"
+	"github.com/cajundata/starshp_app/internal/config"
+	"github.com/cajundata/starshp_app/internal/provider"
+	"github.com/cajundata/starshp_app/internal/store"
 )
 
 // When ragAdpt is nil but the conversation has a textbook scope, SendMessage

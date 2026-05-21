@@ -3,7 +3,7 @@ package appapi
 import (
 	"os"
 
-	"github.com/cajundata/discussion_engine/internal/config"
+	"github.com/cajundata/starshp_app/internal/config"
 )
 
 // ValidateStartup returns human-readable setup problems (empty = OK).

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cajundata/discussion_engine/internal/rag/chunker"
+	"github.com/cajundata/starshp_app/internal/rag/chunker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

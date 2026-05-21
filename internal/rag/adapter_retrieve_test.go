@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cajundata/discussion_engine/internal/textbooks"
+	"github.com/cajundata/starshp_app/internal/textbooks"
 )
 
 func TestRetrieveScopedAndBudgeted(t *testing.T) {
