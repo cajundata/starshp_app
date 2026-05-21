@@ -27,7 +27,7 @@ body { font-family: system-ui, sans-serif; }
 #tbModalInner label { display: block; padding: 4px 0; color: #cfcfd3; }
 .msg-actions { display: flex; gap: 6px; margin-top: 5px; opacity: 0; transition: opacity .12s; }
 .msg:hover .msg-actions { opacity: 1; }
-.copy-btn { display: inline-flex; background: #202024; border: 1px solid #34343a; color: #a9a9ad; border-radius: 6px; padding: 3px 6px; cursor: pointer; }
+.copy-btn { display: inline-flex; align-items: center; background: #202024; border: 1px solid #34343a; color: #a9a9ad; border-radius: 6px; padding: 3px 6px; cursor: pointer; }
 .copy-btn:hover { color: #e7e7e8; }
 .copy-btn.copied { color: #3fb950; border-color: #2ea043; }
 .copy-btn svg { display: block; }

@@ -39,12 +39,18 @@ function attachCopyButton(msgEl: HTMLElement) {
   btn.className = 'copy-btn'
   btn.title = 'Copy'
   btn.innerHTML = COPY_ICON
+  let revertTimer: ReturnType<typeof setTimeout> | null = null
   btn.onclick = async () => {
     try {
       await navigator.clipboard.writeText(msgText(msgEl).textContent || '')
+      if (revertTimer !== null) clearTimeout(revertTimer)
       btn.classList.add('copied')
       btn.innerHTML = CHECK_ICON
-      setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = COPY_ICON }, 1500)
+      revertTimer = setTimeout(() => {
+        btn.classList.remove('copied')
+        btn.innerHTML = COPY_ICON
+        revertTimer = null
+      }, 1500)
     } catch {
       // clipboard unavailable — leave the icon unchanged, no crash
     }
