@@ -87,6 +87,9 @@ async function loadConversations() {
 }
 
 async function deleteConversation(id: string) {
+  // Deleting the conversation that is mid-stream would leave the in-flight
+  // SendMessage writing to a deleted row — ignore the click until it finishes.
+  if (streaming && id === activeConv) return
   if (!confirm('Delete this conversation? This cannot be undone.')) return
   try {
     await App.DeleteConversation(id)
