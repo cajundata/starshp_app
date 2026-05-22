@@ -3,7 +3,6 @@ package main
 import (
 	"embed"
 	"log"
-	"os"
 	"path/filepath"
 
 	"github.com/cajundata/starshp_app/internal/appapi"
@@ -19,29 +18,23 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-func dataDir() string {
-	d, err := os.UserConfigDir()
-	if err != nil {
-		d, _ = os.Getwd()
-	}
-	p := filepath.Join(d, "starshp_app")
-	os.MkdirAll(p, 0o755)
-	return p
-}
-
 func main() {
-	cfg, err := config.Load(".env")
+	appDir, err := config.AppDir()
+	if err != nil {
+		log.Fatalf("app dir: %v", err)
+	}
+	cfg, err := config.Load(filepath.Join(appDir, ".env"))
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
 	if cfg.AppDBPath == "" {
-		cfg.AppDBPath = filepath.Join(dataDir(), "app.db")
+		cfg.AppDBPath = filepath.Join(appDir, "app.db")
 	}
 	if cfg.RAGDBPath == "" {
-		cfg.RAGDBPath = filepath.Join(dataDir(), "rag.db")
+		cfg.RAGDBPath = filepath.Join(appDir, "rag.db")
 	}
 	if cfg.LibraryDir == "" {
-		cfg.LibraryDir = filepath.Join(dataDir(), "library")
+		cfg.LibraryDir = filepath.Join(appDir, "library")
 	}
 
 	st, err := store.Open(cfg.AppDBPath)
