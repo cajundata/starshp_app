@@ -25,6 +25,14 @@ func TestLoadDefaults(t *testing.T) {
 	if c.OpenAIAPIKey != "ok" {
 		t.Errorf("OpenAIAPIKey = %q", c.OpenAIAPIKey)
 	}
+	// With envPath "", filepath.Dir("") is "." and filepath.Join cleans the
+	// result back to the bare name — pin that documented edge case.
+	if c.TextbooksConfig != "textbooks.yaml" {
+		t.Errorf("TextbooksConfig = %q, want textbooks.yaml", c.TextbooksConfig)
+	}
+	if c.ModelsConfig != "models.yaml" {
+		t.Errorf("ModelsConfig = %q, want models.yaml", c.ModelsConfig)
+	}
 }
 
 func TestLoadReadsEnvFile(t *testing.T) {
