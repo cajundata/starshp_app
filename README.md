@@ -57,19 +57,96 @@ plus pure-Go provider SDKs.
 
 ## Setup
 
-```bash
-cp .env.example .env
-# Edit .env to fill in OPENAI_API_KEY (+ ANTHROPIC_API_KEY if using Claude).
+Starshp reads its configuration from a per-user **app directory**, created
+automatically on first launch. Copy the three committed templates
+(`.env.example`, `models.example.yaml`, `textbooks.example.yaml`) into that
+directory, drop the `.example` from each name, and fill in your API keys.
 
-# Point textbooks.yaml at your markdown textbook root, e.g.:
-# textbooks:
-#   - name: intermediate-accounting
-#     chapter_dir: /path/to/textbooks/intermediate-accounting
+See [Config files and textbooks](#config-files-and-textbooks) for where the
+app directory is, the copy commands, and the YAML formats.
+
+## Config files and textbooks
+
+Starshp keeps every per-user file in one **app directory**:
+
+| OS | App directory |
+| --- | --- |
+| Windows | `%APPDATA%\starshp_app` |
+| Linux | `~/.config/starshp_app` |
+| macOS | `~/Library/Application Support/starshp_app` |
+
+It holds `.env`, `models.yaml`, `textbooks.yaml`, your textbook chapter
+folders, and the runtime data (`app.db`, `rag.db`, `library/`). The directory
+is created automatically on first launch. Set the `STARSHP_HOME` environment
+variable (an absolute path) to override its location — handy for tests or a
+portable install.
+
+Three templates ship in the repo. Copy each into the app directory and edit:
+
+```bash
+cp .env.example           <app-dir>/.env
+cp models.example.yaml    <app-dir>/models.yaml
+cp textbooks.example.yaml <app-dir>/textbooks.yaml
 ```
 
-`models.yaml` is committed with sensible defaults (Claude Opus/Sonnet/Haiku
-4.x and `gpt-5.4-2026-03-05`); edit it freely as model IDs evolve — no
-recompile needed.
+Edit `.env` to fill in your API keys. None of these files require a recompile.
+
+Typical app-directory layout:
+
+```
+%APPDATA%\starshp_app\
+├── .env
+├── models.yaml
+├── textbooks.yaml
+├── app.db                    (created at runtime)
+├── rag.db                    (created at runtime)
+├── library/                  (created at runtime)
+└── intermediate-accounting/  (your textbook chapter folders)
+    ├── chapter-01.md
+    └── ...
+```
+
+### `textbooks.yaml`
+
+Each entry names a book and points at its directory of chapter markdown:
+
+```yaml
+textbooks:
+  - name: intermediate-accounting
+    chapter_dir: ./intermediate-accounting
+  - name: financial-accounting
+    chapter_dir: /absolute/path/to/financial-accounting
+```
+
+- `chapter_dir` is resolved **relative to the directory containing
+  `textbooks.yaml`** (the app directory) — not the working directory. Keep it
+  `./<book>` and store the folders alongside the file, or give an absolute
+  path.
+- A chapter folder holds files named `chapter-1.md`, `chapter-2.md`, … —
+  leading zeros optional (`chapter-01.md` is equivalent). Files that do not
+  match that pattern are ignored.
+- `name` is the label in the per-conversation textbook picker and the key
+  used to scope RAG retrieval.
+- `textbooks.yaml` is optional: if absent, RAG is unavailable and chat still
+  works. If present but a `chapter_dir` cannot be read, startup fails — fix
+  the path and relaunch.
+
+### `models.yaml`
+
+The list of models offered in the per-message picker:
+
+```yaml
+models:
+  - display: Claude Opus 4.7      # label shown in the UI
+    id: claude-opus-4-7           # identifier sent to the provider
+    provider: anthropic           # "anthropic" or "openai"
+  - display: GPT-5.4
+    id: gpt-5.4-2026-03-05
+    provider: openai
+```
+
+Edit it freely as model IDs evolve — no recompile. A missing or unreadable
+`models.yaml` produces a setup notice at launch and an empty model dropdown.
 
 ## Running
 
@@ -78,27 +155,27 @@ wails dev      # hot-reload dev mode
 wails build    # release binary at build/bin/starshp_app.exe
 ```
 
-On first launch the app creates its data directory at the OS user-config
-location (`%APPDATA%\starshp_app\` on Windows). Two SQLite DBs live
-there: `app.db` (conversations, messages, presets, scope) and `rag.db`
-(textbook chunks + embeddings). They are independent — rebuilding the RAG
-index never endangers chat history.
-
+`app.db` (conversations, messages, presets, scope) and `rag.db` (textbook
+chunks + embeddings) are created in the app directory on first launch. They
+are independent — rebuilding the RAG index never endangers chat history.
 Override either path via `APP_DB_PATH` / `RAG_DB_PATH` in `.env`.
 
 ## Configuration reference
 
-All variables read from `.env` (and the environment); see `.env.example`.
+All variables below are read from `.env` (and the OS environment); see
+`.env.example`. `STARSHP_HOME` is the exception — it must be a real
+environment variable, since it determines where `.env` itself is found.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `STARSHP_HOME` | OS app directory | Overrides the app directory. Real env var only (absolute path), not a `.env` entry. |
 | `OPENAI_API_KEY` | — | OpenAI key (chat + embeddings). |
 | `ANTHROPIC_API_KEY` | — | Anthropic key (chat only). |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI embedding model. |
-| `APP_DB_PATH` | `<user-config>/starshp_app/app.db` | Chat history DB. |
-| `RAG_DB_PATH` | `<user-config>/starshp_app/rag.db` | RAG index DB. |
-| `TEXTBOOKS_CONFIG` | `textbooks.yaml` | Path to textbook YAML. |
-| `MODELS_CONFIG` | `models.yaml` | Path to model registry. |
+| `APP_DB_PATH` | `<app-dir>/app.db` | Chat history DB. |
+| `RAG_DB_PATH` | `<app-dir>/rag.db` | RAG index DB. |
+| `TEXTBOOKS_CONFIG` | `textbooks.yaml` | Textbook manifest; a relative value resolves inside the app directory. |
+| `MODELS_CONFIG` | `models.yaml` | Model registry; a relative value resolves inside the app directory. |
 | `CONTEXT_TOKEN_BUDGET` | `2500` | Max textbook context tokens injected per turn. |
 | `RAG_TOP_K` | `8` | Top-K passed to vector search (over-fetched ×6, then scope-filtered + budget-trimmed). |
 
@@ -121,6 +198,8 @@ streaming, or RAG.
 starshp_app/
 ├── main.go                     # Wails bootstrap (config → store → rag → api)
 ├── models.yaml                 # selectable model registry (display + id + provider)
+├── models.example.yaml         # template — copy into your app directory
+├── textbooks.example.yaml      # template — copy into your app directory
 ├── wails.json
 ├── docs/
 │   ├── SMOKE.md                # manual smoke checklist

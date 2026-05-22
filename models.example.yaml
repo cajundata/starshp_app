@@ -1,0 +1,24 @@
+# models.example.yaml — template for the model registry.
+#
+# Copy this into your app directory as `models.yaml` and edit it. The app
+# directory is %APPDATA%\starshp_app on Windows, ~/.config/starshp_app on
+# Linux, ~/Library/Application Support/starshp_app on macOS. Override it with
+# the STARSHP_HOME environment variable.
+#
+# Each entry needs:
+#   display  — human-readable name shown in the UI
+#   id       — the provider's model identifier sent on API calls
+#   provider — "anthropic" or "openai"
+models:
+  - display: Claude Opus 4.7
+    id: claude-opus-4-7
+    provider: anthropic
+  - display: Claude Sonnet 4.6
+    id: claude-sonnet-4-6
+    provider: anthropic
+  - display: Claude Haiku 4.5
+    id: claude-haiku-4-5-20251001
+    provider: anthropic
+  - display: GPT-5.4
+    id: gpt-5.4-2026-03-05
+    provider: openai

@@ -1,0 +1,16 @@
+# textbooks.example.yaml — template for the textbook corpus manifest.
+#
+# Copy this into your app directory as `textbooks.yaml` and edit it. The app
+# directory is %APPDATA%\starshp_app on Windows, ~/.config/starshp_app on
+# Linux, ~/Library/Application Support/starshp_app on macOS. Override it with
+# the STARSHP_HOME environment variable.
+#
+# `chapter_dir` is resolved relative to the directory that contains this file;
+# absolute paths are used as-is. Each chapter directory holds markdown files
+# named chapter-1.md, chapter-2.md, ... (leading zeros optional, e.g.
+# chapter-01.md). Files that do not match that pattern are ignored.
+textbooks:
+  - name: intermediate-accounting
+    chapter_dir: ./intermediate-accounting
+  - name: financial-accounting
+    chapter_dir: ./financial-accounting
