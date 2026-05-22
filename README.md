@@ -198,7 +198,6 @@ streaming, or RAG.
 ```
 starshp_app/
 ├── main.go                     # Wails bootstrap (config → store → rag → api)
-├── models.yaml                 # selectable model registry (display + id + provider)
 ├── models.example.yaml         # template — copy into your app directory
 ├── textbooks.example.yaml      # template — copy into your app directory
 ├── wails.json
