@@ -128,8 +128,8 @@ textbooks:
 - `name` is the label in the per-conversation textbook picker and the key
   used to scope RAG retrieval.
 - `textbooks.yaml` is optional: if absent, RAG is unavailable and chat still
-  works. If present but a `chapter_dir` cannot be read, startup fails — fix
-  the path and relaunch.
+  works. If present but a `chapter_dir` cannot be read, opening the textbook
+  picker or attaching a book returns an error — fix the path and try again.
 
 ### `models.yaml`
 
@@ -174,6 +174,7 @@ environment variable, since it determines where `.env` itself is found.
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI embedding model. |
 | `APP_DB_PATH` | `<app-dir>/app.db` | Chat history DB. |
 | `RAG_DB_PATH` | `<app-dir>/rag.db` | RAG index DB. |
+| `LIBRARY_DIR` | `<app-dir>/library` | Prompt library storage directory. |
 | `TEXTBOOKS_CONFIG` | `textbooks.yaml` | Textbook manifest; a relative value resolves inside the app directory. |
 | `MODELS_CONFIG` | `models.yaml` | Model registry; a relative value resolves inside the app directory. |
 | `CONTEXT_TOKEN_BUDGET` | `2500` | Max textbook context tokens injected per turn. |
