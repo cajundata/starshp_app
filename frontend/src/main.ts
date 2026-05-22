@@ -65,10 +65,40 @@ async function loadConversations() {
   for (const c of convs) {
     const d = document.createElement('div')
     d.className = 'conv' + (c.id === activeConv ? ' active' : '')
-    d.textContent = c.title
     d.onclick = () => openConversation(c.id)
+
+    const title = document.createElement('span')
+    title.className = 'conv-title'
+    title.textContent = c.title
+    d.appendChild(title)
+
+    const del = document.createElement('button')
+    del.className = 'conv-del'
+    del.textContent = '✕'
+    del.title = 'Delete conversation'
+    del.onclick = (e) => {
+      e.stopPropagation()
+      void deleteConversation(c.id)
+    }
+    d.appendChild(del)
+
     list.appendChild(d)
   }
+}
+
+async function deleteConversation(id: string) {
+  if (!confirm('Delete this conversation? This cannot be undone.')) return
+  try {
+    await App.DeleteConversation(id)
+  } catch (e: any) {
+    alert(`Could not delete the conversation: ${e?.userMessage || e}`)
+    return
+  }
+  if (id === activeConv) {
+    activeConv = null
+    thread.innerHTML = ''
+  }
+  await loadConversations()
 }
 
 async function openConversation(id: string) {
