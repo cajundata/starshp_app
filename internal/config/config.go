@@ -65,16 +65,16 @@ func Load(envPath string) (Config, error) {
 		ContextTokenBudget: envInt("CONTEXT_TOKEN_BUDGET", 2500),
 		RAGTopK:            envInt("RAG_TOP_K", 8),
 	}
-	// When CONFIG_PATH is set, resolve relative config-file paths against it so
-	// they no longer depend on the process working directory (which differs
-	// between `wails dev` and a packaged build). Absolute paths are left as-is.
-	if base := strings.TrimSpace(os.Getenv("CONFIG_PATH")); base != "" {
-		if !filepath.IsAbs(c.TextbooksConfig) {
-			c.TextbooksConfig = filepath.Join(base, c.TextbooksConfig)
-		}
-		if !filepath.IsAbs(c.ModelsConfig) {
-			c.ModelsConfig = filepath.Join(base, c.ModelsConfig)
-		}
+	// Resolve relative config-file paths against the directory that contains
+	// .env (the app directory), so they do not depend on the process working
+	// directory. Absolute paths are left as-is. When envPath is "", base is "."
+	// and filepath.Join cleans the result back to the bare name.
+	base := filepath.Dir(envPath)
+	if !filepath.IsAbs(c.TextbooksConfig) {
+		c.TextbooksConfig = filepath.Join(base, c.TextbooksConfig)
+	}
+	if !filepath.IsAbs(c.ModelsConfig) {
+		c.ModelsConfig = filepath.Join(base, c.ModelsConfig)
 	}
 	return c, nil
 }

@@ -54,50 +54,31 @@ func TestLoadLibraryDir(t *testing.T) {
 	}
 }
 
-func TestLoadResolvesRelativeConfigsAgainstConfigPath(t *testing.T) {
+func TestLoadResolvesRelativeConfigsAgainstEnvDir(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "ok")
-	base := t.TempDir()
-	t.Setenv("CONFIG_PATH", base)
-	c, err := Load("")
+	dir := t.TempDir()
+	c, err := Load(filepath.Join(dir, ".env"))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	wantTextbooks := filepath.Join(base, "textbooks.yaml")
-	if c.TextbooksConfig != wantTextbooks {
-		t.Errorf("TextbooksConfig = %q, want %q", c.TextbooksConfig, wantTextbooks)
+	if want := filepath.Join(dir, "textbooks.yaml"); c.TextbooksConfig != want {
+		t.Errorf("TextbooksConfig = %q, want %q", c.TextbooksConfig, want)
 	}
-	wantModels := filepath.Join(base, "models.yaml")
-	if c.ModelsConfig != wantModels {
-		t.Errorf("ModelsConfig = %q, want %q", c.ModelsConfig, wantModels)
+	if want := filepath.Join(dir, "models.yaml"); c.ModelsConfig != want {
+		t.Errorf("ModelsConfig = %q, want %q", c.ModelsConfig, want)
 	}
 }
 
-func TestLoadKeepsAbsoluteConfigsWhenConfigPathSet(t *testing.T) {
+func TestLoadKeepsAbsoluteConfigPaths(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "ok")
-	t.Setenv("CONFIG_PATH", t.TempDir())
-	absTextbooks := filepath.Join(t.TempDir(), "elsewhere", "textbooks.yaml")
-	t.Setenv("TEXTBOOKS_CONFIG", absTextbooks)
-	c, err := Load("")
+	absModels := filepath.Join(t.TempDir(), "elsewhere", "models.yaml")
+	t.Setenv("MODELS_CONFIG", absModels)
+	c, err := Load(filepath.Join(t.TempDir(), ".env"))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if c.TextbooksConfig != absTextbooks {
-		t.Errorf("TextbooksConfig = %q, want %q (absolute path must be unchanged)", c.TextbooksConfig, absTextbooks)
-	}
-}
-
-func TestLoadWithoutConfigPathKeepsBareConfigNames(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "ok")
-	t.Setenv("CONFIG_PATH", "")
-	c, err := Load("")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if c.TextbooksConfig != "textbooks.yaml" {
-		t.Errorf("TextbooksConfig = %q, want textbooks.yaml", c.TextbooksConfig)
-	}
-	if c.ModelsConfig != "models.yaml" {
-		t.Errorf("ModelsConfig = %q, want models.yaml", c.ModelsConfig)
+	if c.ModelsConfig != absModels {
+		t.Errorf("ModelsConfig = %q, want %q (absolute path must be unchanged)", c.ModelsConfig, absModels)
 	}
 }
 
