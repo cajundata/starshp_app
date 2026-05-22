@@ -3,6 +3,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -20,6 +21,26 @@ type Config struct {
 	ModelsConfig       string
 	ContextTokenBudget int
 	RAGTopK            int
+}
+
+// AppDir returns the per-user application directory, creating it if needed.
+// STARSHP_HOME overrides the location (use an absolute path); otherwise it is
+// os.UserConfigDir()/starshp_app — %APPDATA%\starshp_app on Windows,
+// ~/.config/starshp_app on Linux, ~/Library/Application Support/starshp_app
+// on macOS.
+func AppDir() (string, error) {
+	dir := strings.TrimSpace(os.Getenv("STARSHP_HOME"))
+	if dir == "" {
+		base, err := os.UserConfigDir()
+		if err != nil {
+			return "", err
+		}
+		dir = filepath.Join(base, "starshp_app")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 // Load reads .env at envPath (if non-empty and present), then resolves config
@@ -43,6 +64,17 @@ func Load(envPath string) (Config, error) {
 		ModelsConfig:       envOr("MODELS_CONFIG", "models.yaml"),
 		ContextTokenBudget: envInt("CONTEXT_TOKEN_BUDGET", 2500),
 		RAGTopK:            envInt("RAG_TOP_K", 8),
+	}
+	// When CONFIG_PATH is set, resolve relative config-file paths against it so
+	// they no longer depend on the process working directory (which differs
+	// between `wails dev` and a packaged build). Absolute paths are left as-is.
+	if base := strings.TrimSpace(os.Getenv("CONFIG_PATH")); base != "" {
+		if !filepath.IsAbs(c.TextbooksConfig) {
+			c.TextbooksConfig = filepath.Join(base, c.TextbooksConfig)
+		}
+		if !filepath.IsAbs(c.ModelsConfig) {
+			c.ModelsConfig = filepath.Join(base, c.ModelsConfig)
+		}
 	}
 	return c, nil
 }

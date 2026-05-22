@@ -53,3 +53,80 @@ func TestLoadLibraryDir(t *testing.T) {
 		t.Fatalf("LibraryDir = %q, want /tmp/custom-library", cfg.LibraryDir)
 	}
 }
+
+func TestLoadResolvesRelativeConfigsAgainstConfigPath(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "ok")
+	base := t.TempDir()
+	t.Setenv("CONFIG_PATH", base)
+	c, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	wantTextbooks := filepath.Join(base, "textbooks.yaml")
+	if c.TextbooksConfig != wantTextbooks {
+		t.Errorf("TextbooksConfig = %q, want %q", c.TextbooksConfig, wantTextbooks)
+	}
+	wantModels := filepath.Join(base, "models.yaml")
+	if c.ModelsConfig != wantModels {
+		t.Errorf("ModelsConfig = %q, want %q", c.ModelsConfig, wantModels)
+	}
+}
+
+func TestLoadKeepsAbsoluteConfigsWhenConfigPathSet(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "ok")
+	t.Setenv("CONFIG_PATH", t.TempDir())
+	absTextbooks := filepath.Join(t.TempDir(), "elsewhere", "textbooks.yaml")
+	t.Setenv("TEXTBOOKS_CONFIG", absTextbooks)
+	c, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.TextbooksConfig != absTextbooks {
+		t.Errorf("TextbooksConfig = %q, want %q (absolute path must be unchanged)", c.TextbooksConfig, absTextbooks)
+	}
+}
+
+func TestLoadWithoutConfigPathKeepsBareConfigNames(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "ok")
+	t.Setenv("CONFIG_PATH", "")
+	c, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.TextbooksConfig != "textbooks.yaml" {
+		t.Errorf("TextbooksConfig = %q, want textbooks.yaml", c.TextbooksConfig)
+	}
+	if c.ModelsConfig != "models.yaml" {
+		t.Errorf("ModelsConfig = %q, want models.yaml", c.ModelsConfig)
+	}
+}
+
+func TestAppDirHonorsStarshpHome(t *testing.T) {
+	want := filepath.Join(t.TempDir(), "custom-home")
+	t.Setenv("STARSHP_HOME", want)
+	got, err := AppDir()
+	if err != nil {
+		t.Fatalf("AppDir: %v", err)
+	}
+	if got != want {
+		t.Errorf("AppDir() = %q, want %q", got, want)
+	}
+	if fi, statErr := os.Stat(got); statErr != nil || !fi.IsDir() {
+		t.Errorf("AppDir did not create the directory: stat err=%v", statErr)
+	}
+}
+
+func TestAppDirFallsBackToUserConfigDir(t *testing.T) {
+	t.Setenv("STARSHP_HOME", "")
+	got, err := AppDir()
+	if err != nil {
+		t.Fatalf("AppDir: %v", err)
+	}
+	base, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatalf("UserConfigDir: %v", err)
+	}
+	if want := filepath.Join(base, "starshp_app"); got != want {
+		t.Errorf("AppDir() = %q, want %q", got, want)
+	}
+}
