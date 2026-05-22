@@ -129,4 +129,7 @@ func TestAppDirFallsBackToUserConfigDir(t *testing.T) {
 	if want := filepath.Join(base, "starshp_app"); got != want {
 		t.Errorf("AppDir() = %q, want %q", got, want)
 	}
+	if fi, statErr := os.Stat(got); statErr != nil || !fi.IsDir() {
+		t.Errorf("AppDir did not create or find the directory: stat err=%v", statErr)
+	}
 }
