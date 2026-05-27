@@ -32,3 +32,11 @@ Run: `wails dev`
 
 18. [ ] Rename `<app-dir>/textbooks/<book>/` so the manifest path is broken → 📚 Textbooks still opens; that book renders as `(unavailable: …)` with its checkbox disabled; other books remain selectable.
 19. [ ] Restore the folder → reopen the picker; the book is selectable again with its chapter count.
+
+## Context tracking footer
+
+20. [ ] **Footer renders after first reply on a fresh conversation.** Create a new conversation, send a short message, wait for the reply. The strip below the thread shows `ctx N / M · cache K` (with denominator if the active model has `max_context` set in `models.yaml`).
+21. [ ] **Footer updates across model switches mid-conversation.** Switch the model picker mid-conversation, send a follow-up. The denominator shifts to the new model's `max_context`; values keep growing turn over turn.
+22. [ ] **`~` marker after Stop.** Start a long reply, click Stop. The footer keeps the previous turn's values, prefixed with `~`.
+23. [ ] **No denominator when `max_context` is omitted.** Remove `max_context` from one model in `models.yaml`, restart, send a message with that model. Footer shows `ctx N · cache K` (no `/ M` segment).
+24. [ ] **Footer survives conversation switches.** Open a conversation with prior history; the footer seeds from the last assistant message's recorded tokens. Switch to another conversation, then back.
