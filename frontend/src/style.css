@@ -55,3 +55,5 @@ body { font-family: system-ui, sans-serif; }
 #editorDelete { background: #2b2b30; color: #e0654a; border: 1px solid #34343a; border-radius: 7px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 #editorSave { background: #ff5714; color: #fff; border: 0; border-radius: 7px; padding: 6px 14px; font-weight: 600; cursor: pointer; }
 #editorArea { flex: 1; width: 100%; background: #0f0f10; color: #e7e7e8; border: 0; outline: none; resize: none; padding: 16px 18px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13px; line-height: 1.5; }
+.ctx-footer { padding: 4px 14px; color: #6f6f76; font-size: 11px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; border-top: 1px solid #1c1c1f; background: #141416; line-height: 1.4; }
+.ctx-footer.hidden { display: none; }
