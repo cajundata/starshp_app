@@ -27,3 +27,8 @@ Run: `wails dev`
 15. [x] Send a message → the active items' bodies reach the model in the system prompt, with the H1 stripped.
 16. [x] Switch conversations and relaunch the app → each conversation restores its own active set (sticky).
 17. [x] Delete an active item's `.md` file on disk → it drops from the panel and is skipped on send (a soft notice appears), no crash.
+
+## Textbooks
+
+18. [ ] Rename `<app-dir>/textbooks/<book>/` so the manifest path is broken → 📚 Textbooks still opens; that book renders as `(unavailable: …)` with its checkbox disabled; other books remain selectable.
+19. [ ] Restore the folder → reopen the picker; the book is selectable again with its chapter count.
