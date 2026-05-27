@@ -5,6 +5,31 @@ import { EventsOn } from '../wailsjs/runtime/runtime'
 let activeConv: string | null = null
 let streaming = false
 
+type Usage = { input: number; output: number; cached: number; modelID: string; stale: boolean }
+const latestUsage = new Map<string, Usage>()
+let usagePendingForConv: string | null = null  // set at send-start; cleared by chat:usage; if still set after send completes, mark stale
+
+const fmt = (n: number) => n.toLocaleString('en-US')
+
+function modelMaxContext(modelID: string, models: { id: string; maxContext?: number }[]): number {
+  const m = models.find(x => x.id === modelID)
+  return m?.maxContext ?? 0
+}
+
+let cachedModels: { id: string; maxContext?: number }[] = []
+
+function updateFooter() {
+  const el = $('ctxFooter')
+  if (!activeConv) { el.classList.add('hidden'); el.textContent = ''; return }
+  const u = latestUsage.get(activeConv)
+  if (!u) { el.classList.add('hidden'); el.textContent = ''; return }
+  const max = modelMaxContext(u.modelID, cachedModels)
+  const prefix = u.stale ? '~' : ''
+  const denom = max > 0 ? ` / ${fmt(max)}` : ''
+  el.textContent = `ctx ${prefix}${fmt(u.input)}${denom} · cache ${fmt(u.cached)}`
+  el.classList.remove('hidden')
+}
+
 const $ = (id: string) => document.getElementById(id) as HTMLElement
 const thread = $('thread')
 const input = $('input') as HTMLTextAreaElement
@@ -100,6 +125,8 @@ async function deleteConversation(id: string) {
   if (id === activeConv) {
     activeConv = null
     thread.innerHTML = ''
+    latestUsage.delete(id)
+    updateFooter()
   }
   await loadConversations()
 }
@@ -112,6 +139,22 @@ async function openConversation(id: string) {
     const el = addMsg(m.role, m.content)
     if (m.role === 'assistant' && m.content.trim()) attachCopyButton(el)
   }
+  // Seed footer from the most recent assistant message that carries usage.
+  if (!latestUsage.has(id)) {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i] as any
+      if (m.role === 'assistant' && m.inputTokens != null && m.outputTokens != null) {
+        latestUsage.set(id, {
+          input: m.inputTokens,
+          output: m.outputTokens,
+          cached: m.cachedInputTokens ?? 0,
+          modelID: m.model || '',
+          stale: false,
+        })
+        break
+      }
+    }
+  }
   const convs = (await App.ListConversations()) || []
   const c = convs.find(x => x.id === id)
   if (c && c.pinnedModel) {
@@ -119,6 +162,7 @@ async function openConversation(id: string) {
       modelSel.value = c.pinnedModel
     }
   }
+  updateFooter()
   await loadConversations()
 }
 
@@ -129,6 +173,7 @@ async function newChat() {
 
 async function loadMeta() {
   const models = (await App.Models()) || []
+  cachedModels = models
   modelSel.innerHTML = models.map(m => `<option value="${m.id}">${m.display}</option>`).join('')
 }
 
@@ -151,6 +196,7 @@ async function send() {
   addMsg('user', text)
   const asst = addMsg('assistant', '')
   streaming = true
+  usagePendingForConv = activeConv
   sendBtn.textContent = 'Stop ◼'
   sendBtn.classList.add('streaming')
   try {
@@ -163,6 +209,16 @@ async function send() {
     sendBtn.textContent = 'Send ▸'
     sendBtn.classList.remove('streaming')
     if (msgText(asst).textContent?.trim()) attachCopyButton(asst)
+    // If the chat:usage event never arrived (cancel, SDK gap, error), mark
+    // the last-known footer entry stale so the user sees a ~ marker.
+    if (usagePendingForConv === activeConv) {
+      const u = latestUsage.get(activeConv!)
+      if (u) {
+        latestUsage.set(activeConv!, { ...u, stale: true })
+        updateFooter()
+      }
+    }
+    usagePendingForConv = null
     await loadConversations()
   }
 }
@@ -170,6 +226,14 @@ async function send() {
 EventsOn('chat:token', (tok: string) => {
   const last = thread.querySelector('.msg.assistant:last-child .msg-text')
   if (last) { last.textContent += tok; thread.scrollTop = thread.scrollHeight }
+})
+
+EventsOn('chat:usage', (p: { convID: string; input: number; output: number; cached: number; modelID: string }) => {
+  latestUsage.set(p.convID, { ...p, stale: false })
+  if (p.convID === activeConv) {
+    usagePendingForConv = null
+    updateFooter()
+  }
 })
 
 EventsOn('rag:index', (p: any) => {
