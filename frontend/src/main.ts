@@ -189,14 +189,49 @@ EventsOn('library:notice', (msg: string) => {
 
 async function showTextbooks() {
   if (!activeConv) await newChat()
-  const books = (await App.ListBooks()) || []
-  const current = (await App.GetConversationScope(activeConv!)) || []
   const inner = $('tbModalInner')
+  // Open the modal first so any backend failure renders inside it instead of
+  // leaving the user with a button that "does nothing."
   inner.innerHTML = '<h3>Attach textbooks</h3>'
-  for (const b of books) {
-    const checked = current.some(s => s.name === b.name) ? 'checked' : ''
-    inner.innerHTML += `<label><input type="checkbox" data-book="${b.name}" ${checked}/> ${b.name} (${b.chapters.length} ch)</label>`
+  $('tbModal').classList.remove('hidden')
+
+  let books: Awaited<ReturnType<typeof App.ListBooks>>
+  let current: Awaited<ReturnType<typeof App.GetConversationScope>>
+  try {
+    books = (await App.ListBooks()) || []
+    current = (await App.GetConversationScope(activeConv!)) || []
+  } catch (e: any) {
+    const err = document.createElement('p')
+    err.className = 'tb-error'
+    err.textContent = `Could not load textbooks: ${e?.userMessage || e}`
+    inner.appendChild(err)
+    return
   }
+
+  if (books.length === 0) {
+    const empty = document.createElement('p')
+    empty.className = 'tb-empty'
+    empty.textContent = 'No textbooks configured. Add entries to textbooks.yaml in your app directory.'
+    inner.appendChild(empty)
+    return
+  }
+
+  for (const b of books) {
+    const label = document.createElement('label')
+    const cb = document.createElement('input')
+    cb.type = 'checkbox'
+    cb.dataset.book = b.name
+    cb.checked = current.some(s => s.name === b.name)
+    cb.disabled = !!b.error
+    label.appendChild(cb)
+    const span = document.createElement('span')
+    span.textContent = b.error
+      ? ` ${b.name} (unavailable: ${b.error})`
+      : ` ${b.name} (${b.chapters.length} ch)`
+    label.appendChild(span)
+    inner.appendChild(label)
+  }
+
   const save = document.createElement('button')
   save.textContent = 'Save'
   save.onclick = async () => {
@@ -212,7 +247,6 @@ async function showTextbooks() {
     finally { ragStatusEl = null }
   }
   inner.appendChild(save)
-  $('tbModal').classList.remove('hidden')
 }
 
 // ---- Prompt / context library ----------------------------------------------
