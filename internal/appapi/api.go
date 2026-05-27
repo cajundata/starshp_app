@@ -198,6 +198,16 @@ func (a *API) EnsureIndexed(convID string) error {
 	}
 	for _, name := range booksToIndex(configured, requested) {
 		b := byName[name]
+		// Scan flags an unreadable chapter_dir on the book itself. Indexing
+		// would otherwise silently no-op and the user would later get empty
+		// retrieval with no explanation.
+		if b.Error != "" {
+			return provider.AppError{
+				Code:        "textbook_unavailable",
+				UserMessage: "Textbook " + name + " is unavailable: " + b.Error,
+				Retryable:   false,
+			}
+		}
 		_, err := a.ragAdpt.IndexBook(a.ctx, b, func(done, total int) {
 			wruntime.EventsEmit(a.ctx, "rag:index", map[string]any{"book": name, "done": done, "total": total})
 		})
