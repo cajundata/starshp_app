@@ -59,7 +59,9 @@ func (p *anthropicProvider) Stream(ctx context.Context, req ChatRequest) (<-chan
 				usage.CachedInputTokens = int(e.Message.Usage.CacheReadInputTokens)
 				haveAny = true
 			case anthropic.MessageDeltaEvent:
-				// MessageDeltaUsage fields are cumulative; the final one is the truth.
+				// OutputTokens is cumulative across deltas; input/cached fields may be
+				// omitted by the SDK (decoded as zero) — keep the MessageStart value
+				// in that case so we don't overwrite a real number with a zero.
 				if e.Usage.InputTokens > 0 {
 					usage.InputTokens = int(e.Usage.InputTokens)
 				}
