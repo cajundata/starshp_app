@@ -2,8 +2,8 @@ package store
 
 import "database/sql"
 
-// migrate brings a pre-library / pre-token-tracking dev database up to the
-// current schema. All operations are idempotent.
+// migrate brings a pre-library dev database up to the current schema. It is
+// idempotent: on a fresh database both operations are no-ops.
 func migrate(db *sql.DB) error {
 	if _, err := db.Exec(`DROP TABLE IF EXISTS presets`); err != nil {
 		return err
@@ -15,17 +15,6 @@ func migrate(db *sql.DB) error {
 	if has {
 		if _, err := db.Exec(`ALTER TABLE conversations DROP COLUMN preset_id`); err != nil {
 			return err
-		}
-	}
-	for _, col := range []string{"input_tokens", "output_tokens", "cached_input_tokens"} {
-		has, err := columnExists(db, "messages", col)
-		if err != nil {
-			return err
-		}
-		if !has {
-			if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN ` + col + ` INTEGER`); err != nil {
-				return err
-			}
 		}
 	}
 	return nil

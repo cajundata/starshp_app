@@ -1,9 +1,11 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
 	"time"
 
+	"github.com/cajundata/starshp_app/internal/provider"
 	"github.com/google/uuid"
 )
 
@@ -16,14 +18,17 @@ type Conversation struct {
 }
 
 type Message struct {
-	ID         string `json:"id"`
-	ConvID     string `json:"conversationId"`
-	Role       string `json:"role"`
-	Content    string `json:"content"`
-	Model      string `json:"model"`
-	CreatedAt  int64  `json:"createdAt"`
-	RAGContext string `json:"ragContext"`
-	RAGSources string `json:"ragSources"`
+	ID                string `json:"id"`
+	ConvID            string `json:"conversationId"`
+	Role              string `json:"role"`
+	Content           string `json:"content"`
+	Model             string `json:"model"`
+	CreatedAt         int64  `json:"createdAt"`
+	RAGContext        string `json:"ragContext"`
+	RAGSources        string `json:"ragSources"`
+	InputTokens       *int   `json:"inputTokens,omitempty"`
+	OutputTokens      *int   `json:"outputTokens,omitempty"`
+	CachedInputTokens *int   `json:"cachedInputTokens,omitempty"`
 }
 
 type TextbookScope struct {
@@ -73,11 +78,20 @@ func (s *Store) SetConversationMeta(id, pinnedModel string) error {
 	return err
 }
 
-func (s *Store) AddMessage(convID, role, content, model, ragContext, ragSources string) (Message, error) {
+// AddMessage persists a message. usage is nil for user messages and for
+// assistant messages whose provider did not surface a usage block (cancel,
+// SDK gap). A nil usage writes NULL into all three token columns.
+func (s *Store) AddMessage(convID, role, content, model, ragContext, ragSources string, usage *provider.Usage) (Message, error) {
 	m := Message{ID: uuid.NewString(), ConvID: convID, Role: role, Content: content,
 		Model: model, CreatedAt: time.Now().Unix(), RAGContext: ragContext, RAGSources: ragSources}
-	_, err := s.db.Exec(`INSERT INTO messages(id,conversation_id,role,content,model,created_at,rag_context,rag_sources) VALUES(?,?,?,?,?,?,?,?)`,
-		m.ID, m.ConvID, m.Role, m.Content, m.Model, m.CreatedAt, m.RAGContext, m.RAGSources)
+	var in, out, cached any // sql.NullInt64-equivalent via untyped nil
+	if usage != nil {
+		i, o, c := usage.InputTokens, usage.OutputTokens, usage.CachedInputTokens
+		in, out, cached = i, o, c
+		m.InputTokens, m.OutputTokens, m.CachedInputTokens = &i, &o, &c
+	}
+	_, err := s.db.Exec(`INSERT INTO messages(id,conversation_id,role,content,model,created_at,rag_context,rag_sources,input_tokens,output_tokens,cached_input_tokens) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		m.ID, m.ConvID, m.Role, m.Content, m.Model, m.CreatedAt, m.RAGContext, m.RAGSources, in, out, cached)
 	if err == nil {
 		s.db.Exec(`UPDATE conversations SET updated_at=? WHERE id=?`, m.CreatedAt, convID)
 	}
@@ -85,7 +99,7 @@ func (s *Store) AddMessage(convID, role, content, model, ragContext, ragSources 
 }
 
 func (s *Store) ListMessages(convID string) ([]Message, error) {
-	rows, err := s.db.Query(`SELECT id,conversation_id,role,content,COALESCE(model,''),created_at,COALESCE(rag_context,''),COALESCE(rag_sources,'') FROM messages WHERE conversation_id=? ORDER BY created_at, rowid`, convID)
+	rows, err := s.db.Query(`SELECT id,conversation_id,role,content,COALESCE(model,''),created_at,COALESCE(rag_context,''),COALESCE(rag_sources,''),input_tokens,output_tokens,cached_input_tokens FROM messages WHERE conversation_id=? ORDER BY created_at, rowid`, convID)
 	if err != nil {
 		return nil, err
 	}
@@ -93,8 +107,21 @@ func (s *Store) ListMessages(convID string) ([]Message, error) {
 	var out []Message
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.ID, &m.ConvID, &m.Role, &m.Content, &m.Model, &m.CreatedAt, &m.RAGContext, &m.RAGSources); err != nil {
+		var inT, outT, cachedT sql.NullInt64
+		if err := rows.Scan(&m.ID, &m.ConvID, &m.Role, &m.Content, &m.Model, &m.CreatedAt, &m.RAGContext, &m.RAGSources, &inT, &outT, &cachedT); err != nil {
 			return nil, err
+		}
+		if inT.Valid {
+			v := int(inT.Int64)
+			m.InputTokens = &v
+		}
+		if outT.Valid {
+			v := int(outT.Int64)
+			m.OutputTokens = &v
+		}
+		if cachedT.Valid {
+			v := int(cachedT.Int64)
+			m.CachedInputTokens = &v
 		}
 		out = append(out, m)
 	}

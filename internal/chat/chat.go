@@ -32,7 +32,7 @@ type SendParams struct {
 // returns the full assistant text. A mid-stream error still persists the
 // partial text marked incomplete.
 func (s *Service) Send(ctx context.Context, p SendParams, onToken func(string)) (string, error) {
-	if _, err := s.st.AddMessage(p.ConversationID, "user", p.UserText, "", "", ""); err != nil {
+	if _, err := s.st.AddMessage(p.ConversationID, "user", p.UserText, "", "", "", nil); err != nil {
 		return "", err
 	}
 
@@ -90,7 +90,7 @@ func (s *Service) Send(ctx context.Context, p SendParams, onToken func(string)) 
 	if streamErr != nil {
 		content += "\n\n⚠ response interrupted"
 	}
-	if _, err := s.st.AddMessage(p.ConversationID, "assistant", content, p.Model, ragCtx, ragSrc); err != nil {
+	if _, err := s.st.AddMessage(p.ConversationID, "assistant", content, p.Model, ragCtx, ragSrc, nil); err != nil {
 		return content, err
 	}
 	if streamErr != nil {
