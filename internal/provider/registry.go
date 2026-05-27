@@ -7,9 +7,10 @@ import (
 )
 
 type ModelInfo struct {
-	Display  string `yaml:"display" json:"display"`
-	ID       string `yaml:"id" json:"id"`
-	Provider string `yaml:"provider" json:"provider"` // "openai" | "anthropic"
+	Display    string `yaml:"display" json:"display"`
+	ID         string `yaml:"id" json:"id"`
+	Provider   string `yaml:"provider" json:"provider"` // "openai" | "anthropic"
+	MaxContext int    `yaml:"max_context,omitempty" json:"maxContext,omitempty"`
 }
 
 type Registry struct {
