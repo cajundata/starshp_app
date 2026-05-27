@@ -93,6 +93,22 @@ func (r ragRetriever) Retrieve(ctx context.Context, q string) (string, string, e
 	return res.Context, srcJSON, nil
 }
 
+// buildChatUsageEvent assembles the payload sent on the "chat:usage" Wails
+// event. Returns nil when usage is nil — callers should skip emitting in
+// that case.
+func buildChatUsageEvent(convID, modelID string, usage *provider.Usage) map[string]any {
+	if usage == nil {
+		return nil
+	}
+	return map[string]any{
+		"convID":  convID,
+		"input":   usage.InputTokens,
+		"output":  usage.OutputTokens,
+		"cached":  usage.CachedInputTokens,
+		"modelID": modelID,
+	}
+}
+
 // SendMessage streams the assistant reply to the frontend via the
 // "chat:token" event and returns the full text (or a normalized error). The
 // system prompt is assembled from the conversation's active library items.
@@ -135,12 +151,15 @@ func (a *API) SendMessage(convID, userText, modelID string) (string, error) {
 		a.mu.Unlock()
 	}()
 
-	text, _, err := a.chatSvc.Send(cctx, chat.SendParams{
+	text, usage, err := a.chatSvc.Send(cctx, chat.SendParams{
 		ConversationID: convID, UserText: userText, SystemPrompt: systemPrompt,
 		Model: modelID, Provider: prov, Retriever: retr,
 	}, func(tok string) {
 		wruntime.EventsEmit(a.ctx, "chat:token", tok) // use a.ctx: events always flow to UI
 	})
+	if payload := buildChatUsageEvent(convID, modelID, usage); payload != nil {
+		wruntime.EventsEmit(a.ctx, "chat:usage", payload)
+	}
 	return text, err
 }
 
