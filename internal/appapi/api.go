@@ -135,12 +135,13 @@ func (a *API) SendMessage(convID, userText, modelID string) (string, error) {
 		a.mu.Unlock()
 	}()
 
-	return a.chatSvc.Send(cctx, chat.SendParams{
+	text, _, err := a.chatSvc.Send(cctx, chat.SendParams{
 		ConversationID: convID, UserText: userText, SystemPrompt: systemPrompt,
 		Model: modelID, Provider: prov, Retriever: retr,
 	}, func(tok string) {
 		wruntime.EventsEmit(a.ctx, "chat:token", tok) // use a.ctx: events always flow to UI
 	})
+	return text, err
 }
 
 // CancelMessage aborts the in-flight streaming response, if any.

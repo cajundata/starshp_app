@@ -12,13 +12,16 @@ import (
 	"github.com/cajundata/starshp_app/internal/store"
 )
 
-type fakeProvider struct{ gotPrefix string }
+type fakeProvider struct {
+	gotPrefix string
+	usage     *provider.Usage // optional usage to emit on terminal Done
+}
 
 func (f *fakeProvider) Stream(ctx context.Context, req provider.ChatRequest) (<-chan provider.Delta, error) {
 	f.gotPrefix = req.CachedPrefix
 	ch := make(chan provider.Delta, 2)
 	ch <- provider.Delta{Text: "Drafted post"}
-	ch <- provider.Delta{Done: true}
+	ch <- provider.Delta{Done: true, Usage: f.usage}
 	close(ch)
 	return ch, nil
 }
@@ -34,11 +37,11 @@ func TestSendPersistsAndAssemblesPrefix(t *testing.T) {
 	defer st.Close()
 	conv, _ := st.CreateConversation("t")
 
-	fp := &fakeProvider{}
+	fp := &fakeProvider{usage: &provider.Usage{InputTokens: 1200, OutputTokens: 450, CachedInputTokens: 800}}
 	svc := New(st)
 
 	var streamed string
-	final, err := svc.Send(context.Background(), SendParams{
+	final, usage, err := svc.Send(context.Background(), SendParams{
 		ConversationID: conv.ID,
 		UserText:       "Draft a post on ASC 606",
 		SystemPrompt:   "You are an accounting tutor.",
@@ -55,12 +58,24 @@ func TestSendPersistsAndAssemblesPrefix(t *testing.T) {
 	if fp.gotPrefix != "You are an accounting tutor.\n\nCTX: revenue rules" {
 		t.Fatalf("prefix assembly wrong: %q", fp.gotPrefix)
 	}
+	if usage == nil || usage.InputTokens != 1200 || usage.OutputTokens != 450 || usage.CachedInputTokens != 800 {
+		t.Fatalf("returned usage = %+v, want {1200, 450, 800}", usage)
+	}
 	msgs, _ := st.ListMessages(conv.ID)
 	if len(msgs) != 2 || msgs[0].Role != "user" || msgs[1].Role != "assistant" {
 		t.Fatalf("messages = %+v", msgs)
 	}
 	if msgs[1].Model != "claude-opus-4-7" || msgs[1].RAGContext != "CTX: revenue rules" {
 		t.Fatalf("assistant msg missing model/rag: %+v", msgs[1])
+	}
+	if msgs[1].InputTokens == nil || *msgs[1].InputTokens != 1200 {
+		t.Fatalf("persisted InputTokens = %v, want 1200", msgs[1].InputTokens)
+	}
+	if msgs[1].OutputTokens == nil || *msgs[1].OutputTokens != 450 {
+		t.Fatalf("persisted OutputTokens = %v, want 450", msgs[1].OutputTokens)
+	}
+	if msgs[1].CachedInputTokens == nil || *msgs[1].CachedInputTokens != 800 {
+		t.Fatalf("persisted CachedInputTokens = %v, want 800", msgs[1].CachedInputTokens)
 	}
 	var srcs []map[string]any
 	if json.Unmarshal([]byte(msgs[1].RAGSources), &srcs); len(srcs) != 1 {
@@ -111,7 +126,7 @@ func TestSendContextCancelPersistsPartial(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		text, err := svc.Send(ctx, SendParams{
+		text, _, err := svc.Send(ctx, SendParams{
 			ConversationID: conv.ID,
 			UserText:       "hello",
 			SystemPrompt:   "",
@@ -156,5 +171,35 @@ func TestSendContextCancelPersistsPartial(t *testing.T) {
 	}
 	if !strings.Contains(asst.Content, "partial") {
 		t.Fatalf("persisted assistant content = %q, want it to contain %q", asst.Content, "partial")
+	}
+}
+
+func TestSendNoUsageLeavesNilAndPersistsNull(t *testing.T) {
+	st, _ := store.Open(filepath.Join(t.TempDir(), "app.db"))
+	defer st.Close()
+	conv, _ := st.CreateConversation("no-usage")
+
+	fp := &fakeProvider{} // usage is nil
+	svc := New(st)
+
+	_, usage, err := svc.Send(context.Background(), SendParams{
+		ConversationID: conv.ID,
+		UserText:       "hi",
+		SystemPrompt:   "",
+		Model:          "test",
+		Provider:       fp,
+	}, nil)
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if usage != nil {
+		t.Fatalf("usage = %+v, want nil", usage)
+	}
+	msgs, _ := st.ListMessages(conv.ID)
+	if len(msgs) != 2 {
+		t.Fatalf("got %d messages, want 2", len(msgs))
+	}
+	if msgs[1].InputTokens != nil || msgs[1].OutputTokens != nil || msgs[1].CachedInputTokens != nil {
+		t.Fatalf("persisted token cols should be nil, got %+v", msgs[1])
 	}
 }
