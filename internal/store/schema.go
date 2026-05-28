@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   role TEXT NOT NULL, content TEXT NOT NULL, model TEXT,
-  created_at INTEGER NOT NULL, rag_context TEXT, rag_sources TEXT
+  created_at INTEGER NOT NULL, rag_context TEXT, rag_sources TEXT,
+  input_tokens INTEGER, output_tokens INTEGER, cached_input_tokens INTEGER
 );
 CREATE TABLE IF NOT EXISTS conversation_textbooks (
   conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,

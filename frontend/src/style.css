@@ -31,6 +31,9 @@ body { font-family: system-ui, sans-serif; }
 #tbModalInner label { display: block; padding: 4px 0; color: #cfcfd3; }
 #libModalInner h3 { color: #e7e7e8; margin-bottom: 10px; font-size: 14px; }
 #libModalInner .lib-empty { color: #6f6f76; font-size: 13px; padding: 6px 0; }
+#tbModalInner .tb-empty { color: #6f6f76; font-size: 13px; padding: 6px 0; }
+#tbModalInner .tb-error { color: #e08585; font-size: 13px; padding: 6px 0; }
+#tbModalInner label input[disabled] + span { color: #6f6f76; }
 .lib-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
 .lib-row label { display: flex; align-items: center; gap: 8px; color: #cfcfd3; flex: 1; cursor: pointer; }
 .lib-edit { background: #202024; color: #a9a9ad; border: 1px solid #34343a; border-radius: 6px; padding: 3px 9px; font-size: 12px; cursor: pointer; }
@@ -52,3 +55,5 @@ body { font-family: system-ui, sans-serif; }
 #editorDelete { background: #2b2b30; color: #e0654a; border: 1px solid #34343a; border-radius: 7px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 #editorSave { background: #ff5714; color: #fff; border: 0; border-radius: 7px; padding: 6px 14px; font-weight: 600; cursor: pointer; }
 #editorArea { flex: 1; width: 100%; background: #0f0f10; color: #e7e7e8; border: 0; outline: none; resize: none; padding: 16px 18px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13px; line-height: 1.5; }
+.ctx-footer { padding: 4px 14px; color: #6f6f76; font-size: 11px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; border-top: 1px solid #1c1c1f; background: #141416; line-height: 1.4; }
+.ctx-footer.hidden { display: none; }

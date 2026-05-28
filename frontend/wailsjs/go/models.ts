@@ -25,6 +25,7 @@ export namespace provider {
 	    display: string;
 	    id: string;
 	    provider: string;
+	    maxContext?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ModelInfo(source);
@@ -35,6 +36,7 @@ export namespace provider {
 	        this.display = source["display"];
 	        this.id = source["id"];
 	        this.provider = source["provider"];
+	        this.maxContext = source["maxContext"];
 	    }
 	}
 
@@ -71,6 +73,9 @@ export namespace store {
 	    createdAt: number;
 	    ragContext: string;
 	    ragSources: string;
+	    inputTokens?: number;
+	    outputTokens?: number;
+	    cachedInputTokens?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Message(source);
@@ -86,6 +91,9 @@ export namespace store {
 	        this.createdAt = source["createdAt"];
 	        this.ragContext = source["ragContext"];
 	        this.ragSources = source["ragSources"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.cachedInputTokens = source["cachedInputTokens"];
 	    }
 	}
 	export class TextbookScope {
@@ -124,6 +132,7 @@ export namespace textbooks {
 	export class Book {
 	    name: string;
 	    chapters: Chapter[];
+	    error?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Book(source);
@@ -133,6 +142,7 @@ export namespace textbooks {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.chapters = this.convertValues(source["chapters"], Chapter);
+	        this.error = source["error"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

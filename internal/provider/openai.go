@@ -5,6 +5,7 @@ import (
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
 )
 
 type openAIProvider struct {
@@ -36,11 +37,19 @@ func (p *openAIProvider) Stream(ctx context.Context, req ChatRequest) (<-chan De
 	stream := p.client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
 		Model:    req.Model,
 		Messages: msgs,
+		// Without this, OpenAI omits the usage block from streaming responses.
+		StreamOptions: openai.ChatCompletionStreamOptionsParam{
+			IncludeUsage: param.NewOpt(true),
+		},
 	})
 	out := make(chan Delta)
 	go func() {
 		defer close(out)
 		defer stream.Close()
+		var (
+			usage   Usage
+			haveAny bool
+		)
 		for stream.Next() {
 			chunk := stream.Current()
 			if len(chunk.Choices) > 0 {
@@ -52,12 +61,24 @@ func (p *openAIProvider) Stream(ctx context.Context, req ChatRequest) (<-chan De
 					}
 				}
 			}
+			// Final chunk: choices is empty, usage is populated (when IncludeUsage was set).
+			if chunk.Usage.PromptTokens > 0 || chunk.Usage.CompletionTokens > 0 {
+				usage.InputTokens = int(chunk.Usage.PromptTokens)
+				usage.OutputTokens = int(chunk.Usage.CompletionTokens)
+				usage.CachedInputTokens = int(chunk.Usage.PromptTokensDetails.CachedTokens)
+				haveAny = true
+			}
+		}
+		final := Delta{Done: true}
+		if haveAny {
+			u := usage
+			final.Usage = &u
 		}
 		if err := stream.Err(); err != nil {
-			out <- Delta{Err: err, Done: true}
-			return
+			final.Err = err
+			final.Usage = nil
 		}
-		out <- Delta{Done: true}
+		out <- final
 	}()
 	return out, nil
 }

@@ -69,3 +69,24 @@ func TestCancelMessageNoInFlightIsNoop(t *testing.T) {
 	// Must not panic.
 	api.CancelMessage()
 }
+
+func TestBuildChatUsageEvent(t *testing.T) {
+	got := buildChatUsageEvent("conv-1", "claude-opus-4-7", &provider.Usage{
+		InputTokens: 120, OutputTokens: 45, CachedInputTokens: 80,
+	})
+	if got == nil {
+		t.Fatal("got nil, want populated map")
+	}
+	if got["convID"] != "conv-1" || got["modelID"] != "claude-opus-4-7" {
+		t.Fatalf("convID/modelID wrong: %+v", got)
+	}
+	if got["input"] != 120 || got["output"] != 45 || got["cached"] != 80 {
+		t.Fatalf("token fields wrong: %+v", got)
+	}
+}
+
+func TestBuildChatUsageEventNilUsage(t *testing.T) {
+	if got := buildChatUsageEvent("c", "m", nil); got != nil {
+		t.Fatalf("got %+v, want nil", got)
+	}
+}

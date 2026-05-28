@@ -47,10 +47,31 @@ func (p *anthropicProvider) Stream(ctx context.Context, req ChatRequest) (<-chan
 	go func() {
 		defer close(out)
 		defer stream.Close() //nolint:errcheck
+		var (
+			usage   Usage
+			haveAny bool
+		)
 		for stream.Next() {
 			event := stream.Current()
-			if d, ok := event.AsAny().(anthropic.ContentBlockDeltaEvent); ok {
-				if td, ok := d.Delta.AsAny().(anthropic.TextDelta); ok && td.Text != "" {
+			switch e := event.AsAny().(type) {
+			case anthropic.MessageStartEvent:
+				usage.InputTokens = int(e.Message.Usage.InputTokens)
+				usage.CachedInputTokens = int(e.Message.Usage.CacheReadInputTokens)
+				haveAny = true
+			case anthropic.MessageDeltaEvent:
+				// OutputTokens is cumulative across deltas; input/cached fields may be
+				// omitted by the SDK (decoded as zero) — keep the MessageStart value
+				// in that case so we don't overwrite a real number with a zero.
+				if e.Usage.InputTokens > 0 {
+					usage.InputTokens = int(e.Usage.InputTokens)
+				}
+				if e.Usage.CacheReadInputTokens > 0 {
+					usage.CachedInputTokens = int(e.Usage.CacheReadInputTokens)
+				}
+				usage.OutputTokens = int(e.Usage.OutputTokens)
+				haveAny = true
+			case anthropic.ContentBlockDeltaEvent:
+				if td, ok := e.Delta.AsAny().(anthropic.TextDelta); ok && td.Text != "" {
 					select {
 					case out <- Delta{Text: td.Text}:
 					case <-ctx.Done():
@@ -59,11 +80,16 @@ func (p *anthropicProvider) Stream(ctx context.Context, req ChatRequest) (<-chan
 				}
 			}
 		}
-		if err := stream.Err(); err != nil {
-			out <- Delta{Err: err, Done: true}
-			return
+		final := Delta{Done: true}
+		if haveAny {
+			u := usage
+			final.Usage = &u
 		}
-		out <- Delta{Done: true}
+		if err := stream.Err(); err != nil {
+			final.Err = err
+			final.Usage = nil // errors mean no clean usage
+		}
+		out <- final
 	}()
 	return out, nil
 }

@@ -1,6 +1,10 @@
 package store
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/cajundata/starshp_app/internal/provider"
+)
 
 func TestConversationLifecycle(t *testing.T) {
 	s := newTestStore(t)
@@ -8,10 +12,10 @@ func TestConversationLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
-	if _, err := s.AddMessage(c.ID, "user", "Draft a post", "", "", ""); err != nil {
+	if _, err := s.AddMessage(c.ID, "user", "Draft a post", "", "", "", nil); err != nil {
 		t.Fatalf("AddMessage user: %v", err)
 	}
-	if _, err := s.AddMessage(c.ID, "assistant", "Here is a draft", "claude-opus-4-7", "ctx", `["ch18"]`); err != nil {
+	if _, err := s.AddMessage(c.ID, "assistant", "Here is a draft", "claude-opus-4-7", "ctx", `["ch18"]`, nil); err != nil {
 		t.Fatalf("AddMessage assistant: %v", err)
 	}
 	msgs, err := s.ListMessages(c.ID)
@@ -65,7 +69,7 @@ func TestListMessagesStableOrderWithinSameSecond(t *testing.T) {
 		if i%2 == 1 {
 			role = "assistant"
 		}
-		if _, err := s.AddMessage(c.ID, role, txt, "", "", ""); err != nil {
+		if _, err := s.AddMessage(c.ID, role, txt, "", "", "", nil); err != nil {
 			t.Fatalf("AddMessage %d: %v", i, err)
 		}
 	}
@@ -80,5 +84,45 @@ func TestListMessagesStableOrderWithinSameSecond(t *testing.T) {
 		if msgs[i].Content != want[i] {
 			t.Fatalf("order mismatch at %d: got %q, want %q (full: %+v)", i, msgs[i].Content, want[i], msgs)
 		}
+	}
+}
+
+func TestAddMessageWithUsageRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	c, _ := s.CreateConversation("usage")
+
+	u := &provider.Usage{InputTokens: 1200, OutputTokens: 450, CachedInputTokens: 800}
+	if _, err := s.AddMessage(c.ID, "assistant", "answer", "claude-opus-4-7", "", "", u); err != nil {
+		t.Fatalf("AddMessage with usage: %v", err)
+	}
+	msgs, err := s.ListMessages(c.ID)
+	if err != nil || len(msgs) != 1 {
+		t.Fatalf("ListMessages = %d msgs, err=%v", len(msgs), err)
+	}
+	got := msgs[0]
+	if got.InputTokens == nil || *got.InputTokens != 1200 {
+		t.Fatalf("InputTokens = %v, want 1200", got.InputTokens)
+	}
+	if got.OutputTokens == nil || *got.OutputTokens != 450 {
+		t.Fatalf("OutputTokens = %v, want 450", got.OutputTokens)
+	}
+	if got.CachedInputTokens == nil || *got.CachedInputTokens != 800 {
+		t.Fatalf("CachedInputTokens = %v, want 800", got.CachedInputTokens)
+	}
+}
+
+func TestAddMessageNilUsageLeavesNullColumns(t *testing.T) {
+	s := newTestStore(t)
+	c, _ := s.CreateConversation("nil-usage")
+
+	if _, err := s.AddMessage(c.ID, "user", "hi", "", "", "", nil); err != nil {
+		t.Fatalf("AddMessage nil usage: %v", err)
+	}
+	msgs, _ := s.ListMessages(c.ID)
+	if len(msgs) != 1 {
+		t.Fatalf("got %d msgs", len(msgs))
+	}
+	if msgs[0].InputTokens != nil || msgs[0].OutputTokens != nil || msgs[0].CachedInputTokens != nil {
+		t.Fatalf("nil usage should leave columns NULL, got %+v", msgs[0])
 	}
 }

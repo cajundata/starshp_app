@@ -28,19 +28,19 @@ type SendParams struct {
 }
 
 // Send persists the user message, retrieves context, streams the assistant
-// response (token callback per chunk), persists the assistant message, and
-// returns the full assistant text. A mid-stream error still persists the
-// partial text marked incomplete.
-func (s *Service) Send(ctx context.Context, p SendParams, onToken func(string)) (string, error) {
-	if _, err := s.st.AddMessage(p.ConversationID, "user", p.UserText, "", "", ""); err != nil {
-		return "", err
+// response (token callback per chunk), persists the assistant message with
+// any captured usage, and returns the full assistant text along with the
+// terminal Usage (nil if the provider did not surface one).
+func (s *Service) Send(ctx context.Context, p SendParams, onToken func(string)) (string, *provider.Usage, error) {
+	if _, err := s.st.AddMessage(p.ConversationID, "user", p.UserText, "", "", "", nil); err != nil {
+		return "", nil, err
 	}
 
 	var ragCtx, ragSrc string
 	if p.Retriever != nil {
 		c, src, err := p.Retriever.Retrieve(ctx, p.UserText)
 		if err != nil {
-			return "", err // RAG failure is explicit, never silent (spec).
+			return "", nil, err // RAG failure is explicit, never silent (spec).
 		}
 		ragCtx, ragSrc = c, src
 	}
@@ -55,7 +55,7 @@ func (s *Service) Send(ctx context.Context, p SendParams, onToken func(string)) 
 
 	history, err := s.st.ListMessages(p.ConversationID)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	var msgs []provider.Message
 	for _, m := range history {
@@ -68,11 +68,12 @@ func (s *Service) Send(ctx context.Context, p SendParams, onToken func(string)) 
 		Model: p.Model, CachedPrefix: prefix, Messages: msgs,
 	})
 	if err != nil {
-		return "", provider.NormalizeError(err)
+		return "", nil, provider.NormalizeError(err)
 	}
 
 	var sb strings.Builder
 	var streamErr error
+	var usage *provider.Usage
 	for d := range ch {
 		if d.Err != nil {
 			streamErr = d.Err
@@ -84,17 +85,20 @@ func (s *Service) Send(ctx context.Context, p SendParams, onToken func(string)) 
 				onToken(d.Text)
 			}
 		}
+		if d.Usage != nil {
+			usage = d.Usage
+		}
 	}
 
 	content := sb.String()
 	if streamErr != nil {
 		content += "\n\n⚠ response interrupted"
 	}
-	if _, err := s.st.AddMessage(p.ConversationID, "assistant", content, p.Model, ragCtx, ragSrc); err != nil {
-		return content, err
+	if _, err := s.st.AddMessage(p.ConversationID, "assistant", content, p.Model, ragCtx, ragSrc, usage); err != nil {
+		return content, usage, err
 	}
 	if streamErr != nil {
-		return content, provider.NormalizeError(streamErr)
+		return content, usage, provider.NormalizeError(streamErr)
 	}
-	return content, nil
+	return content, usage, nil
 }
