@@ -5,12 +5,18 @@
 # Linux, ~/Library/Application Support/starshp_app on macOS. Override it with
 # the STARSHP_HOME environment variable.
 #
-# `chapter_dir` is resolved relative to the directory that contains this file;
-# absolute paths are used as-is. Each chapter directory holds markdown files
-# named chapter-1.md, chapter-2.md, ... (leading zeros optional, e.g.
-# chapter-01.md). Files that do not match that pattern are ignored.
+# By convention each book lives under <app-dir>/textbooks/<book-name>/, which
+# the app pre-creates on launch. `chapter_dir` is resolved relative to the
+# directory that contains this file; absolute paths are used as-is. Each
+# chapter directory holds markdown files named chapter-1.md, chapter-2.md, ...
+# (leading zeros optional, e.g. chapter-01.md). Files that do not match that
+# pattern are ignored.
+#
+# A book whose chapter_dir cannot be read still shows up in the picker as
+# "(unavailable)" so the rest of the list stays usable — fix the path and the
+# entry recovers on the next open.
 textbooks:
   - name: intermediate-accounting
-    chapter_dir: ./intermediate-accounting
+    chapter_dir: ./textbooks/intermediate-accounting
   - name: financial-accounting
-    chapter_dir: ./financial-accounting
+    chapter_dir: ./textbooks/financial-accounting

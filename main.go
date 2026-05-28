@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"log"
+	"os"
 	"path/filepath"
 
 	"github.com/cajundata/starshp_app/internal/appapi"
@@ -35,6 +36,11 @@ func main() {
 	}
 	if cfg.LibraryDir == "" {
 		cfg.LibraryDir = filepath.Join(appDir, "library")
+	}
+	// Books live under <app-dir>/textbooks/<book>/chapter-NN.md by convention.
+	// Pre-create the parent so a fresh install has the expected shape.
+	if err := os.MkdirAll(filepath.Join(appDir, "textbooks"), 0o755); err != nil {
+		log.Fatalf("textbooks dir: %v", err)
 	}
 
 	st, err := store.Open(cfg.AppDBPath)

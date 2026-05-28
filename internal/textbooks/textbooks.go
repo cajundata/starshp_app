@@ -19,6 +19,10 @@ type Chapter struct {
 type Book struct {
 	Name     string    `json:"name"`
 	Chapters []Chapter `json:"chapters"`
+	// Error is non-empty when the book's chapter_dir could not be read.
+	// The book still appears in ListBooks so the UI can render it as
+	// unavailable instead of failing to open the picker entirely.
+	Error string `json:"error,omitempty"`
 }
 
 type yamlConfig struct {
@@ -53,7 +57,10 @@ func Scan(cfgPath string) ([]Book, error) {
 		}
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			return nil, err
+			// A single unreadable book must not poison ListBooks — the
+			// picker would never open. Record the per-book error and move on.
+			books = append(books, Book{Name: b.Name, Error: err.Error()})
+			continue
 		}
 		var chs []Chapter
 		for _, e := range entries {

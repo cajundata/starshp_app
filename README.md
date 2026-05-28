@@ -75,11 +75,12 @@ Starshp keeps every per-user file in one **app directory**:
 | Linux | `~/.config/starshp_app` |
 | macOS | `~/Library/Application Support/starshp_app` |
 
-It holds `.env`, `models.yaml`, `textbooks.yaml`, your textbook chapter
-folders, and the runtime data (`app.db`, `rag.db`, `library/`). The directory
-is created automatically on first launch. Set the `STARSHP_HOME` environment
-variable (an absolute path) to override its location — handy for tests or a
-portable install.
+It holds `.env`, `models.yaml`, `textbooks.yaml`, the `textbooks/` folder for
+your chapter directories, and the runtime data (`app.db`, `rag.db`,
+`library/`). The directory is created automatically on first launch, along
+with the `textbooks/` and `library/` subdirectories. Set the `STARSHP_HOME`
+environment variable (an absolute path) to override its location — handy for
+tests or a portable install.
 
 Three templates ship in the repo. Copy each into the app directory and edit:
 
@@ -98,12 +99,13 @@ Typical app-directory layout:
 ├── .env
 ├── models.yaml
 ├── textbooks.yaml
-├── app.db                    (created at runtime)
-├── rag.db                    (created at runtime)
-├── library/                  (created at runtime)
-└── intermediate-accounting/  (your textbook chapter folders)
-    ├── chapter-01.md
-    └── ...
+├── app.db                        (created at runtime)
+├── rag.db                        (created at runtime)
+├── library/                      (created at runtime)
+└── textbooks/                    (created at runtime)
+    └── intermediate-accounting/  (your textbook chapter folders)
+        ├── chapter-01.md
+        └── ...
 ```
 
 ### `textbooks.yaml`
@@ -113,23 +115,26 @@ Each entry names a book and points at its directory of chapter markdown:
 ```yaml
 textbooks:
   - name: intermediate-accounting
-    chapter_dir: ./intermediate-accounting
+    chapter_dir: ./textbooks/intermediate-accounting
   - name: financial-accounting
     chapter_dir: /absolute/path/to/financial-accounting
 ```
 
 - `chapter_dir` is resolved **relative to the directory containing
-  `textbooks.yaml`** (the app directory) — not the working directory. Keep it
-  `./<book>` and store the folders alongside the file, or give an absolute
-  path.
+  `textbooks.yaml`** (the app directory) — not the working directory. The
+  convention is `./textbooks/<book>/`; the `textbooks/` parent is pre-created
+  on first launch. Absolute paths are accepted for corpora that live
+  elsewhere.
 - A chapter folder holds files named `chapter-1.md`, `chapter-2.md`, … —
   leading zeros optional (`chapter-01.md` is equivalent). Files that do not
   match that pattern are ignored.
 - `name` is the label in the per-conversation textbook picker and the key
   used to scope RAG retrieval.
 - `textbooks.yaml` is optional: if absent, RAG is unavailable and chat still
-  works. If present but a `chapter_dir` cannot be read, opening the textbook
-  picker or attaching a book returns an error — fix the path and try again.
+  works. If a `chapter_dir` cannot be read, the picker still opens and that
+  book renders as `(unavailable: <reason>)` with its checkbox disabled;
+  attaching it via an existing scope returns a `textbook_unavailable` error
+  on the next send. Fix the path and the entry recovers.
 
 ### `models.yaml`
 
