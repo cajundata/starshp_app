@@ -226,7 +226,6 @@ CREATE TABLE runs (
     status                      TEXT NOT NULL CHECK (status IN (
                                     'in_progress',
                                     'completed',
-                                    'superseded',
                                     'errored',
                                     'cancelled'
                                 )),
@@ -304,26 +303,63 @@ UPDATE runs
 COMMIT;
 ```
 
+**Invariant: commit only if the completing run is still eligible.**
+
+- The demote `UPDATE` affecting zero rows is acceptable — it simply means
+  there was no prior active run for this turn.
+- The activate `UPDATE` (the one that flips this run to
+  `status='completed'`, `active_for_replay=1`) affecting zero rows is
+  **not** acceptable — it means the run is no longer `in_progress`,
+  likely because it was cancelled or errored concurrently. In that case,
+  rollback the transaction and leave any prior active run unchanged.
+
+In Go, this is a `RowsAffected() == 1` check on the activate update inside
+the transaction; if zero, `tx.Rollback()` and treat the completion as
+superseded by the concurrent terminal event.
+
 On errored or cancelled runs, the transaction only marks the run's terminal
 state. It never touches `active_for_replay` on any other run. A failed
 regeneration therefore cannot demote a prior good answer.
 
-#### Replay timeline — store-owned
+#### Replay vs display — two separate store methods
 
-`store.GetProviderReplayEvents(conversationID, currentRunID)` is the
-canonical replay query. Every provider call site uses it. It returns events
-ordered as the provider should see them:
+Provider replay and user-visible history have different correctness rules
+and must not share a selection path.
+
+- If UI display were driven by the provider-replay selection, a user who
+  cancels a generation could reopen the conversation and see none of the
+  partial output they saw during the run.
+- If provider replay were driven by the display selection, cancelled or
+  errored partial output could get fed back to the provider as if it
+  were a valid prior assistant answer.
+
+Two store methods, two selection rules:
+
+```go
+store.GetProviderReplayEvents(conversationID, currentRunID)
+store.GetConversationDisplayEvents(conversationID)
+```
+
+`GetProviderReplayEvents` — canonical provider-facing timeline:
 
 1. For each turn in `turn_id` order (assigned by user-message
    `sequence_index`):
 2. Pick the run for that turn — `active_for_replay=1`, OR the
    `currentRunID` if that run targets this turn and is still in-progress.
 3. Within that run, order events by `sequence_index`.
+4. Excludes cancelled, errored, inactive, and orphaned runs.
 
-Implementation is one SQL query plus an in-memory turn-by-turn assembly. It
-explicitly does not order all events globally by `sequence_index`, because
-regenerated events for an earlier turn carry indexes appended after later
-turns.
+`GetConversationDisplayEvents` — faithful UI history:
+
+1. For each turn in `turn_id` order:
+2. Pick the active completed run when present; otherwise the latest
+   terminal run for that turn (cancelled, errored, or even orphaned —
+   whatever the user last saw).
+3. Within that run, order events by `sequence_index`.
+
+Both implementations are one SQL query plus turn-by-turn assembly.
+Neither orders events globally by `sequence_index`, because regenerated
+events for an earlier turn carry indexes appended after later turns.
 
 #### Recovery of orphaned/in-progress runs
 
@@ -509,7 +545,8 @@ Loop body, in order:
 6. Build the tool catalog from `Registry.Catalog()` (or a mode-restricted
    subset for `textbook_only`).
 7. Loop `iteration := 1; iteration <= MAX_ITERATIONS; iteration++`:
-   a. `events := store.GetProviderReplayEvents(convID, runID)`.
+   a. `events := store.GetProviderReplayEvents(convID, runID)` — the
+      provider-facing timeline; never the display timeline.
    b. Build `ChatRequest{System, Grounding: groundingBlock(meta), Tools,
       Events}`.
    c. `ch, err := provider.Stream(ctx, req)`. On error: mark run errored,
@@ -527,7 +564,10 @@ Loop body, in order:
         - Emit `chat:tool_call`.
         - `ctx_tool := context.WithTimeout(ctx, tool.Timeout())`. If the
           tool has no override, use the registry default (30s).
-        - `result, isErr, latency := Registry.Execute(ctx_tool, name, input)`.
+        - `result, isErr, latency := Registry.Execute(ctx_tool, execCtx, name, input)`
+          where `execCtx` is built once at run start from the conversation
+          (`ConversationID`, `TurnID`, `RunID`, snapshotted `RetrievalMode`,
+          attached `TextbookScope`).
         - Insert `tool_result` event with `text=result.Output`,
           `tool_metadata=result.Metadata`, `tool_result_hash`,
           `tool_latency_ms`, `is_error=isErr`.
@@ -547,18 +587,45 @@ Loop body, in order:
 `MAX_ITERATIONS` default is 8, override via env `STARSHP_MAX_TOOL_ITERATIONS`.
 Per-tool timeout default is 30s, override via the `Tool.Timeout()` method.
 
-Cancellation: when `ctx` is cancelled mid-loop, the in-flight provider
+**Mid-stream `Delta.Err`:** if a delta carries a non-nil `Err`, the loop
+stops draining the channel, persists any accumulated assistant text as one
+`assistant_text` event (preserving what the model actually emitted), then
+distinguishes the cause:
+
+- If `ctx.Err() != nil` (user cancellation reached the provider stream),
+  mark the run `cancelled` with `terminal_reason='user_cancelled'` and
+  emit `chat:run_cancelled`.
+- Otherwise the error is provider-side; pass it through
+  `provider.NormalizeError`, mark the run `errored` with
+  `terminal_reason='provider_error'` and the normalized
+  `error_code`/`error_message`, and emit `chat:run_errored`.
+
+In both cases the partial text persisted survives in the event log for
+audit; provider replay still excludes the run (non-completed runs are
+never active for replay).
+
+**Cancellation:** when `ctx` is cancelled mid-loop, the in-flight provider
 stream and any in-flight `Tool.Execute` receive the cancellation through
-their own `ctx`. The loop catches `ctx.Err()`, persists any partial
-assistant text already accumulated, marks the run `cancelled` with
-`terminal_reason='user_cancelled'`, emits `chat:run_cancelled`. The Stop
-button in the UI calls the existing Wails cancel hook to signal this.
+their own `ctx`. The cancellation reaches the loop either as `ctx.Err()`
+between iterations or as a `Delta{Err}` from the stream (handled above).
+Either path persists accumulated partial text, marks the run `cancelled`
+with `terminal_reason='user_cancelled'`, and emits `chat:run_cancelled`.
+The Stop button in the UI calls the existing Wails cancel hook to signal
+this.
 
 ### Tool registry
 
 `internal/tools/registry.go`:
 
 ```go
+type ExecContext struct {
+    ConversationID string
+    TurnID         string
+    RunID          string
+    RetrievalMode  chat.RetrievalMode
+    TextbookScope  []string        // names of textbooks attached to this conversation
+}
+
 type ExecResult struct {
     Output   string          // exact content shown to the model
     Metadata json.RawMessage // structured provenance/diagnostics persisted on the tool_result event
@@ -568,7 +635,7 @@ type Tool interface {
     Name() string
     Description() string
     InputSchema() json.RawMessage // JSON Schema
-    Execute(ctx context.Context, input json.RawMessage) (ExecResult, error)
+    Execute(ctx context.Context, execCtx ExecContext, input json.RawMessage) (ExecResult, error)
     Timeout() time.Duration       // 0 → use registry default
 }
 
@@ -580,9 +647,19 @@ type Registry struct {
 
 func (r *Registry) Register(t Tool) error
 func (r *Registry) Catalog() []provider.ToolDef
-func (r *Registry) Execute(ctx context.Context, name string, input json.RawMessage)
-    (result ExecResult, isError bool, latency time.Duration, err error)
+func (r *Registry) Execute(
+    ctx context.Context,
+    execCtx ExecContext,
+    name string,
+    input json.RawMessage,
+) (result ExecResult, isError bool, latency time.Duration, err error)
 ```
+
+`ExecContext` gives tools the conversation-scoped state they need to make
+correctness decisions — `search_textbook` uses `TextbookScope` to reject a
+`book` argument that is not attached to the current conversation; future
+tools can use `RetrievalMode` to adapt behavior, and `RunID`/`TurnID` for
+provenance.
 
 `Execute` semantics:
 
@@ -654,9 +731,22 @@ Behavior:
    supplied, narrows further. If `book` is not in the attached scope,
    returns `is_error=true` with `invalid_book`.
 2. Calls the existing `rag.Adapter` with the supplied query, scope, and
-   `top_k` (default 5, max 10). If `chapter` is supplied, filters retrieved
-   chunks to that chapter post-retrieval (the existing adapter's scope
-   filter is coarser than chapter; chapter filtering is a thin layer).
+   `top_k` (default 5, max 10).
+
+   **Correctness rule for chapter scoping:** a chapter-scoped search must
+   not silently lose relevant chapter results because `top_k` was filled
+   by other chapters before filtering. Implementation may take the
+   cheapest correct path:
+   - Pre-filter by chapter before ranking, if the `rag.Adapter` supports
+     it (preferred — cleanest semantics, no over-fetch cost), or
+   - Over-fetch internally (a sensible multiplier of `top_k`, capped),
+     apply the chapter filter to the over-fetched result set, then
+     return the first `top_k` from the filtered set.
+
+   Either path must guarantee that when `chapter` is supplied, the
+   returned chunks contain the top-`top_k` matches *within that chapter*,
+   not the top-`top_k` matches across the whole scope that happened to
+   include the chapter.
 3. Formats results with stable, model-visible source IDs:
 
    ```
@@ -686,9 +776,21 @@ Behavior:
 }
 ```
 
-Stable `source_id` is `chunk_` + first 16 hex chars of the chunk's content
-hash, sourced from the existing `rag.Adapter` chunk metadata. This is the
-identifier Phase 2's verifier/citation tools will resolve.
+**Stable `source_id` derivation.** A source ID must be stable across runs
+and collision-resistant across books, chapters, and chunks. The preferred
+derivation is:
+
+```
+sha256(book_id | chapter | chunk_locator_or_index | normalized_chunk_text)
+```
+
+then `chunk_<first 16 hex chars>`. If the existing `rag.Adapter` already
+exposes a persistent chunk/database ID with the same stability guarantees,
+use that instead — Phase 1 implementation may pick whichever exists in the
+adapter, as long as the resulting ID is stable across re-indexing of the
+same chunk contents and unique across `(book, chapter, chunk)` tuples.
+This is the identifier Phase 2's verifier/citation tools will resolve, so
+it must outlive any individual run.
 
 Errors (all `is_error=true`):
 
@@ -741,9 +843,22 @@ Implementation uses `github.com/shopspring/decimal` for all arithmetic. No
 `math/big.Float`, no `float64` intermediate values.
 
 Functions: `min(a, b, ...)`, `max(a, b, ...)`, `abs(x)`, `round(x)`,
-`sqrt(x)`, `floor(x)`, `ceil(x)`. `round` uses banker's rounding to nearest
-integer (matches `decimal.RoundBank`). `sqrt` uses
-`decimal.Decimal.Sqrt(precision=16)`.
+`round(x, places)`, `sqrt(x)`, `floor(x)`, `ceil(x)`.
+
+- `round(x)` rounds to the nearest integer using banker's rounding
+  (half-even) — `decimal.RoundBank(0)`.
+- `round(x, places)` rounds to the specified number of decimal places
+  using the same banker's rounding mode — `decimal.RoundBank(places)`.
+  `places` must be a non-negative integer ≤ 16; out-of-range arguments
+  raise `domain_error`. Two-argument rounding exists because tax and
+  accounting calculations routinely need cents-level verification
+  (`round(389.8125, 2) = 389.81`); integer-only rounding is insufficient
+  for the coursework use case.
+- `sqrt` uses `decimal.Decimal.Sqrt(precision=16)`.
+
+The rounding mode is identical for both `round` arities. Business-specific
+rounding conventions (always-up, currency-aware, etc.) belong in a future
+formatter or domain tool, not Phase 1 `safe_math`.
 
 Percent suffix: `X%` = `X * 0.01`, applied after the postfix expression
 evaluates. So `(5 + 5)%` = `0.10`, `22%` = `0.22`.
@@ -790,7 +905,7 @@ Events emitted by `appapi.SendMessage`, all keyed on `convID`:
 | `chat:grounding_ready` | Pre-turn RAG completes (only when status was pending) | `{convID, runID, grounding: {status, sourceCount, totalCharsInjected, contextHash}}` |
 | `chat:token` | Per streamed text token (unchanged shape) | `{convID, runID, text}` |
 | `chat:tool_call` | `assistant_tool_call` persisted, before dispatch | `{convID, runID, toolCallID, name, input}` |
-| `chat:tool_result` | `tool_result` persisted | `{convID, runID, toolCallID, name, isError, latencyMs, summary}` (summary = first 200 chars of output) |
+| `chat:tool_result` | `tool_result` persisted | `{convID, runID, toolCallID, name, isError, errorCode, latencyMs, summary}` (summary = first 200 chars of output; `errorCode` populated when `isError=true`, omitted otherwise) |
 | `chat:run_completed` | Successful completion transaction committed | `{convID, runID, terminalReason, totalToolCalls, totalIterations}` |
 | `chat:run_errored` | Any error path | `{convID, runID, errorCode, errorMessage, terminalReason}` |
 | `chat:run_cancelled` | User cancel propagated | `{convID, runID, terminalReason}` |
@@ -807,7 +922,10 @@ Frontend rendering in `frontend/src/main.ts`:
   `🔍 search_textbook("realization principle") · 5 sources · 240 ms`
   Click expands to show full arguments + the `summary` from
   `chat:tool_result`.
-- Errored tool-result block renders in red with the error code.
+- Errored tool-result block renders in red with the error code from
+  `chat:tool_result.errorCode`. The error code is sourced from
+  `tool_metadata.error_code` on the persisted event so reopening the
+  conversation rebuilds the same UI.
 - The grounding header (when `chat:grounding_ready` fires with
   `status="ready"`) shows as a small dim line above the bubble:
   `↳ grounded · 5 sources from intermediate-accounting`.
@@ -945,9 +1063,12 @@ to the pre-migration schema; the user can re-launch and try again.
 - Emits all `chat:*` events listed above. The existing `chat:token` and
   `chat:usage` emissions move under this orchestration.
 - New API methods needed by the frontend:
-  - `GetConversationEvents(convID) []EventDTO` — returns the canonical
-    replay timeline (active runs per turn + events ordered by
-    `sequence_index`) for rendering history on conversation open.
+  - `GetConversationDisplayEvents(convID) []EventDTO` — returns the
+    display timeline (active completed run per turn, or the latest
+    terminal run when no active completed run exists, so cancelled/
+    errored partial output the user saw is preserved). Distinct from
+    `store.GetProviderReplayEvents`, which is provider-facing and
+    excludes non-completed runs.
   - `GetRetrievalMode(convID) string` and `SetRetrievalMode(convID, mode)`
     — present but not bound to a UI control in Phase 1, used by tests and
     a dev menu.
@@ -1007,6 +1128,15 @@ and they do not surface as `AppError` to the UI.
 - Errored run: `complete-as-errored` does not touch any other run's
   `active_for_replay` (verify via a prior active completed run staying
   active).
+- Completion rollback: start an `in_progress` run; in another goroutine,
+  mark it `cancelled`; then attempt the completion transaction. Assert
+  the activate `UPDATE` affects zero rows, the transaction rolls back,
+  any prior active run is still active, and the cancelled run remains
+  cancelled.
+- Display vs replay: a turn with a cancelled run that emitted partial
+  text + one tool call. `GetProviderReplayEvents` excludes the run.
+  `GetConversationDisplayEvents` includes it (its partial text and
+  emitted tool call are visible to the UI).
 - `GetProviderReplayEvents`: across a conversation with three turns where
   turn 2 was regenerated twice, the timeline returned contains only the
   active run for each turn, events ordered by `sequence_index` within the
@@ -1044,12 +1174,23 @@ and they do not surface as `AppError` to the UI.
 - `Execute` ctx timeout → `timeout`.
 - `Execute` tool-raised error → `execution_error`.
 - `Execute` happy path → `is_error=false`, latency populated.
+- `Execute` passes `ExecContext` through to the tool: a probe tool
+  records its received `ExecContext` and the test asserts
+  `ConversationID`/`TurnID`/`RunID`/`RetrievalMode`/`TextbookScope`
+  match what the caller supplied.
 
 ### `search_textbook` tests
 
 - Default top_k = 5; max top_k = 10 (11 rejected by schema).
 - `book` argument narrows scope; not-in-scope `book` → `invalid_book`.
+  Scope validation uses `ExecContext.TextbookScope`, not direct database
+  reads.
 - `chapter` argument filters returned chunks to that chapter.
+- **Chapter correctness:** mock the `rag.Adapter` to return 20 chunks
+  spanning 4 chapters with deliberately low scores for the target
+  chapter. Call with `chapter=<target>`, `top_k=5`. Assert the returned
+  chunks are the top-5 *within the target chapter*, not the top-5
+  across the whole scope that happened to include the chapter.
 - Empty scope → `no_textbooks_attached`.
 - Output formatted with `## Source N [source_id: chunk_<hash16>]` header
   on each result.
@@ -1063,9 +1204,14 @@ and they do not surface as `AppError` to the UI.
 - Numbers (int, decimal); operators (+ - * / ^); parentheses; unary minus
   stacking (`---5 = -5`).
 - Percent suffix at literal and parenthesized positions.
-- Functions: arity-valid happy path for each (min/max variadic, abs/round/
-  sqrt/floor/ceil unary).
-- Function arity errors.
+- Functions: arity-valid happy path for each (min/max variadic, abs/sqrt/
+  floor/ceil unary, round 1-or-2-arg).
+- `round(x)` rounds to nearest integer using banker's rounding
+  (`round(0.5)=0`, `round(1.5)=2`, `round(2.5)=2`).
+- `round(x, places)` with `places` 0..16: `round(389.8125, 2) = 389.81`,
+  `round(389.815, 2)` follows banker's rounding at the retained digit.
+- `round(x, -1)` or `round(x, 17)` → `domain_error`.
+- Function arity errors (e.g., `round(1, 2, 3)`, `sqrt()`).
 - `parse_error` with location info.
 - `divide_by_zero`.
 - `domain_error` (sqrt(-1)).
@@ -1093,6 +1239,12 @@ and they do not surface as `AppError` to the UI.
 - Cancellation mid-iteration: cancel the ctx mid-stream. Assert partial
   text persisted, run marked `cancelled`, prior active run for this turn
   (if any from a regenerate) untouched.
+- Mid-stream `Delta.Err` distinguishes cause: a scripted provider emits
+  text + `Delta{Err, Done: true}` *without* ctx cancellation; assert
+  partial text persisted, run marked `errored` with
+  `terminal_reason='provider_error'`, `chat:run_errored` emitted. Same
+  scenario with ctx cancelled first; assert run marked `cancelled` with
+  `terminal_reason='user_cancelled'`, `chat:run_cancelled` emitted.
 - Regenerate: complete a run for turn T; start a second run for turn T;
   on its completion, assert the first is demoted and the second active.
 - Failed regenerate: complete a run for turn T; start a second run for
@@ -1135,7 +1287,9 @@ Add new steps to `docs/SMOKE.md`:
 - Conversation switch mid-loop: events for the inactive conversation are
   not rendered (defensive `convID` check on the frontend).
 - Reopening a conversation rebuilds the bubble from
-  `GetConversationEvents`, with the same inline-block rendering.
+  `GetConversationDisplayEvents`, with the same inline-block rendering.
+  A previously-cancelled run's partial text and emitted tool calls
+  remain visible.
 - Regenerate (when implemented in UI; backend ready in Phase 1):
   re-rendering the bubble shows the new active run's events; the prior
   run is not visible.
@@ -1236,3 +1390,51 @@ Their existing tests continue to run unmodified.
   two tools. The full evaluator (LLM-as-judge, rubrics, dashboards) is a
   separate later project, after the tool stack has more shape to
   evaluate.
+- **`ExecContext` on `Tool.Execute`.** `search_textbook` cannot validate
+  its `book` argument against the conversation's attached scope without
+  conversation-scoped state. Threading it through the Tool interface as
+  an explicit `ExecContext` (with `ConversationID`/`TurnID`/`RunID`/
+  `RetrievalMode`/`TextbookScope`) is cleaner than putting it on
+  `context.Context` values (which would couple unrelated tools to keys
+  they should not know) or constructing per-conversation Tool instances
+  (registration would have to happen per turn instead of at startup).
+- **Completion transaction rolls back on zero-row activate.** Without
+  this, a concurrent cancel/error could be silently overwritten by a
+  late completion. The activate UPDATE's `RowsAffected() == 1` check is
+  the in-transaction guard that makes the lifecycle invariants hold
+  under concurrency.
+- **`round(x, places)` in Phase 1.** Tax and accounting calculations
+  routinely need cents-level verification; integer-only rounding leaves
+  the model to compose `floor(x*100 + 0.5)/100` patterns that bypass
+  banker's rounding. The two-argument form costs ~5 lines on top of the
+  decimal library call.
+- **`errorCode` on `chat:tool_result`.** The UI requirement to render
+  errored tool blocks in red with the error code requires the code in
+  the event payload; sourcing it from `tool_metadata.error_code` lets
+  reopened conversations rebuild the same UI without a new event-log
+  column.
+- **`Delta.Err` cause-discriminated.** Provider stream failures and
+  user cancellation produce the same `Delta.Err` shape but require
+  different terminal states (`errored` vs `cancelled`). Discriminating
+  on `ctx.Err()` keeps the loop's terminal-state logic honest.
+- **Two separate replay/display methods.** Provider replay
+  (`GetProviderReplayEvents`) and UI display
+  (`GetConversationDisplayEvents`) have inverted requirements around
+  cancelled/errored runs — replay must exclude them for correctness,
+  display must include them for faithfulness. Conflating the two
+  produces either lost-history surprises or unsafe provider input.
+- **`superseded` removed from `runs.status`.** `active_for_replay=0` on
+  a `completed` run already represents "no longer active." Adding a
+  `superseded` status without a defined writer and a defined recovery
+  path back to active is dead enum surface.
+- **Chapter-scoped search correctness rule, implementation flexible.**
+  The spec mandates the correctness property (top-`top_k` within the
+  chapter, not within the scope) without forcing a specific `rag.Adapter`
+  change. Phase 1 implementation picks the cheapest path that satisfies
+  it; the adapter can evolve independently.
+- **Stable `source_id` derivation explicit.** `sha256(book_id |
+  chapter | chunk_locator_or_index | normalized_chunk_text)` (or an
+  existing equivalent persistent chunk ID) is the only derivation that
+  survives re-indexing and disambiguates across books. Phase 2's
+  citation/verifier tools will resolve these IDs, so they must outlive
+  the run that produced them.
