@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cajundata/starshp_app/internal/chat"
 	"github.com/cajundata/starshp_app/internal/config"
@@ -14,6 +15,8 @@ import (
 	"github.com/cajundata/starshp_app/internal/rag"
 	"github.com/cajundata/starshp_app/internal/store"
 	"github.com/cajundata/starshp_app/internal/textbooks"
+	"github.com/cajundata/starshp_app/internal/tools"
+	"github.com/cajundata/starshp_app/internal/tools/safemath"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -25,13 +28,46 @@ type API struct {
 	ragAdpt        *rag.Adapter
 	lib            *library.Library
 	chatSvc        *chat.Service
+	toolReg        *tools.Registry
 	mu             sync.Mutex
 	cancelInFlight context.CancelFunc
 }
 
 func NewAPI(cfg config.Config, st *store.Store, reg provider.Registry, ragAdpt *rag.Adapter) *API {
-	return &API{cfg: cfg, st: st, reg: reg, ragAdpt: ragAdpt,
+	a := &API{cfg: cfg, st: st, reg: reg, ragAdpt: ragAdpt,
 		lib: library.New(cfg.LibraryDir), chatSvc: chat.New(st)}
+	// In-process tool registry for the agentic loop. safe_math has no
+	// dependencies; search_textbook registration lands with the full appapi
+	// orchestration in Phase 6.
+	a.toolReg = tools.NewRegistry(30 * time.Second)
+	_ = a.toolReg.Register(safemath.New())
+	return a
+}
+
+// wailsSink maps chat lifecycle events onto Wails runtime events. Phase 5
+// wires the minimal subset the existing frontend consumes (token + usage);
+// the full chat:* taxonomy lands in Phase 6.
+type wailsSink struct{ a *API }
+
+func (w wailsSink) Emit(e chat.SinkEvent) {
+	switch e.Kind {
+	case chat.SinkToken:
+		if tok, ok := e.Payload["text"].(string); ok {
+			wruntime.EventsEmit(w.a.ctx, "chat:token", tok)
+		}
+	case chat.SinkUsage:
+		wruntime.EventsEmit(w.a.ctx, "chat:usage", e.Payload)
+	}
+}
+
+// providerNameFromModelID resolves "openai" | "anthropic" for runs.provider.
+func providerNameFromModelID(reg provider.Registry, modelID string) string {
+	for _, m := range reg.Models {
+		if m.ID == modelID {
+			return m.Provider
+		}
+	}
+	return ""
 }
 
 // Startup is called by Wails with the app context.
@@ -80,17 +116,21 @@ type ragRetriever struct {
 	scopes []store.TextbookScope
 }
 
-func (r ragRetriever) Retrieve(ctx context.Context, q string) (string, string, error) {
+func (r ragRetriever) Retrieve(ctx context.Context, q string) (string, string, []chat.RetrievedSource, error) {
 	var filters []rag.ScopeFilter
 	for _, s := range r.scopes {
 		filters = append(filters, rag.ScopeFilter{Book: s.Name, Chapters: s.Chapters})
 	}
 	res, err := r.a.ragAdpt.Retrieve(ctx, q, filters, r.a.cfg.RAGTopK, r.a.cfg.ContextTokenBudget)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	srcJSON, _ := jsonMarshal(res.Sources)
-	return res.Context, srcJSON, nil
+	sources := make([]chat.RetrievedSource, 0, len(res.Sources))
+	for _, s := range res.Sources {
+		sources = append(sources, chat.RetrievedSource{Book: s.Book, Chapter: s.Chapter, ChunkID: s.ChunkID})
+	}
+	return res.Context, srcJSON, sources, nil
 }
 
 // buildChatUsageEvent assembles the payload sent on the "chat:usage" Wails
@@ -151,16 +191,24 @@ func (a *API) SendMessage(convID, userText, modelID string) (string, error) {
 		a.mu.Unlock()
 	}()
 
-	text, usage, err := a.chatSvc.Send(cctx, chat.SendParams{
-		ConversationID: convID, UserText: userText, SystemPrompt: systemPrompt,
-		Model: modelID, Provider: prov, Retriever: retr,
-	}, func(tok string) {
-		wruntime.EventsEmit(a.ctx, "chat:token", tok) // use a.ctx: events always flow to UI
-	})
-	if payload := buildChatUsageEvent(convID, modelID, usage); payload != nil {
-		wruntime.EventsEmit(a.ctx, "chat:usage", payload)
-	}
-	return text, err
+	_, err = a.chatSvc.Send(cctx, chat.SendParams{
+		ConversationID: convID,
+		UserText:       userText,
+		SystemPrompt:   systemPrompt,
+		Model:          modelID,
+		Provider:       prov,
+		ProviderName:   providerNameFromModelID(a.reg, modelID),
+		Registry:       a.toolReg,
+		Resolver:       chatStoreResolver{st: a.st},
+		Retriever:      retr,
+		RetrievalMode:  chat.RetrievalAutoGroundedDefault,
+		Sink:           wailsSink{a: a},
+	}, nil)
+	// The assistant text is no longer returned by Send — the frontend renders
+	// from emitted events (chat:token during the stream). The legacy (string)
+	// return is kept empty during the transition; Phase 6 changes the binding
+	// signature and wires the full event taxonomy.
+	return "", err
 }
 
 // CancelMessage aborts the in-flight streaming response, if any.

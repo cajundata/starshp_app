@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,196 +11,211 @@ import (
 
 	"github.com/cajundata/starshp_app/internal/provider"
 	"github.com/cajundata/starshp_app/internal/store"
+	"github.com/cajundata/starshp_app/internal/tools"
+	"github.com/cajundata/starshp_app/internal/tools/probe"
 )
 
-type fakeProvider struct {
-	gotPrefix string
-	usage     *provider.Usage // optional usage to emit on terminal Done
-}
+// minimal fake provider: emits one assistant_text delta then Done with end_turn.
+type oneShotProvider struct{ text string }
 
-func (f *fakeProvider) Stream(ctx context.Context, req provider.ChatRequest) (<-chan provider.Delta, error) {
-	f.gotPrefix = req.CachedPrefix
-	ch := make(chan provider.Delta, 2)
-	ch <- provider.Delta{Text: "Drafted post"}
-	ch <- provider.Delta{Done: true, Usage: f.usage}
+func (o oneShotProvider) Stream(_ context.Context, _ provider.ChatRequest) (<-chan provider.Delta, error) {
+	ch := make(chan provider.Delta, 3)
+	ch <- provider.Delta{Text: o.text}
+	ch <- provider.Delta{Done: true, StopReason: "end_turn",
+		Usage: &provider.Usage{InputTokens: 10, OutputTokens: 5}}
 	close(ch)
 	return ch, nil
 }
 
-type fakeRetriever struct{}
+type captureSink struct{ events []SinkEvent }
 
-func (fakeRetriever) Retrieve(ctx context.Context, q string) (string, string, error) {
-	return "CTX: revenue rules", `[{"book":"ia","chapter":18}]`, nil
+func (c *captureSink) Emit(e SinkEvent) { c.events = append(c.events, e) }
+
+type emptyResolver struct{}
+
+func (emptyResolver) Resolve(_ context.Context, _ string) ([]TextbookEntry, error) {
+	return nil, nil
 }
 
-func TestSendPersistsAndAssemblesPrefix(t *testing.T) {
-	st, _ := store.Open(filepath.Join(t.TempDir(), "app.db"))
-	defer st.Close()
-	conv, _ := st.CreateConversation("t")
-
-	fp := &fakeProvider{usage: &provider.Usage{InputTokens: 1200, OutputTokens: 450, CachedInputTokens: 800}}
-	svc := New(st)
-
-	var streamed string
-	final, usage, err := svc.Send(context.Background(), SendParams{
-		ConversationID: conv.ID,
-		UserText:       "Draft a post on ASC 606",
-		SystemPrompt:   "You are an accounting tutor.",
-		Model:          "claude-opus-4-7",
-		Provider:       fp,
-		Retriever:      fakeRetriever{},
-	}, func(tok string) { streamed += tok })
+// openStore uses a temp-file DB rather than ":memory:": database/sql pools
+// connections and modernc.org/sqlite gives each connection its own in-memory
+// database, which breaks multi-statement tests.
+func openStore(t *testing.T) *store.Store {
+	t.Helper()
+	s, err := store.Open(filepath.Join(t.TempDir(), "chat.db"))
 	if err != nil {
-		t.Fatalf("Send: %v", err)
+		t.Fatal(err)
 	}
-	if streamed != "Drafted post" || final != "Drafted post" {
-		t.Fatalf("stream=%q final=%q", streamed, final)
-	}
-	if fp.gotPrefix != "You are an accounting tutor.\n\nCTX: revenue rules" {
-		t.Fatalf("prefix assembly wrong: %q", fp.gotPrefix)
-	}
-	if usage == nil || usage.InputTokens != 1200 || usage.OutputTokens != 450 || usage.CachedInputTokens != 800 {
-		t.Fatalf("returned usage = %+v, want {1200, 450, 800}", usage)
-	}
-	msgs, _ := st.ListMessages(conv.ID)
-	if len(msgs) != 2 || msgs[0].Role != "user" || msgs[1].Role != "assistant" {
-		t.Fatalf("messages = %+v", msgs)
-	}
-	if msgs[1].Model != "claude-opus-4-7" || msgs[1].RAGContext != "CTX: revenue rules" {
-		t.Fatalf("assistant msg missing model/rag: %+v", msgs[1])
-	}
-	if msgs[1].InputTokens == nil || *msgs[1].InputTokens != 1200 {
-		t.Fatalf("persisted InputTokens = %v, want 1200", msgs[1].InputTokens)
-	}
-	if msgs[1].OutputTokens == nil || *msgs[1].OutputTokens != 450 {
-		t.Fatalf("persisted OutputTokens = %v, want 450", msgs[1].OutputTokens)
-	}
-	if msgs[1].CachedInputTokens == nil || *msgs[1].CachedInputTokens != 800 {
-		t.Fatalf("persisted CachedInputTokens = %v, want 800", msgs[1].CachedInputTokens)
-	}
-	var srcs []map[string]any
-	if json.Unmarshal([]byte(msgs[1].RAGSources), &srcs); len(srcs) != 1 {
-		t.Fatalf("rag sources not persisted: %q", msgs[1].RAGSources)
-	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
 }
 
-// cancelProvider sends one token then blocks until ctx is cancelled, then
-// closes the channel — mimicking a real provider that honours context cancellation.
-type cancelProvider struct {
-	firstTokenSent chan struct{} // closed after sending the first delta
+func TestSend_HappyPath_PersistsEventsAndCompletesRun(t *testing.T) {
+	st := openStore(t)
+	conv, _ := st.CreateConversation("c")
+	svc := New(st)
+	sink := &captureSink{}
+	reg := tools.NewRegistry(5 * time.Second)
+
+	res, err := svc.Send(context.Background(), SendParams{
+		ConversationID: conv.ID,
+		UserText:       "hi",
+		SystemPrompt:   "system",
+		Model:          "gpt-x",
+		Provider:       oneShotProvider{text: "hello"},
+		Registry:       reg,
+		Resolver:       emptyResolver{},
+		RetrievalMode:  RetrievalAutoGroundedDefault,
+		Sink:           sink,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.TerminalReason != "end_turn" {
+		t.Fatalf("terminal_reason want end_turn, got %q", res.TerminalReason)
+	}
+	events, _ := st.GetConversationDisplayEvents(conv.ID)
+	if len(events) != 2 || events[0].Kind != store.EventKindUserMessage ||
+		events[1].Kind != store.EventKindAssistantText || events[1].Text != "hello" {
+		t.Fatalf("event log mismatch: %+v", events)
+	}
+	run, _ := st.GetRun(res.RunID)
+	if !run.ActiveForReplay || run.Status != "completed" {
+		t.Fatalf("run not active/completed: %+v", run)
+	}
+	if run.TotalInputTokens != 10 || run.TotalOutputTokens != 5 {
+		t.Fatalf("totals mismatch: %+v", run)
+	}
+	// Sink should have emitted run_started, run_completed, usage.
+	haveKinds := map[SinkEventKind]bool{}
+	for _, e := range sink.events {
+		haveKinds[e.Kind] = true
+	}
+	for _, want := range []SinkEventKind{SinkRunStarted, SinkRunCompleted, SinkUsage} {
+		if !haveKinds[want] {
+			t.Errorf("expected sink event %s", want)
+		}
+	}
+	_ = json.Valid // import guard for json package; used in later tests
 }
 
-func (p *cancelProvider) Stream(ctx context.Context, req provider.ChatRequest) (<-chan provider.Delta, error) {
-	ch := make(chan provider.Delta)
-	go func() {
-		defer close(ch)
-		ch <- provider.Delta{Text: "partial"}
-		close(p.firstTokenSent)
-		// Block until the caller cancels the context (simulating stream abort).
-		<-ctx.Done()
-	}()
+// scriptedProvider emits a canned sequence of Delta arrays — one per
+// iteration. The Nth call to Stream emits the Nth element.
+type scriptedProvider struct {
+	iterations [][]provider.Delta
+	callCount  int
+}
+
+func (s *scriptedProvider) Stream(_ context.Context, _ provider.ChatRequest) (<-chan provider.Delta, error) {
+	if s.callCount >= len(s.iterations) {
+		return nil, errors.New("scriptedProvider: out of canned iterations")
+	}
+	deltas := s.iterations[s.callCount]
+	s.callCount++
+	ch := make(chan provider.Delta, len(deltas))
+	for _, d := range deltas {
+		ch <- d
+	}
+	close(ch)
 	return ch, nil
 }
 
-// TestSendContextCancelPersistsPartial proves that cancelling the context
-// while a stream is in flight causes Send to return and the partial assistant
-// message ("partial") to be persisted in the store — satisfying the spec
-// requirement "cancel ctx → partial message persisted as-is".
-func TestSendContextCancelPersistsPartial(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "app.db"))
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	defer st.Close()
-	conv, _ := st.CreateConversation("cancel-test")
-
-	firstTokenSent := make(chan struct{})
-	fp := &cancelProvider{firstTokenSent: firstTokenSent}
+func TestSend_ToolCallLoop_WriteBeforeDispatchAndSequential(t *testing.T) {
+	st := openStore(t)
+	conv, _ := st.CreateConversation("c")
 	svc := New(st)
+	sink := &captureSink{}
+	reg := tools.NewRegistry(time.Second)
+	p1 := probe.New("p1", `{"type":"object"}`)
+	p1.Out = "result-of-p1"
+	p2 := probe.New("p2", `{"type":"object"}`)
+	p2.Out = "result-of-p2"
+	_ = reg.Register(p1)
+	_ = reg.Register(p2)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	prov := &scriptedProvider{iterations: [][]provider.Delta{
+		// Iteration 1: assistant text + two tool calls.
+		{
+			{Text: "Let me check."},
+			{ToolCall: &provider.ToolCall{ID: "c1", Name: "p1", Input: json.RawMessage(`{}`)}},
+			{ToolCall: &provider.ToolCall{ID: "c2", Name: "p2", Input: json.RawMessage(`{}`)}},
+			{Done: true, StopReason: "tool_use",
+				Usage: &provider.Usage{InputTokens: 10, OutputTokens: 4}},
+		},
+		// Iteration 2: final assistant text.
+		{
+			{Text: "Final answer: 42."},
+			{Done: true, StopReason: "end_turn",
+				Usage: &provider.Usage{InputTokens: 30, OutputTokens: 6}},
+		},
+	}}
 
-	type result struct {
-		text string
-		err  error
-	}
-	done := make(chan result, 1)
-	go func() {
-		text, _, err := svc.Send(ctx, SendParams{
-			ConversationID: conv.ID,
-			UserText:       "hello",
-			SystemPrompt:   "",
-			Model:          "test-model",
-			Provider:       fp,
-		}, nil)
-		done <- result{text, err}
-	}()
-
-	// Wait for the first token to be delivered, then cancel.
-	select {
-	case <-firstTokenSent:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for first token")
-	}
-	cancel()
-
-	// Send must return within 2 seconds of the cancel.
-	select {
-	case res := <-done:
-		// Send may return a nil or context error — both are acceptable.
-		_ = res.err
-		if !strings.Contains(res.text, "partial") {
-			t.Fatalf("expected partial text to contain %q, got %q", "partial", res.text)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("Send did not return after context cancel")
-	}
-
-	// Verify the partial message was persisted in the store.
-	msgs, err := st.ListMessages(conv.ID)
+	res, err := svc.Send(context.Background(), SendParams{
+		ConversationID: conv.ID, UserText: "q",
+		Model: "x", Provider: prov, Registry: reg,
+		Resolver: emptyResolver{}, RetrievalMode: RetrievalAutoGroundedDefault,
+		Sink: sink,
+	}, nil)
 	if err != nil {
-		t.Fatalf("ListMessages: %v", err)
+		t.Fatal(err)
 	}
-	// Expect user + assistant messages.
-	if len(msgs) < 2 {
-		t.Fatalf("expected at least 2 messages, got %d", len(msgs))
+	if res.TotalIterations != 2 || res.TotalToolCalls != 2 {
+		t.Fatalf("counters: %+v", res)
 	}
-	asst := msgs[len(msgs)-1]
-	if asst.Role != "assistant" {
-		t.Fatalf("last message role = %q, want assistant", asst.Role)
+	events, _ := st.GetConversationDisplayEvents(conv.ID)
+	var kinds []string
+	for _, e := range events {
+		kinds = append(kinds, e.Kind)
 	}
-	if !strings.Contains(asst.Content, "partial") {
-		t.Fatalf("persisted assistant content = %q, want it to contain %q", asst.Content, "partial")
+	want := []string{
+		store.EventKindUserMessage,
+		store.EventKindAssistantText,     // "Let me check."
+		store.EventKindAssistantToolCall, // c1
+		store.EventKindToolResult,        // result-of-p1
+		store.EventKindAssistantToolCall, // c2
+		store.EventKindToolResult,        // result-of-p2
+		store.EventKindAssistantText,     // "Final answer: 42."
+	}
+	for i, w := range want {
+		if i >= len(kinds) || kinds[i] != w {
+			t.Fatalf("event[%d] want %s got %v (full: %v)", i, w, kinds[i:], kinds)
+		}
+	}
+	if p1.CallCount() != 1 || p2.CallCount() != 1 {
+		t.Fatalf("tool call counts: p1=%d p2=%d", p1.CallCount(), p2.CallCount())
 	}
 }
 
-func TestSendNoUsageLeavesNilAndPersistsNull(t *testing.T) {
-	st, _ := store.Open(filepath.Join(t.TempDir(), "app.db"))
-	defer st.Close()
-	conv, _ := st.CreateConversation("no-usage")
-
-	fp := &fakeProvider{} // usage is nil
+func TestSend_MaxIterations_MarksErrored(t *testing.T) {
+	st := openStore(t)
+	conv, _ := st.CreateConversation("c")
 	svc := New(st)
-
-	_, usage, err := svc.Send(context.Background(), SendParams{
-		ConversationID: conv.ID,
-		UserText:       "hi",
-		SystemPrompt:   "",
-		Model:          "test",
-		Provider:       fp,
+	reg := tools.NewRegistry(time.Second)
+	p := probe.New("p", `{"type":"object"}`)
+	p.Out = "x"
+	_ = reg.Register(p)
+	// Build a provider that emits exactly one tool call per iteration, forever.
+	iter := []provider.Delta{
+		{ToolCall: &provider.ToolCall{ID: "c", Name: "p", Input: json.RawMessage(`{}`)}},
+		{Done: true, StopReason: "tool_use"},
+	}
+	prov := &scriptedProvider{}
+	for i := 0; i < MaxIterationsDefault+2; i++ {
+		prov.iterations = append(prov.iterations, iter)
+	}
+	res, err := svc.Send(context.Background(), SendParams{
+		ConversationID: conv.ID, UserText: "q",
+		Model: "x", Provider: prov, Registry: reg,
+		Resolver: emptyResolver{}, RetrievalMode: RetrievalAutoGroundedDefault,
 	}, nil)
-	if err != nil {
-		t.Fatalf("Send: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "max_iterations") {
+		t.Fatalf("expected max_iterations error; got %v", err)
 	}
-	if usage != nil {
-		t.Fatalf("usage = %+v, want nil", usage)
+	if res.TerminalReason != "max_iterations" {
+		t.Fatalf("terminal_reason want max_iterations; got %q", res.TerminalReason)
 	}
-	msgs, _ := st.ListMessages(conv.ID)
-	if len(msgs) != 2 {
-		t.Fatalf("got %d messages, want 2", len(msgs))
-	}
-	if msgs[1].InputTokens != nil || msgs[1].OutputTokens != nil || msgs[1].CachedInputTokens != nil {
-		t.Fatalf("persisted token cols should be nil, got %+v", msgs[1])
+	run, _ := st.GetRun(res.RunID)
+	if run.Status != "errored" || run.ActiveForReplay {
+		t.Fatalf("max-iter run should be errored+inactive: %+v", run)
 	}
 }
