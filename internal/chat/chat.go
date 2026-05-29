@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -339,12 +340,22 @@ func (s *Service) completeRunSuccess(p SendParams, runID, turnID, stopReason str
 		TotalIterations: iter}, nil
 }
 
-// handleStreamErr discriminates cancellation from provider error. Cancellation
-// support lands in the next task; for now mid-stream errors surface as
-// provider_error.
+// handleStreamErr discriminates cancellation from a provider-side error.
+// Either path runs after any accumulated partial assistant text has already
+// been persisted by the caller, so audit/display see what the model emitted.
 func (s *Service) handleStreamErr(ctx context.Context, p SendParams, runID, turnID string, sErr error) RunResult {
-	_ = ctx
-	return s.errorOut(p, runID, turnID, "provider_error", "stream_error", sErr.Error())
+	if ctx.Err() != nil || errors.Is(sErr, context.Canceled) {
+		_ = s.st.MarkRunCancelled(runID, "user_cancelled")
+		emit(p.Sink, SinkRunCancelled, p.ConversationID, runID, turnID,
+			map[string]any{"terminalReason": "user_cancelled"})
+		return RunResult{RunID: runID, TerminalReason: "user_cancelled"}
+	}
+	ae := provider.NormalizeError(sErr)
+	_ = s.st.MarkRunErrored(runID, "provider_error", ae.Code, ae.UserMessage)
+	emit(p.Sink, SinkRunErrored, p.ConversationID, runID, turnID,
+		map[string]any{"errorCode": ae.Code, "errorMessage": ae.UserMessage,
+			"terminalReason": "provider_error"})
+	return RunResult{RunID: runID, TerminalReason: "provider_error"}
 }
 
 func (s *Service) errorOut(p SendParams, runID, turnID, reason, code, msg string) RunResult {

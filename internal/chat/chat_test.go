@@ -219,3 +219,91 @@ func TestSend_MaxIterations_MarksErrored(t *testing.T) {
 		t.Fatalf("max-iter run should be errored+inactive: %+v", run)
 	}
 }
+
+func TestSend_StreamErr_WithoutCancel_MarksErrored(t *testing.T) {
+	st := openStore(t)
+	conv, _ := st.CreateConversation("c")
+	svc := New(st)
+	reg := tools.NewRegistry(time.Second)
+	prov := &scriptedProvider{iterations: [][]provider.Delta{
+		{
+			{Text: "partial"},
+			{Err: errors.New("upstream rate limit"), Done: true},
+		},
+	}}
+	sink := &captureSink{}
+	res, _ := svc.Send(context.Background(), SendParams{
+		ConversationID: conv.ID, UserText: "q",
+		Model: "x", Provider: prov, Registry: reg,
+		Resolver: emptyResolver{}, RetrievalMode: RetrievalAutoGroundedDefault,
+		Sink: sink,
+	}, nil)
+	if res.TerminalReason != "provider_error" {
+		t.Fatalf("want provider_error; got %q", res.TerminalReason)
+	}
+	events, _ := st.GetConversationDisplayEvents(conv.ID)
+	foundPartial := false
+	for _, e := range events {
+		if e.Kind == store.EventKindAssistantText && e.Text == "partial" {
+			foundPartial = true
+		}
+	}
+	if !foundPartial {
+		t.Fatal("partial text must be persisted even when stream errors")
+	}
+	var sawErrored bool
+	for _, e := range sink.events {
+		if e.Kind == SinkRunErrored {
+			sawErrored = true
+		}
+	}
+	if !sawErrored {
+		t.Fatal("sink should have received run_errored")
+	}
+}
+
+func TestSend_StreamErr_AfterCancel_MarksCancelled(t *testing.T) {
+	st := openStore(t)
+	conv, _ := st.CreateConversation("c")
+	svc := New(st)
+	reg := tools.NewRegistry(time.Second)
+	// Pre-cancelled context: the loop should see ctx.Err() != nil and the
+	// stream's Err is plumbed as cancellation, not provider error.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	prov := &scriptedProvider{iterations: [][]provider.Delta{
+		{
+			{Text: "interrupted"},
+			{Err: context.Canceled, Done: true},
+		},
+	}}
+	sink := &captureSink{}
+	res, _ := svc.Send(ctx, SendParams{
+		ConversationID: conv.ID, UserText: "q",
+		Model: "x", Provider: prov, Registry: reg,
+		Resolver: emptyResolver{}, RetrievalMode: RetrievalAutoGroundedDefault,
+		Sink: sink,
+	}, nil)
+	if res.TerminalReason != "user_cancelled" {
+		t.Fatalf("want user_cancelled; got %q", res.TerminalReason)
+	}
+	events, _ := st.GetConversationDisplayEvents(conv.ID)
+	foundPartial := false
+	for _, e := range events {
+		if e.Kind == store.EventKindAssistantText && e.Text == "interrupted" {
+			foundPartial = true
+		}
+	}
+	if !foundPartial {
+		t.Fatal("partial text must be persisted on cancellation too")
+	}
+	var sawCancelled bool
+	for _, e := range sink.events {
+		if e.Kind == SinkRunCancelled {
+			sawCancelled = true
+		}
+	}
+	if !sawCancelled {
+		t.Fatal("sink should have received run_cancelled")
+	}
+}
