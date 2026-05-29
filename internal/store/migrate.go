@@ -17,14 +17,22 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
-	for _, col := range []string{"input_tokens", "output_tokens", "cached_input_tokens"} {
-		has, err := columnExists(db, "messages", col)
-		if err != nil {
-			return err
-		}
-		if !has {
-			if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN ` + col + ` INTEGER`); err != nil {
+	// Legacy token-column backfill: only relevant when a pre-token messages
+	// table still exists. messages is no longer part of the live schema, so on
+	// fresh databases this loop is skipped; on legacy databases it ensures the
+	// columns exist before migrateMessagesToEvents reads them.
+	if msgs, err := tableExists(db, "messages"); err != nil {
+		return err
+	} else if msgs {
+		for _, col := range []string{"input_tokens", "output_tokens", "cached_input_tokens"} {
+			has, err := columnExists(db, "messages", col)
+			if err != nil {
 				return err
+			}
+			if !has {
+				if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN ` + col + ` INTEGER`); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -39,9 +47,11 @@ func migrate(db *sql.DB) error {
 		}
 	}
 	// conversation_events, runs, and their indexes are created by schemaSQL
-	// running before migrate(); nothing additional needed here for fresh or
-	// already-upgraded DBs. The messages → conversation_events data migration
-	// lands in a follow-up task.
+	// running before migrate(). Convert any legacy messages rows into the
+	// canonical event log + synthesized runs, then drop the messages table.
+	if err := migrateMessagesToEvents(db); err != nil {
+		return err
+	}
 	if err := sweepInline(db); err != nil {
 		return err
 	}

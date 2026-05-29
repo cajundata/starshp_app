@@ -51,10 +51,12 @@ CREATE TABLE conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL,
 	}
 }
 
-// TestMigrateAddsTokenColumns simulates a pre-token-tracking DB and verifies
-// that Open's migration adds input_tokens, output_tokens, cached_input_tokens
-// to the messages table.
-func TestMigrateAddsTokenColumns(t *testing.T) {
+// TestMigratePreTokenMessagesNoError simulates a pre-token-tracking DB (a
+// messages table without the usage columns) and verifies Open migrates it
+// cleanly: the token-column ALTER runs before migrateMessagesToEvents reads the
+// rows, the rows convert to events, and the messages table is dropped — all
+// without a "no such column" error.
+func TestMigratePreTokenMessagesNoError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "old.db")
 	// Pre-token messages schema (no usage columns).
 	legacy := `
@@ -72,6 +74,11 @@ CREATE TABLE messages (id TEXT PRIMARY KEY,
 	if _, err := db.Exec(legacy); err != nil {
 		t.Fatalf("seed legacy schema: %v", err)
 	}
+	if _, err := db.Exec(`INSERT INTO conversations(id,title,created_at,updated_at) VALUES('c1','t',0,0);
+		INSERT INTO messages(id,conversation_id,role,content,model,created_at) VALUES('u1','c1','user','hi',NULL,1);
+		INSERT INTO messages(id,conversation_id,role,content,model,created_at) VALUES('a1','c1','assistant','hello','claude-x',2);`); err != nil {
+		t.Fatalf("seed rows: %v", err)
+	}
 	db.Close()
 
 	s, err := Open(path)
@@ -80,14 +87,16 @@ CREATE TABLE messages (id TEXT PRIMARY KEY,
 	}
 	defer s.Close()
 
-	for _, col := range []string{"input_tokens", "output_tokens", "cached_input_tokens"} {
-		has, err := columnExists(s.db, "messages", col)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !has {
-			t.Fatalf("messages.%s should have been added by migration", col)
-		}
+	// messages dropped; the pair migrated into the event log.
+	if has, _ := columnExists(s.db, "messages", "id"); has {
+		t.Fatal("messages table should be dropped after migration")
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT count(*) FROM conversation_events WHERE conversation_id='c1'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("expected 2 migrated events, got %d", n)
 	}
 }
 

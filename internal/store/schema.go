@@ -7,13 +7,6 @@ CREATE TABLE IF NOT EXISTS conversations (
   pinned_model TEXT,
   retrieval_mode TEXT NOT NULL DEFAULT 'auto_grounded_default'
 );
-CREATE TABLE IF NOT EXISTS messages (
-  id TEXT PRIMARY KEY,
-  conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-  role TEXT NOT NULL, content TEXT NOT NULL, model TEXT,
-  created_at INTEGER NOT NULL, rag_context TEXT, rag_sources TEXT,
-  input_tokens INTEGER, output_tokens INTEGER, cached_input_tokens INTEGER
-);
 CREATE TABLE IF NOT EXISTS conversation_textbooks (
   conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   textbook_name TEXT NOT NULL, chapter_nums TEXT,
@@ -65,7 +58,6 @@ CREATE TABLE IF NOT EXISTS runs (
   total_tool_calls          INTEGER NOT NULL DEFAULT 0,
   total_iterations          INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS conversation_events_conv_seq
   ON conversation_events(conversation_id, sequence_index);
 CREATE INDEX IF NOT EXISTS conversation_events_turn

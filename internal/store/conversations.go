@@ -1,11 +1,9 @@
 package store
 
 import (
-	"database/sql"
 	"encoding/json"
 	"time"
 
-	"github.com/cajundata/starshp_app/internal/provider"
 	"github.com/google/uuid"
 )
 
@@ -78,56 +76,11 @@ func (s *Store) SetConversationMeta(id, pinnedModel string) error {
 	return err
 }
 
-// AddMessage persists a message. usage is nil for user messages and for
-// assistant messages whose provider did not surface a usage block (cancel,
-// SDK gap). A nil usage writes NULL into all three token columns.
-func (s *Store) AddMessage(convID, role, content, model, ragContext, ragSources string, usage *provider.Usage) (Message, error) {
-	m := Message{ID: uuid.NewString(), ConvID: convID, Role: role, Content: content,
-		Model: model, CreatedAt: time.Now().Unix(), RAGContext: ragContext, RAGSources: ragSources}
-	var in, out, cached any // sql.NullInt64-equivalent via untyped nil
-	if usage != nil {
-		i, o, c := usage.InputTokens, usage.OutputTokens, usage.CachedInputTokens
-		in, out, cached = i, o, c
-		m.InputTokens, m.OutputTokens, m.CachedInputTokens = &i, &o, &c
-	}
-	_, err := s.db.Exec(`INSERT INTO messages(id,conversation_id,role,content,model,created_at,rag_context,rag_sources,input_tokens,output_tokens,cached_input_tokens) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-		m.ID, m.ConvID, m.Role, m.Content, m.Model, m.CreatedAt, m.RAGContext, m.RAGSources, in, out, cached)
-	if err == nil {
-		s.db.Exec(`UPDATE conversations SET updated_at=? WHERE id=?`, m.CreatedAt, convID)
-	}
-	return m, err
-}
-
-func (s *Store) ListMessages(convID string) ([]Message, error) {
-	rows, err := s.db.Query(`SELECT id,conversation_id,role,content,COALESCE(model,''),created_at,COALESCE(rag_context,''),COALESCE(rag_sources,''),input_tokens,output_tokens,cached_input_tokens FROM messages WHERE conversation_id=? ORDER BY created_at, rowid`, convID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Message
-	for rows.Next() {
-		var m Message
-		var inT, outT, cachedT sql.NullInt64
-		if err := rows.Scan(&m.ID, &m.ConvID, &m.Role, &m.Content, &m.Model, &m.CreatedAt, &m.RAGContext, &m.RAGSources, &inT, &outT, &cachedT); err != nil {
-			return nil, err
-		}
-		if inT.Valid {
-			v := int(inT.Int64)
-			m.InputTokens = &v
-		}
-		if outT.Valid {
-			v := int(outT.Int64)
-			m.OutputTokens = &v
-		}
-		if cachedT.Valid {
-			v := int(cachedT.Int64)
-			m.CachedInputTokens = &v
-		}
-		out = append(out, m)
-	}
-	return out, rows.Err()
-}
-
+// Message is the legacy chat message shape. The messages table is retired by
+// the tool-calling migration (data lives in conversation_events now); the
+// struct is retained only for the deprecated appapi.ListMessages shim's
+// signature during frontend rollout.
+//
 // GetRetrievalMode returns the per-conversation retrieval policy
 // (defaults to 'auto_grounded_default' for rows created before the column).
 func (s *Store) GetRetrievalMode(convID string) (string, error) {
