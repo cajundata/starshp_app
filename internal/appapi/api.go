@@ -4,6 +4,7 @@ package appapi
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"time"
@@ -130,8 +131,12 @@ func (a *API) ListConversations() ([]store.Conversation, error) { return a.st.Li
 func (a *API) CreateConversation(title string) (store.Conversation, error) {
 	return a.st.CreateConversation(title)
 }
-func (a *API) DeleteConversation(id string) error              { return a.st.DeleteConversation(id) }
-func (a *API) ListMessages(id string) ([]store.Message, error) { return a.st.ListMessages(id) }
+func (a *API) DeleteConversation(id string) error { return a.st.DeleteConversation(id) }
+
+// ListMessages is deprecated: history now flows through
+// GetConversationDisplayEvents. Returns an empty slice so older frontend builds
+// degrade gracefully rather than mixing schemas during rollout.
+func (a *API) ListMessages(_ string) ([]store.Message, error) { return nil, nil }
 func (a *API) Models() []provider.ModelInfo { return a.reg.Models }
 func (a *API) ListBooks() ([]textbooks.Book, error) {
 	return textbooks.Scan(a.cfg.TextbooksConfig)
@@ -200,23 +205,25 @@ func buildChatUsageEvent(convID, modelID string, usage *provider.Usage) map[stri
 	}
 }
 
-// SendMessage streams the assistant reply to the frontend via the
-// "chat:token" event and returns the full text (or a normalized error). The
+// SendMessage runs the agentic loop for one user turn. Assistant output is
+// surfaced to the frontend through the chat:* Wails event taxonomy (the bubble
+// renders from events), so the method returns only a normalized error. The
 // system prompt is assembled from the conversation's active library items.
-func (a *API) SendMessage(convID, userText, modelID string) (string, error) {
+func (a *API) SendMessage(convID, userText, modelID string) error {
 	prov, err := provider.New(a.reg, modelID, a.cfg.OpenAIAPIKey, a.cfg.AnthropicAPIKey)
 	if err != nil {
-		return "", provider.NormalizeError(err)
+		return provider.NormalizeError(err)
 	}
-	// Auto-title: set title from first user message (best-effort, must not block send).
-	existing, _ := a.st.ListMessages(convID)
+	// Auto-title from the first user message (best-effort; reads the canonical
+	// event log now that messages is retired).
+	existing, _ := a.st.GetConversationDisplayEvents(convID)
 	if len(existing) == 0 {
 		_ = a.st.SetConversationTitle(convID, titleFromText(userText))
 	}
 
 	systemPrompt, skipped, err := a.assembleSystemPrompt(convID)
 	if err != nil {
-		return "", provider.NormalizeError(err)
+		return provider.NormalizeError(err)
 	}
 	if len(skipped) > 0 {
 		// A missing snippet is not fatal — skip it, surface a soft notice.
@@ -255,11 +262,7 @@ func (a *API) SendMessage(convID, userText, modelID string) (string, error) {
 		RetrievalMode:  a.retrievalMode(convID),
 		Sink:           wailsSink{a: a},
 	}, nil)
-	// The assistant text is no longer returned by Send — the frontend renders
-	// from emitted events (chat:token during the stream). The legacy (string)
-	// return is kept empty during the transition; Phase 6 changes the binding
-	// signature and wires the full event taxonomy.
-	return "", err
+	return err
 }
 
 // CancelMessage aborts the in-flight streaming response, if any.
@@ -334,4 +337,54 @@ func (a *API) EnsureIndexed(convID string) error {
 		}
 	}
 	return nil
+}
+
+// EventDTO is the JSON shape the frontend uses to render the event-log-based
+// assistant bubble (text + inline tool blocks).
+type EventDTO struct {
+	ID            string          `json:"id"`
+	TurnID        string          `json:"turnId"`
+	RunID         string          `json:"runId,omitempty"`
+	Kind          string          `json:"kind"`
+	Text          string          `json:"text,omitempty"`
+	ToolCallID    string          `json:"toolCallId,omitempty"`
+	ToolName      string          `json:"toolName,omitempty"`
+	ToolInput     json.RawMessage `json:"toolInput,omitempty"`
+	ToolMetadata  json.RawMessage `json:"toolMetadata,omitempty"`
+	ToolLatencyMs int64           `json:"toolLatencyMs,omitempty"`
+	IsError       bool            `json:"isError,omitempty"`
+}
+
+// GetConversationDisplayEvents returns the user-visible event timeline: the
+// active completed run per turn, or the latest terminal run when none is
+// active (so cancelled/errored partial output the user saw is preserved).
+func (a *API) GetConversationDisplayEvents(convID string) ([]EventDTO, error) {
+	rows, err := a.st.GetConversationDisplayEvents(convID)
+	if err != nil {
+		return nil, provider.NormalizeError(err)
+	}
+	out := make([]EventDTO, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, EventDTO{
+			ID: r.ID, TurnID: r.TurnID, RunID: r.RunID, Kind: r.Kind,
+			Text: r.Text, ToolCallID: r.ToolCallID, ToolName: r.ToolName,
+			ToolInput: r.ToolInput, ToolMetadata: r.ToolMetadata,
+			ToolLatencyMs: r.ToolLatencyMs, IsError: r.IsError,
+		})
+	}
+	return out, nil
+}
+
+// GetRetrievalMode returns the per-conversation retrieval policy.
+func (a *API) GetRetrievalMode(convID string) (string, error) {
+	m, err := a.st.GetRetrievalMode(convID)
+	if err != nil {
+		return "", provider.NormalizeError(err)
+	}
+	return m, nil
+}
+
+// SetRetrievalMode updates the per-conversation retrieval policy.
+func (a *API) SetRetrievalMode(convID, mode string) error {
+	return a.st.SetRetrievalMode(convID, mode)
 }

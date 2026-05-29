@@ -1,3 +1,40 @@
+export namespace appapi {
+	
+	export class EventDTO {
+	    id: string;
+	    turnId: string;
+	    runId?: string;
+	    kind: string;
+	    text?: string;
+	    toolCallId?: string;
+	    toolName?: string;
+	    toolInput?: number[];
+	    toolMetadata?: number[];
+	    toolLatencyMs?: number;
+	    isError?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new EventDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.turnId = source["turnId"];
+	        this.runId = source["runId"];
+	        this.kind = source["kind"];
+	        this.text = source["text"];
+	        this.toolCallId = source["toolCallId"];
+	        this.toolName = source["toolName"];
+	        this.toolInput = source["toolInput"];
+	        this.toolMetadata = source["toolMetadata"];
+	        this.toolLatencyMs = source["toolLatencyMs"];
+	        this.isError = source["isError"];
+	    }
+	}
+
+}
+
 export namespace library {
 	
 	export class Item {

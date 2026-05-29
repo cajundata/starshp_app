@@ -30,8 +30,16 @@ export function GetActiveItems(arg1) {
   return window['go']['appapi']['API']['GetActiveItems'](arg1);
 }
 
+export function GetConversationDisplayEvents(arg1) {
+  return window['go']['appapi']['API']['GetConversationDisplayEvents'](arg1);
+}
+
 export function GetConversationScope(arg1) {
   return window['go']['appapi']['API']['GetConversationScope'](arg1);
+}
+
+export function GetRetrievalMode(arg1) {
+  return window['go']['appapi']['API']['GetRetrievalMode'](arg1);
 }
 
 export function ListBooks() {
@@ -76,6 +84,10 @@ export function SetConversationMeta(arg1, arg2) {
 
 export function SetConversationScope(arg1, arg2) {
   return window['go']['appapi']['API']['SetConversationScope'](arg1, arg2);
+}
+
+export function SetRetrievalMode(arg1, arg2) {
+  return window['go']['appapi']['API']['SetRetrievalMode'](arg1, arg2);
 }
 
 export function StartupIssues() {

@@ -28,7 +28,7 @@ func TestSendMessageNilRagAdapterNoPanic(t *testing.T) {
 	api := NewAPI(config.Config{}, st, reg, nil) // ragAdpt == nil on purpose
 
 	// Must return an error (no OpenAI key), and crucially must NOT panic.
-	_, err = api.SendMessage(conv.ID, "hello", "m1")
+	err = api.SendMessage(conv.ID, "hello", "m1")
 	if err == nil {
 		t.Fatal("expected an error (no API key), got nil")
 	}
