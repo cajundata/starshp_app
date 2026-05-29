@@ -92,7 +92,7 @@ func TestRegistry_Execute_PassesExecContext(t *testing.T) {
 		ConversationID: "c1",
 		TurnID:         "t1",
 		RunID:          "r1",
-		RetrievalMode:  chat.RetrievalAutoGroundedDefault,
+		RetrievalMode:  string(chat.RetrievalAutoGroundedDefault),
 		TextbookScope:  []string{"intermediate-accounting"},
 	}
 	_, _, _, err := reg.Execute(context.Background(), ec, "p1", json.RawMessage(`{}`))
@@ -103,7 +103,7 @@ func TestRegistry_Execute_PassesExecContext(t *testing.T) {
 	if got.ConversationID != "c1" || got.TurnID != "t1" || got.RunID != "r1" {
 		t.Fatalf("ExecContext IDs mismatch: %+v", got)
 	}
-	if got.RetrievalMode != chat.RetrievalAutoGroundedDefault {
+	if got.RetrievalMode != string(chat.RetrievalAutoGroundedDefault) {
 		t.Fatalf("RetrievalMode mismatch: %v", got.RetrievalMode)
 	}
 	if len(got.TextbookScope) != 1 || got.TextbookScope[0] != "intermediate-accounting" {

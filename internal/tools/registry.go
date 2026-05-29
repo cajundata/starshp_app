@@ -12,17 +12,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cajundata/starshp_app/internal/chat"
 	"github.com/cajundata/starshp_app/internal/provider"
 	"github.com/xeipuuv/gojsonschema"
 )
 
 // ExecContext carries conversation-scoped state into tool execution.
+//
+// RetrievalMode is a plain string (the value of chat.RetrievalMode) rather than
+// the typed enum: the tools package must not import internal/chat, because chat
+// imports tools for the agentic loop. The canonical enum + validation lives in
+// chat; tools only carry the value through for tools that want to adapt on it.
 type ExecContext struct {
 	ConversationID string
 	TurnID         string
 	RunID          string
-	RetrievalMode  chat.RetrievalMode
+	RetrievalMode  string
 	TextbookScope  []string // book names only; richer scope via chat.ScopeResolver
 }
 
