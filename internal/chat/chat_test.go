@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -104,9 +103,11 @@ func TestSend_HappyPath_PersistsEventsAndCompletesRun(t *testing.T) {
 type scriptedProvider struct {
 	iterations [][]provider.Delta
 	callCount  int
+	reqs       []provider.ChatRequest // captured per Stream call for assertions
 }
 
-func (s *scriptedProvider) Stream(_ context.Context, _ provider.ChatRequest) (<-chan provider.Delta, error) {
+func (s *scriptedProvider) Stream(_ context.Context, req provider.ChatRequest) (<-chan provider.Delta, error) {
+	s.reqs = append(s.reqs, req)
 	if s.callCount >= len(s.iterations) {
 		return nil, errors.New("scriptedProvider: out of canned iterations")
 	}
@@ -186,7 +187,12 @@ func TestSend_ToolCallLoop_WriteBeforeDispatchAndSequential(t *testing.T) {
 	}
 }
 
-func TestSend_MaxIterations_MarksErrored(t *testing.T) {
+// When the iteration budget is exhausted, the loop must not discard the work.
+// It gives the model one final turn with tools withheld so it synthesizes an
+// answer from the gathered tool results, and the run completes successfully with
+// terminal_reason=max_iterations.
+func TestSend_MaxIterations_FinalizesWithAnswer(t *testing.T) {
+	t.Setenv("STARSHP_MAX_TOOL_ITERATIONS", "2")
 	st := openStore(t)
 	conv, _ := st.CreateConversation("c")
 	svc := New(st)
@@ -194,29 +200,43 @@ func TestSend_MaxIterations_MarksErrored(t *testing.T) {
 	p := probe.New("p", `{"type":"object"}`)
 	p.Out = "x"
 	_ = reg.Register(p)
-	// Build a provider that emits exactly one tool call per iteration, forever.
-	iter := []provider.Delta{
-		{ToolCall: &provider.ToolCall{ID: "c", Name: "p", Input: json.RawMessage(`{}`)}},
-		{Done: true, StopReason: "tool_use"},
-	}
-	prov := &scriptedProvider{}
-	for i := 0; i < MaxIterationsDefault+2; i++ {
-		prov.iterations = append(prov.iterations, iter)
-	}
+	prov := &scriptedProvider{iterations: [][]provider.Delta{
+		{{ToolCall: &provider.ToolCall{ID: "c1", Name: "p", Input: json.RawMessage(`{}`)}}, {Done: true, StopReason: "tool_use"}},
+		{{ToolCall: &provider.ToolCall{ID: "c2", Name: "p", Input: json.RawMessage(`{}`)}}, {Done: true, StopReason: "tool_use"}},
+		// Forced finalization turn (tools withheld): the model answers.
+		{{Text: "Final answer: 42"}, {Done: true, StopReason: "end_turn", Usage: &provider.Usage{InputTokens: 5, OutputTokens: 3}}},
+	}}
 	res, err := svc.Send(context.Background(), SendParams{
 		ConversationID: conv.ID, UserText: "q",
 		Model: "x", Provider: prov, Registry: reg,
 		Resolver: emptyResolver{}, RetrievalMode: RetrievalAutoGroundedDefault,
 	}, nil)
-	if err == nil || !strings.Contains(err.Error(), "max_iterations") {
-		t.Fatalf("expected max_iterations error; got %v", err)
+	if err != nil {
+		t.Fatalf("finalization should not error: %v", err)
 	}
 	if res.TerminalReason != "max_iterations" {
 		t.Fatalf("terminal_reason want max_iterations; got %q", res.TerminalReason)
 	}
 	run, _ := st.GetRun(res.RunID)
-	if run.Status != "errored" || run.ActiveForReplay {
-		t.Fatalf("max-iter run should be errored+inactive: %+v", run)
+	if run.Status != "completed" || !run.ActiveForReplay {
+		t.Fatalf("finalized run should be completed+active: %+v", run)
+	}
+	events, _ := st.GetConversationDisplayEvents(conv.ID)
+	var final string
+	for _, e := range events {
+		if e.Kind == store.EventKindAssistantText {
+			final = e.Text
+		}
+	}
+	if final != "Final answer: 42" {
+		t.Fatalf("forced final answer not persisted; got %q", final)
+	}
+	// 2 tool rounds + 1 finalization; the finalization call must withhold tools.
+	if len(prov.reqs) != 3 {
+		t.Fatalf("expected 3 provider calls, got %d", len(prov.reqs))
+	}
+	if len(prov.reqs[2].Tools) != 0 {
+		t.Fatalf("finalization call must withhold tools, got %d", len(prov.reqs[2].Tools))
 	}
 }
 

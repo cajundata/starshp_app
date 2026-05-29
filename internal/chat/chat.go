@@ -19,10 +19,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// MaxIterationsDefault caps the agentic loop. STARSHP_MAX_TOOL_ITERATIONS
-// overrides it. Empirically sufficient for the multi-hop tax problems we
-// care about; tune as Phase 2+ tools land.
-const MaxIterationsDefault = 8
+// MaxIterationsDefault caps the number of tool-dispatch rounds in the agentic
+// loop. STARSHP_MAX_TOOL_ITERATIONS overrides it. A single coursework tax
+// problem was observed making 9 distinct, productive tool calls, so the cap
+// must comfortably exceed that. When the cap is reached the loop does not error
+// — it forces one final tool-free answer (see finalizeWithoutTools).
+const MaxIterationsDefault = 16
 
 // Retriever is the pre-turn RAG seam. nil means no pre-turn retrieval.
 type Retriever interface {
@@ -298,17 +300,68 @@ func (s *Service) runLoop(ctx context.Context, p SendParams, runID, turnID, grou
 					"summary":   summarize(result.Output, 200)})
 		}
 	}
-	// Loop exhausted iterations.
-	_ = s.st.MarkRunErrored(runID, "max_iterations", "max_iterations",
-		fmt.Sprintf("hit %d iteration cap", maxIter))
-	emit(p.Sink, SinkRunErrored, p.ConversationID, runID, turnID,
-		map[string]any{"errorCode": "max_iterations",
-			"errorMessage":   fmt.Sprintf("hit %d iteration cap", maxIter),
-			"terminalReason": "max_iterations"})
-	return RunResult{RunID: runID, TerminalReason: "max_iterations",
-			TotalUsage: totalUsage, TotalToolCalls: totalToolCalls,
-			TotalIterations: maxIter},
-		fmt.Errorf("max_iterations: tool-use loop exceeded cap of %d", maxIter)
+	// Iteration budget exhausted. Rather than discard the work, give the model
+	// one final turn with tools withheld so it must synthesize an answer from
+	// the tool results already gathered, then complete the run normally.
+	return s.finalizeWithoutTools(ctx, p, runID, turnID, grounding, totalUsage, totalToolCalls, maxIter)
+}
+
+// finalizeWithoutTools runs one last provider turn with the tool catalog
+// withheld and a directive to answer now, so a run that hit the iteration cap
+// still produces a final answer from the gathered context instead of erroring.
+// The run completes with terminal_reason=max_iterations for observability.
+func (s *Service) finalizeWithoutTools(ctx context.Context, p SendParams, runID, turnID, grounding string,
+	totalUsage provider.Usage, totalToolCalls, maxIter int) (RunResult, error) {
+	events, err := s.st.GetProviderReplayEvents(p.ConversationID, runID)
+	if err != nil {
+		return s.errorOut(p, runID, turnID, "provider_error", "store_error", err.Error()),
+			provider.NormalizeError(err)
+	}
+	system := strings.TrimSpace(p.SystemPrompt + "\n\n" +
+		"You have reached the tool-use limit for this turn. Do not request any more tools. " +
+		"Give your best, complete final answer now using the information already gathered.")
+	req := provider.ChatRequest{
+		Model:     p.Model,
+		System:    system,
+		Grounding: grounding,
+		Tools:     nil, // withheld: force a tool-free answer
+		Events:    canonicalEvents(events),
+	}
+	ch, err := p.Provider.Stream(ctx, req)
+	if err != nil {
+		return s.errorOut(p, runID, turnID, "provider_error", "stream_error", err.Error()),
+			provider.NormalizeError(err)
+	}
+	var (
+		text      strings.Builder
+		streamErr error
+	)
+	for d := range ch {
+		if d.Err != nil {
+			streamErr = d.Err
+			continue
+		}
+		if d.Text != "" {
+			text.WriteString(d.Text)
+			emit(p.Sink, SinkToken, p.ConversationID, runID, turnID,
+				map[string]any{"text": d.Text})
+		}
+		if d.Usage != nil {
+			totalUsage.InputTokens += d.Usage.InputTokens
+			totalUsage.OutputTokens += d.Usage.OutputTokens
+			totalUsage.CachedInputTokens += d.Usage.CachedInputTokens
+		}
+		// Any tool call in this turn is ignored — tools were withheld.
+	}
+	if t := strings.TrimSpace(text.String()); t != "" {
+		if _, err := s.st.AppendAssistantText(p.ConversationID, turnID, runID, t); err != nil {
+			return s.errorOut(p, runID, turnID, "provider_error", "persist_assistant_text", err.Error()), err
+		}
+	}
+	if streamErr != nil {
+		return s.handleStreamErr(ctx, p, runID, turnID, streamErr), nil
+	}
+	return s.completeRunSuccess(p, runID, turnID, "max_iterations", totalUsage, totalToolCalls, maxIter+1)
 }
 
 func (s *Service) completeRunSuccess(p SendParams, runID, turnID, stopReason string,
