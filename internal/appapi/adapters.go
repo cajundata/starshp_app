@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/cajundata/starshp_app/internal/chat"
+	"github.com/cajundata/starshp_app/internal/rag"
 	"github.com/cajundata/starshp_app/internal/store"
 )
 
@@ -22,4 +23,12 @@ func (r chatStoreResolver) Resolve(_ context.Context, convID string) ([]chat.Tex
 		out = append(out, chat.TextbookEntry{Book: s.Name, Chapters: s.Chapters})
 	}
 	return out, nil
+}
+
+// ragRetrieverShim adapts the app's rag.Adapter to searchtextbook.Retriever
+// (the model-called escalation tool), distinct from the pre-turn ragRetriever.
+type ragRetrieverShim struct{ a *API }
+
+func (r ragRetrieverShim) Retrieve(ctx context.Context, query string, filters []rag.ScopeFilter, topK, budgetTokens int) (rag.RetrieveResult, error) {
+	return r.a.ragAdpt.Retrieve(ctx, query, filters, topK, budgetTokens)
 }

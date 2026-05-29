@@ -17,6 +17,7 @@ import (
 	"github.com/cajundata/starshp_app/internal/textbooks"
 	"github.com/cajundata/starshp_app/internal/tools"
 	"github.com/cajundata/starshp_app/internal/tools/safemath"
+	"github.com/cajundata/starshp_app/internal/tools/searchtextbook"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -37,27 +38,77 @@ func NewAPI(cfg config.Config, st *store.Store, reg provider.Registry, ragAdpt *
 	a := &API{cfg: cfg, st: st, reg: reg, ragAdpt: ragAdpt,
 		lib: library.New(cfg.LibraryDir), chatSvc: chat.New(st)}
 	// In-process tool registry for the agentic loop. safe_math has no
-	// dependencies; search_textbook registration lands with the full appapi
-	// orchestration in Phase 6.
+	// dependencies; search_textbook is registered only when RAG is available.
 	a.toolReg = tools.NewRegistry(30 * time.Second)
+	if ragAdpt != nil {
+		_ = a.toolReg.Register(searchtextbook.New(
+			ragRetrieverShim{a: a},
+			chatStoreResolver{st: st},
+			4000,
+		))
+	}
 	_ = a.toolReg.Register(safemath.New())
 	return a
 }
 
-// wailsSink maps chat lifecycle events onto Wails runtime events. Phase 5
-// wires the minimal subset the existing frontend consumes (token + usage);
-// the full chat:* taxonomy lands in Phase 6.
+// sinkEventName maps a chat SinkEventKind to its Wails event name. Pure so the
+// taxonomy mapping is unit-testable without a Wails runtime. Returns "" for the
+// legacy token kind, which wailsSink handles specially.
+func sinkEventName(k chat.SinkEventKind) string {
+	switch k {
+	case chat.SinkRunStarted:
+		return "chat:run_started"
+	case chat.SinkGroundingReady:
+		return "chat:grounding_ready"
+	case chat.SinkToken:
+		return "chat:token_v2"
+	case chat.SinkToolCall:
+		return "chat:tool_call"
+	case chat.SinkToolResult:
+		return "chat:tool_result"
+	case chat.SinkRunCompleted:
+		return "chat:run_completed"
+	case chat.SinkRunErrored:
+		return "chat:run_errored"
+	case chat.SinkRunCancelled:
+		return "chat:run_cancelled"
+	case chat.SinkUsage:
+		return "chat:usage"
+	}
+	return ""
+}
+
+// wailsSink maps chat lifecycle events onto the full chat:* Wails event
+// taxonomy. Each payload carries convID/runID/turnID plus the event-specific
+// fields. chat:token keeps its legacy single-string shape for the existing
+// frontend token handler; chat:token_v2 carries the correlated payload.
 type wailsSink struct{ a *API }
 
 func (w wailsSink) Emit(e chat.SinkEvent) {
-	switch e.Kind {
-	case chat.SinkToken:
+	if e.Kind == chat.SinkToken {
 		if tok, ok := e.Payload["text"].(string); ok {
 			wruntime.EventsEmit(w.a.ctx, "chat:token", tok)
 		}
-	case chat.SinkUsage:
-		wruntime.EventsEmit(w.a.ctx, "chat:usage", e.Payload)
 	}
+	name := sinkEventName(e.Kind)
+	if name == "" {
+		return
+	}
+	payload := map[string]any{"convID": e.ConvID, "runID": e.RunID, "turnID": e.TurnID}
+	for k, v := range e.Payload {
+		payload[k] = v
+	}
+	wruntime.EventsEmit(w.a.ctx, name, payload)
+}
+
+// retrievalMode reads the conversation's stored retrieval policy, falling back
+// to the default when the row is missing or unreadable.
+func (a *API) retrievalMode(convID string) chat.RetrievalMode {
+	m, err := a.st.GetRetrievalMode(convID)
+	if err != nil || m == "" {
+		return chat.RetrievalAutoGroundedDefault
+	}
+	return chat.RetrievalMode(m)
 }
 
 // providerNameFromModelID resolves "openai" | "anthropic" for runs.provider.
@@ -201,7 +252,7 @@ func (a *API) SendMessage(convID, userText, modelID string) (string, error) {
 		Registry:       a.toolReg,
 		Resolver:       chatStoreResolver{st: a.st},
 		Retriever:      retr,
-		RetrievalMode:  chat.RetrievalAutoGroundedDefault,
+		RetrievalMode:  a.retrievalMode(convID),
 		Sink:           wailsSink{a: a},
 	}, nil)
 	// The assistant text is no longer returned by Send — the frontend renders

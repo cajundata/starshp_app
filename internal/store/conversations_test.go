@@ -126,3 +126,21 @@ func TestAddMessageNilUsageLeavesNullColumns(t *testing.T) {
 		t.Fatalf("nil usage should leave columns NULL, got %+v", msgs[0])
 	}
 }
+
+func TestRetrievalMode_RoundTrip(t *testing.T) {
+	st := openTestStore(t)
+	conv, _ := st.CreateConversation("c")
+	got, err := st.GetRetrievalMode(conv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "auto_grounded_default" {
+		t.Fatalf("default mode = %q, want auto_grounded_default", got)
+	}
+	if err := st.SetRetrievalMode(conv.ID, "agentic_only"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = st.GetRetrievalMode(conv.ID); got != "agentic_only" {
+		t.Fatalf("after set, mode = %q, want agentic_only", got)
+	}
+}

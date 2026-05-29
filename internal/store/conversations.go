@@ -128,6 +128,20 @@ func (s *Store) ListMessages(convID string) ([]Message, error) {
 	return out, rows.Err()
 }
 
+// GetRetrievalMode returns the per-conversation retrieval policy
+// (defaults to 'auto_grounded_default' for rows created before the column).
+func (s *Store) GetRetrievalMode(convID string) (string, error) {
+	var mode string
+	err := s.db.QueryRow(`SELECT retrieval_mode FROM conversations WHERE id = ?`, convID).Scan(&mode)
+	return mode, err
+}
+
+// SetRetrievalMode updates the per-conversation retrieval policy.
+func (s *Store) SetRetrievalMode(convID, mode string) error {
+	_, err := s.db.Exec(`UPDATE conversations SET retrieval_mode = ? WHERE id = ?`, mode, convID)
+	return err
+}
+
 func (s *Store) SetConversationTextbooks(convID string, scopes []TextbookScope) error {
 	tx, err := s.db.Begin()
 	if err != nil {
