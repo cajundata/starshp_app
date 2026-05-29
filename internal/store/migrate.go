@@ -42,7 +42,31 @@ func migrate(db *sql.DB) error {
 	// running before migrate(); nothing additional needed here for fresh or
 	// already-upgraded DBs. The messages → conversation_events data migration
 	// lands in a follow-up task.
+	if err := sweepInline(db); err != nil {
+		return err
+	}
 	return nil
+}
+
+// sweepInline runs the orphan sweep using the *sql.DB the migrate path holds.
+// Mirrors Store.SweepOrphanedRuns so migrate does not depend on a fully
+// constructed *Store.
+func sweepInline(db *sql.DB) error {
+	var name string
+	err := db.QueryRow(`SELECT name FROM sqlite_master
+        WHERE type='table' AND name='runs'`).Scan(&name)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(
+		`UPDATE runs
+            SET status='errored', active_for_replay=0,
+                ended_at=strftime('%s','now')*1000, terminal_reason='orphaned'
+          WHERE status='in_progress'`)
+	return err
 }
 
 // columnExists reports whether table has a column named col. The table name is
