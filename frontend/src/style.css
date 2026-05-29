@@ -57,3 +57,18 @@ body { font-family: system-ui, sans-serif; }
 #editorArea { flex: 1; width: 100%; background: #0f0f10; color: #e7e7e8; border: 0; outline: none; resize: none; padding: 16px 18px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13px; line-height: 1.5; }
 .ctx-footer { padding: 4px 14px; color: #6f6f76; font-size: 11px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; border-top: 1px solid #1c1c1f; background: #141416; line-height: 1.4; }
 .ctx-footer.hidden { display: none; }
+
+/* ---- Agentic run bubbles ---- */
+.msg.assistant.status-cancelled { opacity: 0.7; }
+.msg.assistant.status-errored .msg-text.run-error { border-color: #5a2b2b; color: #e0654a; }
+.grounding-header { font-size: 11px; color: #6f6f76; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; margin-bottom: 4px; }
+.tool-call { display: block; background: #16161a; border: 1px solid #2b2b30; border-radius: 8px; padding: 6px 10px; margin: 4px 0; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12px; cursor: pointer; color: #c7c7cc; }
+.tool-call.errored { background: #2a1718; border-color: #5a2b2b; color: #e0654a; }
+.tool-icon { margin-right: 5px; }
+.tool-name { font-weight: 600; color: #e7e7e8; }
+.tool-call.errored .tool-name { color: #e0654a; }
+.tool-arg { color: #8a8a90; margin-left: 6px; }
+.tool-status { color: #6f6f76; margin-left: 6px; }
+.tool-call.collapsed .tool-summary { display: none; }
+.tool-summary { margin-top: 6px; padding-top: 6px; border-top: 1px solid #2b2b30; white-space: pre-wrap; color: #b8b8be; cursor: text; }
+.cancelled-tag { margin-top: 5px; font-size: 11px; color: #a5704a; font-style: italic; }

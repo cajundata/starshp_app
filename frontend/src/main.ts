@@ -55,8 +55,139 @@ const msgText = (el: HTMLElement) => el.querySelector('.msg-text') as HTMLElemen
 const COPY_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`
 const CHECK_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
 
-function attachCopyButton(msgEl: HTMLElement) {
-  if (msgEl.querySelector('.msg-actions')) return
+// ---- Assistant run bubbles -------------------------------------------------
+// An assistant turn is one "run". Its bubble is assembled from the chat:* event
+// taxonomy: an optional grounding header, then an ordered sequence of text
+// segments and inline tool-call blocks. Keyed by runID so live events and
+// history (GetConversationDisplayEvents) build the same structure.
+
+type RunBubble = {
+  el: HTMLElement
+  curText: HTMLElement | null // trailing text segment, or null after a tool block
+  tools: Map<string, HTMLElement>
+}
+const runBubbles = new Map<string, RunBubble>()
+
+function toolIcon(name: string): string {
+  return name === 'search_textbook' ? '🔍' : name === 'safe_math' ? '🧮' : '🔧'
+}
+
+function argPreview(input: any): string {
+  if (input == null) return ''
+  let s: string
+  try {
+    s = typeof input === 'string' ? input : JSON.stringify(input)
+  } catch {
+    return ''
+  }
+  return s.length > 60 ? s.slice(0, 60) + '…' : s
+}
+
+function errCodeFromMeta(meta: any): string {
+  return meta && typeof meta === 'object' && typeof meta.error_code === 'string' ? meta.error_code : ''
+}
+
+function ensureRunBubble(runId: string): RunBubble {
+  let b = runBubbles.get(runId)
+  if (!b) {
+    const el = document.createElement('div')
+    el.className = 'msg assistant'
+    thread.appendChild(el)
+    thread.scrollTop = thread.scrollHeight
+    b = { el, curText: null, tools: new Map() }
+    runBubbles.set(runId, b)
+  }
+  return b
+}
+
+function appendRunText(runId: string, text: string) {
+  if (!text) return
+  const b = ensureRunBubble(runId)
+  if (!b.curText) {
+    b.curText = document.createElement('div')
+    b.curText.className = 'msg-text'
+    b.el.appendChild(b.curText)
+  }
+  b.curText.textContent += text
+  thread.scrollTop = thread.scrollHeight
+}
+
+function addRunToolCall(runId: string, toolCallId: string, name: string, input: any) {
+  const b = ensureRunBubble(runId)
+  b.curText = null // text after a tool block starts a new segment
+  const div = document.createElement('div')
+  div.className = 'tool-call collapsed'
+  div.dataset.toolCallId = toolCallId
+  const icon = document.createElement('span')
+  icon.className = 'tool-icon'
+  icon.textContent = toolIcon(name)
+  const nm = document.createElement('span')
+  nm.className = 'tool-name'
+  nm.textContent = name
+  const arg = document.createElement('span')
+  arg.className = 'tool-arg'
+  arg.textContent = argPreview(input)
+  const st = document.createElement('span')
+  st.className = 'tool-status'
+  st.textContent = '…'
+  div.append(icon, nm, arg, st)
+  div.onclick = () => div.classList.toggle('collapsed')
+  b.el.appendChild(div)
+  b.tools.set(toolCallId, div)
+  thread.scrollTop = thread.scrollHeight
+}
+
+function updateRunToolResult(runId: string, toolCallId: string, isError: boolean, errorCode: string, latencyMs: number, summary: string) {
+  const b = runBubbles.get(runId)
+  if (!b) return
+  const el = b.tools.get(toolCallId)
+  if (!el) return
+  const st = el.querySelector('.tool-status') as HTMLElement
+  if (isError) {
+    el.classList.add('errored')
+    st.textContent = `error · ${errorCode || 'execution_error'}`
+  } else {
+    st.textContent = `· ${latencyMs || 0} ms`
+  }
+  if (summary) {
+    const detail = document.createElement('div')
+    detail.className = 'tool-summary'
+    detail.textContent = summary
+    el.appendChild(detail)
+  }
+}
+
+function setRunGrounding(runId: string, status: string, sourceCount: number) {
+  if (status !== 'ready') return
+  const b = ensureRunBubble(runId)
+  if (b.el.querySelector('.grounding-header')) return
+  const h = document.createElement('div')
+  h.className = 'grounding-header'
+  h.textContent = `↳ grounded · ${sourceCount || 0} sources`
+  b.el.insertBefore(h, b.el.firstChild)
+}
+
+function setRunStatus(runId: string, status: 'completed' | 'errored' | 'cancelled') {
+  const b = runBubbles.get(runId)
+  if (!b) return
+  if (status === 'errored') b.el.classList.add('status-errored')
+  if (status === 'cancelled') {
+    b.el.classList.add('status-cancelled')
+    if (!b.el.querySelector('.cancelled-tag')) {
+      const tag = document.createElement('div')
+      tag.className = 'cancelled-tag'
+      tag.textContent = 'cancelled'
+      b.el.appendChild(tag)
+    }
+  }
+  attachRunCopy(b)
+}
+
+// attachRunCopy adds a copy button that yields the concatenated text segments
+// of the run (tool blocks excluded).
+function attachRunCopy(b: RunBubble) {
+  if (b.el.querySelector('.msg-actions')) return
+  if (!b.el.querySelector('.msg-text')) return // nothing to copy (pure tool/error run)
   const row = document.createElement('div')
   row.className = 'msg-actions'
   const btn = document.createElement('button')
@@ -65,8 +196,11 @@ function attachCopyButton(msgEl: HTMLElement) {
   btn.innerHTML = COPY_ICON
   let revertTimer: ReturnType<typeof setTimeout> | null = null
   btn.onclick = async () => {
+    const text = Array.from(b.el.querySelectorAll('.msg-text'))
+      .map((n) => n.textContent || '')
+      .join('\n\n')
     try {
-      await navigator.clipboard.writeText(msgText(msgEl).textContent || '')
+      await navigator.clipboard.writeText(text)
       if (revertTimer !== null) clearTimeout(revertTimer)
       btn.classList.add('copied')
       btn.innerHTML = CHECK_ICON
@@ -76,11 +210,11 @@ function attachCopyButton(msgEl: HTMLElement) {
         revertTimer = null
       }, 1500)
     } catch {
-      // clipboard unavailable — leave the icon unchanged, no crash
+      // clipboard unavailable — no crash
     }
   }
   row.appendChild(btn)
-  msgEl.appendChild(row)
+  b.el.appendChild(row)
 }
 
 async function loadConversations() {
@@ -134,27 +268,31 @@ async function deleteConversation(id: string) {
 async function openConversation(id: string) {
   activeConv = id
   thread.innerHTML = ''
-  const msgs = (await App.ListMessages(id)) || []
-  for (const m of msgs) {
-    const el = addMsg(m.role, m.content)
-    if (m.role === 'assistant' && m.content.trim()) attachCopyButton(el)
-  }
-  // Seed footer from the most recent assistant message that carries usage.
-  if (!latestUsage.has(id)) {
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      const m = msgs[i] as any
-      if (m.role === 'assistant' && m.inputTokens != null && m.outputTokens != null) {
-        latestUsage.set(id, {
-          input: m.inputTokens,
-          output: m.outputTokens,
-          cached: m.cachedInputTokens ?? 0,
-          modelID: m.model || '',
-          stale: false,
-        })
-        break
-      }
+  runBubbles.clear()
+  // History is the canonical display timeline: the active completed run per
+  // turn (or the latest terminal run, so cancelled/errored partial output the
+  // user saw is preserved). Token usage is not carried on events, so the footer
+  // stays empty until the next live turn emits chat:usage.
+  const events = (await App.GetConversationDisplayEvents(id)) || []
+  for (const ev of events) {
+    if (ev.kind === 'user_message') {
+      addMsg('user', ev.text || '')
+      continue
+    }
+    if (!ev.runId) continue
+    if (ev.kind === 'assistant_text') {
+      appendRunText(ev.runId, ev.text || '')
+    } else if (ev.kind === 'assistant_tool_call') {
+      addRunToolCall(ev.runId, ev.toolCallId || '', ev.toolName || '', (ev as any).toolInput)
+    } else if (ev.kind === 'tool_result') {
+      updateRunToolResult(
+        ev.runId, ev.toolCallId || '', !!ev.isError,
+        errCodeFromMeta((ev as any).toolMetadata), ev.toolLatencyMs || 0,
+        (ev.text || '').slice(0, 200),
+      )
     }
   }
+  for (const b of runBubbles.values()) attachRunCopy(b)
   const convs = (await App.ListConversations()) || []
   const c = convs.find(x => x.id === id)
   if (c && c.pinnedModel) {
@@ -194,7 +332,8 @@ async function send() {
   const text = input.value.trim()
   input.value = ''
   addMsg('user', text)
-  const asst = addMsg('assistant', '')
+  // The assistant bubble is created by the chat:run_started event; the loop's
+  // output flows in through the chat:* taxonomy below.
   streaming = true
   usagePendingForConv = activeConv
   sendBtn.textContent = 'Stop ◼'
@@ -203,12 +342,14 @@ async function send() {
     await App.SendMessage(activeConv!, text, modelSel.value)
     await App.SetConversationMeta(activeConv!, modelSel.value)
   } catch (e: any) {
-    msgText(asst).textContent += `\n\n[${e?.code || 'error'}] ${e?.userMessage || e}`
+    // A thrown error before any run started (e.g. bad model / missing key)
+    // has no run bubble to attach to — surface it inline. Errors raised mid-run
+    // are already rendered via chat:run_errored.
+    addMsg('assistant', `[${e?.code || 'error'}] ${e?.userMessage || e}`)
   } finally {
     streaming = false
     sendBtn.textContent = 'Send ▸'
     sendBtn.classList.remove('streaming')
-    if (msgText(asst).textContent?.trim()) attachCopyButton(asst)
     // If the chat:usage event never arrived (cancel, SDK gap, error), mark
     // the last-known footer entry stale so the user sees a ~ marker.
     if (usagePendingForConv === activeConv) {
@@ -223,9 +364,53 @@ async function send() {
   }
 }
 
-EventsOn('chat:token', (tok: string) => {
-  const last = thread.querySelector('.msg.assistant:last-child .msg-text')
-  if (last) { last.textContent += tok; thread.scrollTop = thread.scrollHeight }
+// Assistant rendering is driven by the run-correlated chat:* taxonomy. The
+// legacy chat:token (plain string) still fires for backward compatibility but
+// is intentionally ignored here in favour of chat:token_v2 (carries runID).
+
+EventsOn('chat:run_started', (p: any) => {
+  if (p.convID !== activeConv) return
+  ensureRunBubble(p.runID)
+})
+
+EventsOn('chat:grounding_ready', (p: any) => {
+  if (p.convID !== activeConv) return
+  setRunGrounding(p.runID, p.status, p.sourceCount)
+})
+
+EventsOn('chat:token_v2', (p: any) => {
+  if (p.convID !== activeConv) return
+  appendRunText(p.runID, p.text)
+})
+
+EventsOn('chat:tool_call', (p: any) => {
+  if (p.convID !== activeConv) return
+  addRunToolCall(p.runID, p.toolCallId, p.name, p.input)
+})
+
+EventsOn('chat:tool_result', (p: any) => {
+  if (p.convID !== activeConv) return
+  updateRunToolResult(p.runID, p.toolCallId, !!p.isError, p.errorCode || '', p.latencyMs || 0, p.summary || '')
+})
+
+EventsOn('chat:run_completed', (p: any) => {
+  setRunStatus(p.runID, 'completed')
+})
+
+EventsOn('chat:run_errored', (p: any) => {
+  if (p.convID === activeConv) {
+    const b = ensureRunBubble(p.runID)
+    b.curText = null
+    const e = document.createElement('div')
+    e.className = 'msg-text run-error'
+    e.textContent = `[${p.errorCode || 'error'}] ${p.errorMessage || ''}`
+    b.el.appendChild(e)
+  }
+  setRunStatus(p.runID, 'errored')
+})
+
+EventsOn('chat:run_cancelled', (p: any) => {
+  setRunStatus(p.runID, 'cancelled')
 })
 
 EventsOn('chat:usage', (p: { convID: string; input: number; output: number; cached: number; modelID: string }) => {
