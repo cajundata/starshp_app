@@ -28,6 +28,20 @@ func migrate(db *sql.DB) error {
 			}
 		}
 	}
+
+	has, err = columnExists(db, "conversations", "retrieval_mode")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err := db.Exec(`ALTER TABLE conversations ADD COLUMN retrieval_mode TEXT NOT NULL DEFAULT 'auto_grounded_default'`); err != nil {
+			return err
+		}
+	}
+	// conversation_events, runs, and their indexes are created by schemaSQL
+	// running before migrate(); nothing additional needed here for fresh or
+	// already-upgraded DBs. The messages → conversation_events data migration
+	// lands in a follow-up task.
 	return nil
 }
 
