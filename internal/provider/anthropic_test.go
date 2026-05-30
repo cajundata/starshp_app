@@ -186,6 +186,92 @@ func TestAnthropic_AssemblesContentBlocksFromEvents(t *testing.T) {
 	}
 }
 
+// TestAnthropic_OutOfOrderToolResultStaysAdjacent is the Anthropic analogue of
+// the OpenAI adjacency test: an interleaved user_message between a tool_use and
+// its tool_result must not split them. Anthropic requires the tool_result block
+// to live in the user message immediately following the assistant tool_use
+// message.
+func TestAnthropic_OutOfOrderToolResultStaysAdjacent(t *testing.T) {
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		capturedBody = string(b)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := w.(http.Flusher)
+		writeSSE := func(event, data string) {
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data)
+			fl.Flush()
+		}
+		writeSSE("message_start", `{"type":"message_start","message":{"id":"m","role":"assistant","content":[],"model":"x","usage":{"input_tokens":1,"output_tokens":0}}}`)
+		writeSSE("content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
+		writeSSE("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`)
+		writeSSE("content_block_stop", `{"type":"content_block_stop","index":0}`)
+		writeSSE("message_delta", `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}`)
+		writeSSE("message_stop", `{"type":"message_stop"}`)
+	}))
+	defer srv.Close()
+
+	p := NewAnthropic("anth-key", srv.URL)
+	req := ChatRequest{
+		Model: "claude-sonnet-4-6",
+		Events: []Event{
+			{Kind: "user_message", Text: "q"},
+			{Kind: "assistant_tool_call", ToolCallID: "call_1",
+				ToolName: "search_textbook", ToolInput: json.RawMessage(`{"query":"x"}`)},
+			{Kind: "user_message", Text: "interleaved from another turn"},
+			{Kind: "tool_result", ToolCallID: "call_1", Text: "RESULT"},
+		},
+	}
+	ch, err := p.Stream(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	for range ch { //nolint:revive // drain
+	}
+
+	var parsed struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content []struct {
+				Type      string `json:"type"`
+				ID        string `json:"id"`
+				ToolUseID string `json:"tool_use_id"`
+			} `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(capturedBody), &parsed); err != nil {
+		t.Fatalf("unmarshal body: %v\n%s", err, capturedBody)
+	}
+	idx := -1
+	for i, m := range parsed.Messages {
+		for _, c := range m.Content {
+			if c.Type == "tool_use" && c.ID == "call_1" {
+				idx = i
+			}
+		}
+		if idx != -1 {
+			break
+		}
+	}
+	if idx == -1 {
+		t.Fatalf("no assistant message with tool_use call_1: %s", capturedBody)
+	}
+	if idx+1 >= len(parsed.Messages) {
+		t.Fatalf("tool_use is the last message; no tool_result follows: %s", capturedBody)
+	}
+	next := parsed.Messages[idx+1]
+	found := false
+	for _, c := range next.Content {
+		if c.Type == "tool_result" && c.ToolUseID == "call_1" {
+			found = true
+		}
+	}
+	if next.Role != "user" || !found {
+		t.Fatalf("tool_use not immediately followed by user message with matching tool_result; got role=%q content=%+v\n%s",
+			next.Role, next.Content, capturedBody)
+	}
+}
+
 func TestAnthropic_StreamSurfacesToolUseAndStopReason(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

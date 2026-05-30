@@ -174,6 +174,77 @@ func TestOpenAI_AssemblesMessagesFromEvents(t *testing.T) {
 	}
 }
 
+// TestOpenAI_OutOfOrderToolResultStaysAdjacent feeds a timeline where an
+// interleaved user_message sits between an assistant_tool_call and its
+// tool_result — the shape produced by legacy data migrated before
+// sequence_index was globally monotonic. The builder must still place the
+// tool message immediately after the assistant message carrying the tool_call,
+// or OpenAI rejects the request with "tool_call_ids did not have response
+// messages".
+func TestOpenAI_OutOfOrderToolResultStaysAdjacent(t *testing.T) {
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		capturedBody = string(b)
+		w.Header().Set("Content-Type", "text/event-stream")
+		flush := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"index\":0}]}\n\n")
+		flush.Flush()
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		flush.Flush()
+	}))
+	defer srv.Close()
+
+	p := NewOpenAI("openai-key", srv.URL)
+	req := ChatRequest{
+		Model: "gpt-5.4-2026-03-05",
+		Events: []Event{
+			{Kind: "user_message", Text: "q"},
+			{Kind: "assistant_tool_call", ToolCallID: "call_1",
+				ToolName: "search_textbook", ToolInput: json.RawMessage(`{"query":"x"}`)},
+			{Kind: "user_message", Text: "interleaved from another turn"},
+			{Kind: "tool_result", ToolCallID: "call_1", Text: "RESULT"},
+		},
+	}
+	ch, err := p.Stream(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	for range ch { //nolint:revive // drain
+	}
+
+	var parsed struct {
+		Messages []struct {
+			Role       string `json:"role"`
+			ToolCallID string `json:"tool_call_id"`
+			ToolCalls  []struct {
+				ID string `json:"id"`
+			} `json:"tool_calls"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(capturedBody), &parsed); err != nil {
+		t.Fatalf("unmarshal body: %v\n%s", err, capturedBody)
+	}
+	idx := -1
+	for i, m := range parsed.Messages {
+		if len(m.ToolCalls) > 0 {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		t.Fatalf("no assistant message with tool_calls: %s", capturedBody)
+	}
+	if idx+1 >= len(parsed.Messages) {
+		t.Fatalf("assistant tool_calls is the last message; no tool response: %s", capturedBody)
+	}
+	next := parsed.Messages[idx+1]
+	if next.Role != "tool" || next.ToolCallID != "call_1" {
+		t.Fatalf("assistant tool_calls not immediately followed by matching tool message; got role=%q id=%q\n%s",
+			next.Role, next.ToolCallID, capturedBody)
+	}
+}
+
 func TestOpenAI_StreamSurfacesToolCallsAndStopReason(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

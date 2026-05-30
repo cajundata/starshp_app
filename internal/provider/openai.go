@@ -163,6 +163,16 @@ func (p *openAIProvider) Stream(ctx context.Context, req ChatRequest) (<-chan De
 // assistant_text + assistant_tool_call events collapse into a single assistant
 // message carrying content + tool_calls; tool_result events become tool-role
 // messages.
+//
+// OpenAI requires every assistant message carrying tool_calls to be immediately
+// followed by a tool message for each tool_call_id. The event timeline cannot
+// be trusted to already satisfy that: legacy rows migrated before sequence_index
+// was globally monotonic can interleave a user_message between a tool_call and
+// its result. So we index tool_results by id up front and emit each call's
+// result right after its assistant message, regardless of stream position. A
+// tool_call with no matching result is dropped (emitting it would guarantee a
+// 400); a tool_result already emitted alongside its call is skipped when later
+// encountered.
 func openaiMessagesFromEvents(system, grounding string, events []Event) []openai.ChatCompletionMessageParamUnion {
 	var msgs []openai.ChatCompletionMessageParamUnion
 	sys := system
@@ -175,6 +185,17 @@ func openaiMessagesFromEvents(system, grounding string, events []Event) []openai
 	if sys != "" {
 		msgs = append(msgs, openai.SystemMessage(sys))
 	}
+	// Index tool_results by tool_call_id so a call can find its result even when
+	// the result is not adjacent in the event stream.
+	resultByID := map[string]Event{}
+	for _, e := range events {
+		if e.Kind == "tool_result" {
+			if _, dup := resultByID[e.ToolCallID]; !dup {
+				resultByID[e.ToolCallID] = e
+			}
+		}
+	}
+	emitted := map[string]bool{} // tool_call_ids whose result we've already placed
 	i := 0
 	for i < len(events) {
 		e := events[i]
@@ -185,6 +206,7 @@ func openaiMessagesFromEvents(system, grounding string, events []Event) []openai
 		case "assistant_text", "assistant_tool_call":
 			var text string
 			var calls []openai.ChatCompletionMessageToolCallUnionParam
+			var callIDs []string
 			for i < len(events) {
 				ee := events[i]
 				if ee.Kind == "assistant_text" {
@@ -196,6 +218,12 @@ func openaiMessagesFromEvents(system, grounding string, events []Event) []openai
 					continue
 				}
 				if ee.Kind == "assistant_tool_call" {
+					// Drop a tool_call that has no result anywhere — emitting it
+					// would leave a tool_call_id without a response message.
+					if _, ok := resultByID[ee.ToolCallID]; !ok {
+						i++
+						continue
+					}
 					args := string(ee.ToolInput)
 					if args == "" {
 						args = "{}"
@@ -209,6 +237,7 @@ func openaiMessagesFromEvents(system, grounding string, events []Event) []openai
 							},
 						},
 					})
+					callIDs = append(callIDs, ee.ToolCallID)
 					i++
 					continue
 				}
@@ -219,8 +248,18 @@ func openaiMessagesFromEvents(system, grounding string, events []Event) []openai
 				msg.OfAssistant.ToolCalls = calls
 			}
 			msgs = append(msgs, msg)
+			// Immediately follow with each call's tool result, in call order.
+			for _, id := range callIDs {
+				res := resultByID[id]
+				msgs = append(msgs, openai.ToolMessage(res.Text, id))
+				emitted[id] = true
+			}
 		case "tool_result":
-			msgs = append(msgs, openai.ToolMessage(e.Text, e.ToolCallID))
+			// Skip results already placed next to their assistant message.
+			if !emitted[e.ToolCallID] {
+				msgs = append(msgs, openai.ToolMessage(e.Text, e.ToolCallID))
+				emitted[e.ToolCallID] = true
+			}
 			i++
 		default:
 			i++
