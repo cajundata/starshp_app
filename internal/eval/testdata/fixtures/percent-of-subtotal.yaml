@@ -1,0 +1,11 @@
+name: percent-of-subtotal
+prompt: |
+  A purchase has line totals of $1,250 and $3,475. Sales tax is 8.25%.
+  Show the tax amount and the total. Use a calculation tool to verify.
+expected_substrings:
+  - "389.81"
+  - "5114.81"
+expected_min_tool_calls: 1
+expected_tools_called_at_least_once:
+  - safe_math
+max_iterations: 5

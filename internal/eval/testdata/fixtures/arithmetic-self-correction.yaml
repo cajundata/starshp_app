@@ -1,0 +1,10 @@
+name: arithmetic-self-correction
+prompt: |
+  Claim: 47 + 96 = 143. Verify this is correct using a calculation
+  tool. If it is wrong, give the correct answer.
+expected_substrings:
+  - "143"
+expected_min_tool_calls: 1
+expected_tools_called_at_least_once:
+  - safe_math
+max_iterations: 3

@@ -1,0 +1,14 @@
+name: multi-hop-search
+prompt: |
+  Explain how the matching principle relates to the realization
+  principle. If your initial context is insufficient, call
+  search_textbook to find a relevant passage. (No textbooks are
+  attached in this Phase 1 fixture, so search_textbook is expected
+  to return no_textbooks_attached and you should answer from
+  background knowledge.)
+expected_substrings:
+  - "matching"
+  - "realization"
+expected_min_tool_calls: 0
+expected_tools_called_at_least_once: []
+max_iterations: 3
