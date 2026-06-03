@@ -40,3 +40,17 @@ Run: `wails dev`
 22. [x] **`~` marker after Stop.** Start a long reply, click Stop. The footer keeps the previous turn's values, prefixed with `~`.
 23. [x] **No denominator when `max_context` is omitted.** Remove `max_context` from one model in `models.yaml`, restart, send a message with that model. Footer shows `ctx N · cache K` (no `/ M` segment).
 24. [x] **Footer survives conversation switches.** Open a conversation with prior history; the footer seeds from the last assistant message's recorded tokens. Switch to another conversation, then back.
+
+## Tool calling
+
+For each step, observe the assistant bubble in addition to the listed expectation.
+
+25. [ ] **Pure-text turn (no tools).** With no textbooks attached, ask "what is the realization principle?". The bubble shows streamed text only — no tool blocks. The context footer shows usage.
+26. [ ] **`search_textbook` escalation.** Attach a textbook, then ask a question needing a chapter the pre-turn grounding did not cover. The bubble shows one or more collapsed `🔍 search_textbook` inline blocks, each annotated with its source count and latency once the result lands. Clicking a block expands the summary.
+27. [ ] **`safe_math` invocation.** Ask "tax on $5,000 at 8.25% — verify with a calculator." The bubble shows a `🧮 safe_math` block followed by the final answer.
+28. [ ] **Errored tool result.** Detach all textbooks, then ask the model to search the textbooks for something. The `search_textbook` block renders in red with `error · no_textbooks_attached`, and the model answers from background knowledge.
+29. [ ] **Stop mid-loop.** Click Stop after the model emits a tool call but before the final answer. The bubble keeps any partial text and completed tool blocks and gains a `cancelled` tag. Reopen the conversation — the partial output is still visible (display events, not provider replay).
+30. [ ] **Conversation reopen replays display events.** Open a prior conversation containing a completed run with tool calls. The bubble rebuilds with text + collapsed tool blocks; clicking a block expands its summary.
+31. [ ] **Grounding header.** Ask any question with textbooks attached. A dim `↳ grounded · N sources` line appears above the bubble after `chat:grounding_ready`.
+32. [ ] **`STARSHP_SKIP_AUTO_GROUNDING`.** Set the env var to `1` and relaunch. Ask a question with textbooks attached. No grounding header appears (the run reports `not_required`); the model must call `search_textbook` itself if it wants context.
+33. [ ] **Max-iterations cap (forces a final answer, not an error).** Set `STARSHP_MAX_TOOL_ITERATIONS=2`, attach a textbook, ask a complex multi-hop question. After two tool-use cycles the loop withholds tools and the model synthesizes a final answer from the gathered results — the run completes (not an error bubble) with `terminal_reason=max_iterations` (visible in the structured logs).
