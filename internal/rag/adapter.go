@@ -19,6 +19,12 @@ import (
 
 const maxChunkTokens = 800
 
+// maxQueryTokens caps the text embedded for a retrieval query. OpenAI's
+// embedding models reject any single input over 8192 tokens; we truncate with
+// margin so pasting a large document as a question degrades to best-effort
+// grounding instead of failing the whole turn.
+const maxQueryTokens = 8000
+
 type Options struct {
 	RAGDBPath      string
 	EmbeddingModel string
@@ -163,7 +169,11 @@ func (a *Adapter) Retrieve(ctx context.Context, query string, filters []ScopeFil
 	if len(filters) == 0 {
 		return RetrieveResult{}, nil
 	}
-	qv, err := a.embedder.EmbedSingle(ctx, query)
+	capped, _, err := chunker.TruncateToTokens(query, maxQueryTokens)
+	if err != nil {
+		return RetrieveResult{}, fmt.Errorf("cap query: %w", err)
+	}
+	qv, err := a.embedder.EmbedSingle(ctx, capped)
 	if err != nil {
 		return RetrieveResult{}, fmt.Errorf("embed query: %w", err)
 	}

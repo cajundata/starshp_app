@@ -75,6 +75,39 @@ func countTokens(text string) (int, error) {
 	return len(tokens), nil
 }
 
+// CountTokens returns the cl100k_base token count for text. Exported so callers
+// outside the chunker (e.g. the RAG query path) can size text against the
+// OpenAI embedding limit using the same tokenizer the index pipeline uses.
+func CountTokens(text string) (int, error) {
+	return countTokens(text)
+}
+
+// TruncateToTokens returns text limited to at most maxTokens cl100k_base tokens,
+// reporting whether truncation occurred. It is used to cap RAG query text before
+// embedding: OpenAI's embedding models reject inputs over 8192 tokens, so a
+// pasted document degrades to best-effort grounding instead of failing the turn.
+func TruncateToTokens(text string, maxTokens int) (string, bool, error) {
+	if maxTokens <= 0 {
+		return "", false, fmt.Errorf("truncate to tokens: maxTokens must be positive, got %d", maxTokens)
+	}
+	codec, err := getEncoder()
+	if err != nil {
+		return "", false, fmt.Errorf("get tokenizer: %w", err)
+	}
+	ids, _, err := codec.Encode(text)
+	if err != nil {
+		return "", false, fmt.Errorf("encode tokens: %w", err)
+	}
+	if len(ids) <= maxTokens {
+		return text, false, nil
+	}
+	truncated, err := codec.Decode(ids[:maxTokens])
+	if err != nil {
+		return "", false, fmt.Errorf("decode tokens: %w", err)
+	}
+	return truncated, true, nil
+}
+
 // section represents a parsed section from the chapter.
 type section struct {
 	heading    string
