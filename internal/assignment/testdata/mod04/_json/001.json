@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "path": "001.html",
+    "courseCode": null,
+    "courseName": null,
+    "module": null
+  },
+  "type": "multipleChoice",
+  "title": "Item 1",
+  "capture": {
+    "hasCapturedChoices": false,
+    "capturedTabCount": 0
+  },
+  "warnings": [
+    "course-not-derivable"
+  ],
+  "tags": [],
+  "body": {
+    "stem": "During the current fiscal year, the Palm Springs government recorded a $14,900 transfer from the General Fund to an internal service fund, a $24,900 transfer from the General Fund to an enterprise fund, a $4,800 transfer from an enterprise fund to an internal service fund, and a $10,000 transfer from an enterprise fund to the General Fund. In the Business-type Activities column of the government-wide financial statements, Palm Springs should report:",
+    "choices": [
+      {
+        "index": 0,
+        "text": "net transfers out of $5,200."
+      },
+      {
+        "index": 1,
+        "text": "net transfers in of $10,100."
+      },
+      {
+        "index": 2,
+        "text": "net transfers out of $10,000."
+      },
+      {
+        "index": 3,
+        "text": "net transfers in of $29,700."
+      }
+    ],
+    "correctIndex": null
+  }
+}
