@@ -163,6 +163,13 @@ func (a *API) SetConversationScope(convID string, scopes []store.TextbookScope) 
 func (a *API) GetConversationScope(convID string) ([]store.TextbookScope, error) {
 	return a.st.GetConversationTextbooks(convID)
 }
+func (a *API) SetAssignmentScope(asgID string, scopes []store.TextbookScope) error {
+	return a.st.SetAssignmentScope(asgID, scopes)
+}
+func (a *API) GetAssignmentScope(asgID string) ([]store.TextbookScope, error) {
+	return a.st.GetAssignmentScope(asgID)
+}
+
 func (a *API) SetConversationMeta(convID, model string) error {
 	return a.st.SetConversationMeta(convID, model)
 }
@@ -429,6 +436,18 @@ func (a *API) EnsureIndexed(convID string) error {
 	if err != nil {
 		return provider.NormalizeError(err)
 	}
+	return a.ensureBooksIndexed(scopes)
+}
+
+// EnsureIndexedScope indexes the given textbook scope directly (no conversation).
+// Used by the assignment flow, which has no single conversation. Idempotent.
+func (a *API) EnsureIndexedScope(scopes []store.TextbookScope) error {
+	return a.ensureBooksIndexed(scopes)
+}
+
+// ensureBooksIndexed indexes (idempotently) every requested book, emitting
+// "rag:index" progress events. Empty scope is a no-op.
+func (a *API) ensureBooksIndexed(scopes []store.TextbookScope) error {
 	if len(scopes) == 0 {
 		return nil
 	}
