@@ -82,6 +82,10 @@ export function ReadLibraryItem(arg1) {
   return window['go']['appapi']['API']['ReadLibraryItem'](arg1);
 }
 
+export function RerunAssignmentItem(arg1, arg2) {
+  return window['go']['appapi']['API']['RerunAssignmentItem'](arg1, arg2);
+}
+
 export function SaveLibraryItem(arg1, arg2) {
   return window['go']['appapi']['API']['SaveLibraryItem'](arg1, arg2);
 }

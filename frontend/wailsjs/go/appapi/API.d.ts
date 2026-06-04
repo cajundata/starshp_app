@@ -46,6 +46,8 @@ export function Models():Promise<Array<provider.ModelInfo>>;
 
 export function ReadLibraryItem(arg1:string):Promise<string>;
 
+export function RerunAssignmentItem(arg1:string,arg2:number):Promise<string>;
+
 export function SaveLibraryItem(arg1:string,arg2:string):Promise<void>;
 
 export function SendMessage(arg1:string,arg2:string,arg3:string):Promise<void>;
