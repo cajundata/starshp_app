@@ -703,7 +703,7 @@ async function selectAssignment(id: string) {
     asgHeader.appendChild(err)
     return
   }
-  const done = items.filter(it => it.Status === 'answered' || it.Status === 'failed' || it.Status === 'cancelled').length
+  const done = items.filter(it => it.Status !== 'pending' && it.Status !== 'solving').length
   renderAssignmentHeader(asg.Title || asg.SourceDir, done, asg.TotalItems || items.length, asg.Status)
   asgItems.innerHTML = ''
   for (const it of items) renderItemRow(it)
