@@ -2,8 +2,6 @@
 // a bounded-concurrent fan-out over the agentic chat loop.
 package assignment
 
-import "encoding/json"
-
 // Type is the companion question kind.
 type Type string
 
@@ -68,15 +66,24 @@ type Row struct {
 	Cells []Cell `json:"cells"`
 }
 
+// DropdownOption is one captured worksheet dropdown option. Correct may be set
+// in some captures (answer-key data); callers that render options to the model
+// MUST expose only Text, never Correct.
+type DropdownOption struct {
+	Index   int    `json:"index"`
+	Text    string `json:"text"`
+	Correct bool   `json:"correct"`
+}
+
 // Cell mirrors a companion worksheet cell. Value/Formula are pointers so a JSON
 // null (blank, answerable) is distinguishable from an empty string.
-// Options is RawMessage because the companion emits either [] or an array of
-// {index,text,correct} objects depending on the cell type.
+// Options parses both observed companion forms: an empty array [] and an array
+// of {index,text,correct} objects.
 type Cell struct {
-	ID        string          `json:"id"`
-	CellType  string          `json:"cellType"` // input | dropdown | readonly | formula
-	AriaLabel string          `json:"ariaLabel"`
-	Formula   *string         `json:"formula"`
-	Value     *string         `json:"value"`
-	Options   json.RawMessage `json:"options"`
+	ID        string           `json:"id"`
+	CellType  string           `json:"cellType"` // input | dropdown | readonly | formula
+	AriaLabel string           `json:"ariaLabel"`
+	Formula   *string          `json:"formula"`
+	Value     *string          `json:"value"`
+	Options   []DropdownOption `json:"options"`
 }

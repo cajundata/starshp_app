@@ -1,6 +1,7 @@
 package assignment
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"testing"
 )
@@ -63,5 +64,23 @@ func TestLoad_ParsesManifestAndQuestions(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected cell id 0_table0_cell_c2_r0 in 004 worksheet")
+	}
+}
+
+func TestCellOptions_ParseBothForms(t *testing.T) {
+	var empty Cell
+	if err := json.Unmarshal([]byte(`{"id":"a","cellType":"dropdown","options":[]}`), &empty); err != nil {
+		t.Fatal(err)
+	}
+	if len(empty.Options) != 0 {
+		t.Fatalf("empty options should be empty, got %v", empty.Options)
+	}
+	var filled Cell
+	raw := `{"id":"b","cellType":"dropdown","options":[{"index":0,"text":"Cash","correct":true},{"index":1,"text":"Revenue","correct":false}]}`
+	if err := json.Unmarshal([]byte(raw), &filled); err != nil {
+		t.Fatal(err)
+	}
+	if len(filled.Options) != 2 || filled.Options[0].Text != "Cash" || !filled.Options[0].Correct {
+		t.Fatalf("filled options mismatch: %+v", filled.Options)
 	}
 }
