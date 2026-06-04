@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/cajundata/starshp_app/internal/chat"
@@ -54,8 +55,9 @@ func New(st *store.Store, chatSvc *chat.Service, pf ProviderFactory, opts Option
 }
 
 // Run loads the companion directory, creates the assignment + item rows, then
-// solves each question sequentially. (Concurrency + cancellation arrive in a
-// follow-up task.)
+// solves the questions via a bounded-concurrent worker pool. Cancellation via
+// ctx stops scheduling new items and marks the batch + unfinished items
+// cancelled; per-item failures are isolated and never abort the batch.
 func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
 	loaded, err := Load(dir)
 	if err != nil {
@@ -76,7 +78,14 @@ func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
 	o.opts.Emit("assignment:started", map[string]any{
 		"assignmentId": asgID, "total": len(loaded.Questions), "title": asg.Title})
 
+	sem := make(chan struct{}, o.opts.Concurrency)
+	var wg sync.WaitGroup
+	cancelled := false
 	for i, q := range loaded.Questions {
+		if ctx.Err() != nil {
+			cancelled = true
+			break
+		}
 		itemID := uuid.NewString()
 		if err := o.st.CreateAssignmentItem(store.AssignmentItem{
 			ID: itemID, AssignmentID: asgID, Seq: i, SourcePath: q.Path,
@@ -86,12 +95,36 @@ func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
 				"assignmentId", asgID, "seq", i, "path", q.Path, "err", err)
 			continue
 		}
-		o.solveItem(ctx, dir, asgID, itemID, i, q)
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(itemID string, seq int, q Question) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			o.solveItem(ctx, dir, asgID, itemID, seq, q)
+		}(itemID, i, q)
 	}
+	wg.Wait()
 
-	_ = o.st.UpdateAssignmentStatus(asgID, "completed")
-	o.opts.Emit("assignment:completed", map[string]any{"assignmentId": asgID})
+	status := "completed"
+	if cancelled || ctx.Err() != nil {
+		status = "cancelled"
+		o.markUnfinishedCancelled(asgID)
+	}
+	_ = o.st.UpdateAssignmentStatus(asgID, status)
+	o.opts.Emit("assignment:"+status, map[string]any{"assignmentId": asgID})
 	return asgID, nil
+}
+
+// markUnfinishedCancelled flips any pending/solving items to cancelled after a
+// batch is stopped.
+func (o *Orchestrator) markUnfinishedCancelled(asgID string) {
+	items, _ := o.st.ListAssignmentItems(asgID)
+	for _, it := range items {
+		if it.Status == "pending" || it.Status == "solving" {
+			it.Status = "cancelled"
+			_ = o.st.UpdateAssignmentItem(it)
+		}
+	}
 }
 
 // solveItem runs one question through the agentic loop and persists the result.

@@ -103,3 +103,40 @@ func TestOrchestrator_SolvesOneItem(t *testing.T) {
 		t.Fatal("answer file path not recorded")
 	}
 }
+
+func TestOrchestrator_AllItemsSolvedConcurrently(t *testing.T) {
+	st := openStore(t)
+	pf := scriptedFactory(`{"confidence":"high","answerIndex":0}`)
+	orc := New(st, chat.New(st), pf, Options{Model: "m", Concurrency: 4,
+		Grounding: NoGrounding{}, Emit: func(string, any) {}})
+	asgID, err := orc.Run(context.Background(), tmpAssignmentDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, _ := st.ListAssignmentItems(asgID)
+	if len(items) == 0 {
+		t.Fatal("no items")
+	}
+	for _, it := range items {
+		// The scripted MC-shaped answer fails the worksheet schema, so that
+		// item may land answered-with-bogus or no_answer — but it must never be
+		// left pending/solving.
+		if it.Status == "pending" || it.Status == "solving" {
+			t.Fatalf("item %s left unfinished: %s", it.SourcePath, it.Status)
+		}
+	}
+}
+
+func TestOrchestrator_CancelStopsBatch(t *testing.T) {
+	st := openStore(t)
+	pf := scriptedFactory(`{"confidence":"high","answerIndex":0}`)
+	orc := New(st, chat.New(st), pf, Options{Model: "m", Concurrency: 1,
+		Grounding: NoGrounding{}, Emit: func(string, any) {}})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before running
+	asgID, _ := orc.Run(ctx, tmpAssignmentDir(t))
+	a, _ := st.GetAssignment(asgID)
+	if a.Status != "cancelled" {
+		t.Fatalf("assignment status want cancelled, got %q", a.Status)
+	}
+}
