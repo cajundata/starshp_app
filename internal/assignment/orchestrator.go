@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/cajundata/starshp_app/internal/chat"
@@ -77,10 +78,14 @@ func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
 
 	for i, q := range loaded.Questions {
 		itemID := uuid.NewString()
-		_ = o.st.CreateAssignmentItem(store.AssignmentItem{
+		if err := o.st.CreateAssignmentItem(store.AssignmentItem{
 			ID: itemID, AssignmentID: asgID, Seq: i, SourcePath: q.Path,
 			Type: string(q.Type), Title: q.Title, Status: "pending",
-		})
+		}); err != nil {
+			slog.Error("assignment: create item failed; skipping",
+				"assignmentId", asgID, "seq", i, "path", q.Path, "err", err)
+			continue
+		}
 		o.solveItem(ctx, dir, asgID, itemID, i, q)
 	}
 
@@ -146,7 +151,14 @@ func (o *Orchestrator) solveItem(ctx context.Context, dir, asgID, itemID string,
 		return
 	}
 
-	raw, _ := o.st.GetSubmittedAnswer(res.RunID)
+	raw, err := o.st.GetSubmittedAnswer(res.RunID)
+	if err != nil {
+		item.Status = "errored"
+		item.Error = "read submitted answer: " + err.Error()
+		_ = o.st.UpdateAssignmentItem(item)
+		o.emitItemDone(asgID, item)
+		return
+	}
 	if len(raw) == 0 {
 		item.Status = "no_answer"
 		_ = o.st.UpdateAssignmentItem(item)
