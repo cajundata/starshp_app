@@ -174,3 +174,94 @@ func TestOrchestrator_ResumeSkipsAnswered(t *testing.T) {
 		}
 	}
 }
+
+func TestRerunItem_OverwritesInPlace(t *testing.T) {
+	st := openStore(t)
+	dir := tmpAssignmentDir(t)
+	orc := newTestOrchestrator(t, st, scriptedFactory(`{"confidence":"low","answerIndex":0}`))
+
+	asgID, err := orc.Run(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var seq int
+	var oldRun, oldConv, itemID string
+	found := false
+	items, _ := st.ListAssignmentItems(asgID)
+	for _, it := range items {
+		if it.SourcePath == "001.html" {
+			seq, oldRun, oldConv, itemID, found = it.Seq, it.RunID, it.ConversationID, it.ID, true
+		}
+	}
+	if !found {
+		t.Fatal("001.html item not created")
+	}
+
+	updated, err := orc.RerunItem(context.Background(), asgID, seq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ID != itemID || updated.Seq != seq {
+		t.Fatalf("item identity changed: %+v", updated)
+	}
+	if updated.Status != "answered" {
+		t.Fatalf("want answered, got %q", updated.Status)
+	}
+	if updated.RunID == "" || updated.RunID == oldRun {
+		t.Fatalf("expected fresh RunID, old=%q new=%q", oldRun, updated.RunID)
+	}
+	if updated.ConversationID == "" || updated.ConversationID == oldConv {
+		t.Fatalf("expected fresh ConversationID, old=%q new=%q", oldConv, updated.ConversationID)
+	}
+	after, _ := st.ListAssignmentItems(asgID)
+	if len(after) != len(items) {
+		t.Fatalf("rerun changed item count: before=%d after=%d", len(items), len(after))
+	}
+}
+
+func TestRerunItem_RejectsUnsupported(t *testing.T) {
+	st := openStore(t)
+	if err := st.CreateAssignment(store.Assignment{
+		ID: "a1", SourceDir: "/nope", Title: "t", ManifestHash: "h",
+		Model: "m", Status: "completed", TotalItems: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateAssignmentItem(store.AssignmentItem{
+		ID: "i1", AssignmentID: "a1", Seq: 0, SourcePath: "x.html",
+		Type: string(TypeUnsupported), Status: "unsupported",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	orc := newTestOrchestrator(t, st, scriptedFactory(`{}`))
+
+	_, err := orc.RerunItem(context.Background(), "a1", 0)
+	ae, ok := err.(provider.AppError)
+	if !ok || ae.Code != "unsupported" {
+		t.Fatalf("want unsupported AppError, got %v", err)
+	}
+}
+
+func TestRerunItem_RejectsWhileBatchInProgress(t *testing.T) {
+	st := openStore(t)
+	if err := st.CreateAssignment(store.Assignment{
+		ID: "a1", SourceDir: "/nope", Title: "t", ManifestHash: "h",
+		Model: "m", Status: "in_progress", TotalItems: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateAssignmentItem(store.AssignmentItem{
+		ID: "i1", AssignmentID: "a1", Seq: 0, SourcePath: "001.html",
+		Type: "multipleChoice", Status: "answered",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	orc := newTestOrchestrator(t, st, scriptedFactory(`{}`))
+
+	_, err := orc.RerunItem(context.Background(), "a1", 0)
+	ae, ok := err.(provider.AppError)
+	if !ok || ae.Code != "busy" {
+		t.Fatalf("want busy AppError, got %v", err)
+	}
+}

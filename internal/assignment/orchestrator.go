@@ -3,8 +3,10 @@ package assignment
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -160,6 +162,66 @@ func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
 	}
 	o.runItems(ctx, dir, asgID, loaded, prior)
 	return asgID, nil
+}
+
+// RerunItem re-solves a single item in place, overwriting its prior answer, and
+// returns the updated item. Idle-only: rejects unsupported items, items still
+// running, and items whose batch is in progress. Errors are typed
+// provider.AppError so the API boundary can surface them verbatim.
+func (o *Orchestrator) RerunItem(ctx context.Context, asgID string, seq int) (store.AssignmentItem, error) {
+	item, ok, err := o.st.GetAssignmentItem(asgID, seq)
+	if err != nil {
+		return store.AssignmentItem{}, err
+	}
+	if !ok {
+		return store.AssignmentItem{}, provider.AppError{Code: "not_found", UserMessage: "That item no longer exists.", Retryable: false}
+	}
+	if item.Type == string(TypeUnsupported) {
+		return store.AssignmentItem{}, provider.AppError{Code: "unsupported", UserMessage: "This item type can't be solved.", Retryable: false}
+	}
+	// cancelled, errored, and no_answer items are all re-runnable; only an
+	// item that is actively being solved (or queued) is blocked.
+	if item.Status == "solving" || item.Status == "pending" {
+		return store.AssignmentItem{}, provider.AppError{Code: "busy", UserMessage: "This item is still being solved.", Retryable: false}
+	}
+
+	asg, err := o.st.GetAssignment(asgID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.AssignmentItem{}, provider.AppError{Code: "not_found", UserMessage: "That assignment no longer exists.", Retryable: false}
+	}
+	if err != nil {
+		return store.AssignmentItem{}, err
+	}
+	if asg.Status == "in_progress" {
+		return store.AssignmentItem{}, provider.AppError{Code: "busy", UserMessage: "A solve is already running — wait for it to finish.", Retryable: false}
+	}
+
+	loaded, err := Load(asg.SourceDir)
+	if err != nil {
+		return store.AssignmentItem{}, err
+	}
+	var q Question
+	found := false
+	for _, cand := range loaded.Questions {
+		if cand.Path == item.SourcePath {
+			q, found = cand, true
+			break
+		}
+	}
+	if !found {
+		return store.AssignmentItem{}, provider.AppError{Code: "not_found", UserMessage: "That question is no longer in the folder.", Retryable: false}
+	}
+
+	if err := o.opts.Grounding.Ensure(ctx); err != nil {
+		return store.AssignmentItem{}, fmt.Errorf("grounding: %w", err)
+	}
+	o.solveItem(ctx, asg.SourceDir, asgID, item.ID, seq, q)
+
+	updated, _, err := o.st.GetAssignmentItem(asgID, seq) // ok always true: solveItem updates, never deletes
+	if err != nil {
+		return store.AssignmentItem{}, err
+	}
+	return updated, nil
 }
 
 // Start prepares synchronously (so the assignment id is available immediately)
