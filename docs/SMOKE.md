@@ -54,3 +54,27 @@ For each step, observe the assistant bubble in addition to the listed expectatio
 31. [ ] **Grounding header.** Ask any question with textbooks attached. A dim `↳ grounded · N sources` line appears above the bubble after `chat:grounding_ready`.
 32. [ ] **`STARSHP_SKIP_AUTO_GROUNDING`.** Set the env var to `1` and relaunch. Ask a question with textbooks attached. No grounding header appears (the run reports `not_required`); the model must call `search_textbook` itself if it wants context.
 33. [ ] **Max-iterations cap (forces a final answer, not an error).** Set `STARSHP_MAX_TOOL_ITERATIONS=2`, attach a textbook, ask a complex multi-hop question. After two tool-use cycles the loop withholds tools and the model synthesizes a final answer from the gathered results — the run completes (not an error bubble) with `terminal_reason=max_iterations` (visible in the structured logs).
+
+## Assignment solver
+
+34. [ ] **Solve a folder.** Open the Assignments view, choose a companion `_json`
+    directory and start. A progress bar advances `done/total`; items flip from
+    solving → answered/no_answer/errored as the batch runs.
+35. [ ] **Review an item.** Click an answered item → its run opens with the
+    worked reasoning, tool calls (safe_math / search_textbook), and the
+    submit_answer payload (MC choice or worksheet cell map).
+36. [ ] **Confidence & flags.** Low-confidence and flagged items are
+    highlighted; a worksheet with uncaptured dropdown options shows an
+    `uncaptured_dropdown_options` flag; a question missing data shows
+    `missing_information`.
+37. [ ] **Answer files written.** A sibling `_answers/NNN.json` exists for each
+    answered question, mirroring the input file names, with the answer payload
+    and runId.
+38. [ ] **Stop mid-batch.** Start a large folder, click Stop. In-flight items
+    finish or cancel; pending items become `cancelled`; answered items persist.
+39. [ ] **Resume.** Re-run the same folder. Already-answered items are skipped
+    (no new runs); only pending/errored/no_answer items re-solve.
+40. [ ] **Sidebar isolation.** Item conversations do not appear in the normal
+    conversation sidebar; they are reachable only via the assignment view.
+41. [ ] **Concurrency env.** Set `STARSHP_ASSIGNMENT_CONCURRENCY=2`, re-run, and
+    confirm no SQLITE_BUSY errors in logs (busy_timeout + WAL cover contention).
