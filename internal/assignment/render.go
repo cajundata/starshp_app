@@ -35,11 +35,44 @@ func RenderPrompt(q Question) (system, user string) {
 
 func renderMC(q Question) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Title: %s\n\n%s\n\nChoices:\n", q.Title, q.MultipleChoice.Stem)
+	fmt.Fprintf(&b, "Title: %s\n\n%s\n", q.Title, q.MultipleChoice.Stem)
+	if t := q.MultipleChoice.StemTable; t != nil && len(t.Rows) > 0 {
+		renderMCTable(&b, *t)
+	}
+	b.WriteString("\nChoices:\n")
 	for _, ch := range q.MultipleChoice.Choices {
 		fmt.Fprintf(&b, "  [%d] %s\n", ch.Index, ch.Text)
 	}
 	return b.String()
+}
+
+// renderMCTable emits a matrix/reference table embedded in the question stem.
+// Lettered choices (e.g. "Choice A.") often only make sense against this grid,
+// so each row label and cell value must reach the model verbatim.
+func renderMCTable(b *strings.Builder, t Table) {
+	b.WriteString("\nReference table (columns align with the headers; each lettered row defines that choice):\n")
+	if len(t.Headers) > 0 {
+		fmt.Fprintf(b, "       %s\n", strings.Join(t.Headers, " | "))
+	}
+	for _, row := range t.Rows {
+		var vals []string
+		for _, c := range row.Cells {
+			if c.Value != nil {
+				vals = append(vals, *c.Value)
+			} else {
+				vals = append(vals, "")
+			}
+		}
+		line := strings.Join(vals, " | ")
+		switch {
+		case row.Label != "" && strings.TrimSpace(line) != "":
+			fmt.Fprintf(b, "  %s: %s\n", row.Label, line)
+		case row.Label != "":
+			fmt.Fprintf(b, "  %s\n", row.Label)
+		default:
+			fmt.Fprintf(b, "  %s\n", line)
+		}
+	}
 }
 
 func renderWorksheet(q Question) string {

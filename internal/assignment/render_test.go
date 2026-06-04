@@ -30,6 +30,35 @@ func TestRenderPrompt_MultipleChoice(t *testing.T) {
 	}
 }
 
+func TestRenderPrompt_MultipleChoiceIncludesStemTable(t *testing.T) {
+	loaded, err := Load(testdataDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mc Question
+	for _, q := range loaded.Questions {
+		if q.Type == TypeMultipleChoice {
+			mc = q
+		}
+	}
+	if mc.MultipleChoice == nil || mc.MultipleChoice.StemTable == nil {
+		t.Fatalf("MC body must parse stemTable, got %+v", mc.MultipleChoice)
+	}
+	_, user := RenderPrompt(mc)
+	// Every row label and non-empty cell value in the stem table must reach the
+	// prompt; otherwise lettered choices like "Choice A." are meaningless.
+	for _, row := range mc.MultipleChoice.StemTable.Rows {
+		if row.Label != "" && !strings.Contains(user, row.Label) {
+			t.Errorf("prompt missing stem-table row label %q", row.Label)
+		}
+		for _, c := range row.Cells {
+			if c.Value != nil && *c.Value != "" && !strings.Contains(user, *c.Value) {
+				t.Errorf("prompt missing stem-table cell value %q", *c.Value)
+			}
+		}
+	}
+}
+
 func TestRenderPrompt_WorksheetTagsAnswerableCells(t *testing.T) {
 	q := loadWorksheet(t)
 	system, user := RenderPrompt(q)

@@ -37,6 +37,11 @@ type Question struct {
 type MultipleChoiceBody struct {
 	Stem    string   `json:"stem"`
 	Choices []Choice `json:"choices"`
+	// StemTable is a matrix/reference table embedded in the question stem (e.g. a
+	// Yes/No grid whose rows define what each lettered choice means). Nil when the
+	// question has no embedded table. Without it, choices like "Choice A." are
+	// meaningless to the solver.
+	StemTable *Table `json:"stemTable"`
 }
 
 type Choice struct {
