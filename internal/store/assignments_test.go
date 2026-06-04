@@ -91,6 +91,42 @@ func TestFindAssignmentByManifest(t *testing.T) {
 	}
 }
 
+func TestAssignmentScope_RoundTrip(t *testing.T) {
+	st := openTestStore(t)
+	if err := st.CreateAssignment(Assignment{
+		ID: "a1", SourceDir: "/d", Title: "t", ManifestHash: "h",
+		Model: "m", Status: "in_progress", TotalItems: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Default: no scope.
+	got, err := st.GetAssignmentScope("a1")
+	if err != nil || got != nil {
+		t.Fatalf("want nil scope, got %v err %v", got, err)
+	}
+
+	// Set two whole-book scopes.
+	if err := st.SetAssignmentScope("a1", []TextbookScope{{Name: "blaw"}, {Name: "audit"}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = st.GetAssignmentScope("a1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Name != "blaw" || got[1].Name != "audit" {
+		t.Fatalf("unexpected scope: %+v", got)
+	}
+
+	// Empty clears it back to NULL → nil.
+	if err := st.SetAssignmentScope("a1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := st.GetAssignmentScope("a1"); got != nil {
+		t.Fatalf("want nil after clear, got %+v", got)
+	}
+}
+
 func TestGetAssignmentItem(t *testing.T) {
 	st := openTestStore(t)
 	if err := st.CreateAssignment(Assignment{

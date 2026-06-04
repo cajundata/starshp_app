@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 )
 
@@ -180,6 +181,39 @@ func (s *Store) GetAssignmentItem(assignmentID string, seq int) (AssignmentItem,
 		return AssignmentItem{}, false, err
 	}
 	return it, true, nil
+}
+
+// SetAssignmentScope stores the assignment's textbook scope as JSON in
+// grounding_scope. An empty slice clears it (stored as NULL).
+func (s *Store) SetAssignmentScope(asgID string, scopes []TextbookScope) error {
+	var js string
+	if len(scopes) > 0 {
+		b, err := json.Marshal(scopes)
+		if err != nil {
+			return err
+		}
+		js = string(b)
+	}
+	_, err := s.db.Exec(`UPDATE assignments SET grounding_scope=?, updated_at=? WHERE id=?`,
+		nullIfEmpty(js), time.Now().UnixMilli(), asgID)
+	return err
+}
+
+// GetAssignmentScope returns the assignment's textbook scope (nil if none).
+func (s *Store) GetAssignmentScope(asgID string) ([]TextbookScope, error) {
+	var js string
+	if err := s.db.QueryRow(
+		`SELECT COALESCE(grounding_scope,'') FROM assignments WHERE id=?`, asgID).Scan(&js); err != nil {
+		return nil, err
+	}
+	if js == "" {
+		return nil, nil
+	}
+	var scopes []TextbookScope
+	if err := json.Unmarshal([]byte(js), &scopes); err != nil {
+		return nil, err
+	}
+	return scopes, nil
 }
 
 func (s *Store) SetConversationAssignment(convID, assignmentID string) error {
