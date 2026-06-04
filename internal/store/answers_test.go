@@ -38,3 +38,21 @@ func TestGetSubmittedAnswer_EmptyWhenNoneSubmitted(t *testing.T) {
 		t.Fatalf("expected nil, got %s", got)
 	}
 }
+
+func TestGetSubmittedAnswer_LatestWins(t *testing.T) {
+	st := openTestStore(t)
+	conv, _ := st.CreateConversation("c")
+	user, _ := st.AppendUserMessage(conv.ID, "q")
+	_ = st.CreateRun(conv.ID, user.TurnID, "r1", "openai", "m", "auto_grounded_default")
+	_, _ = st.AppendAssistantToolCall(conv.ID, user.TurnID, "r1", "call_1", "submit_answer",
+		json.RawMessage(`{"confidence":"low","answerIndex":0}`))
+	_, _ = st.AppendAssistantToolCall(conv.ID, user.TurnID, "r1", "call_2", "submit_answer",
+		json.RawMessage(`{"confidence":"high","answerIndex":3}`))
+	got, err := st.GetSubmittedAnswer("r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `{"confidence":"high","answerIndex":3}` {
+		t.Fatalf("latest submit_answer should win, got %s", got)
+	}
+}

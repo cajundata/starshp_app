@@ -15,11 +15,14 @@ func (s *Store) GetSubmittedAnswer(runID string) (json.RawMessage, error) {
           WHERE run_id = ? AND kind = 'assistant_tool_call' AND tool_name = 'submit_answer'
           ORDER BY sequence_index DESC
           LIMIT 1`, runID).Scan(&input)
-	if err == sql.ErrNoRows || input == "" {
+	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	if input == "" { // row existed but tool_input was NULL — treat as no answer
+		return nil, nil
 	}
 	return json.RawMessage(input), nil
 }
