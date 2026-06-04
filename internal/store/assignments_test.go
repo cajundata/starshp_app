@@ -90,3 +90,31 @@ func TestFindAssignmentByManifest(t *testing.T) {
 		t.Fatalf("expected a1; got %+v ok=%v err=%v", got, ok, err)
 	}
 }
+
+func TestGetAssignmentItem(t *testing.T) {
+	st := openTestStore(t)
+	if err := st.CreateAssignment(Assignment{
+		ID: "a1", SourceDir: "/d", Title: "t", ManifestHash: "h",
+		Model: "m", Status: "completed", TotalItems: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateAssignmentItem(AssignmentItem{
+		ID: "i1", AssignmentID: "a1", Seq: 3, SourcePath: "003.html",
+		Type: "multipleChoice", Title: "Item 3", Status: "answered", Confidence: "low",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok, err := st.GetAssignmentItem("a1", 3)
+	if err != nil || !ok {
+		t.Fatalf("expected found, got ok=%v err=%v", ok, err)
+	}
+	if got.ID != "i1" || got.SourcePath != "003.html" || got.Confidence != "low" {
+		t.Fatalf("unexpected item: %+v", got)
+	}
+
+	if _, ok, err := st.GetAssignmentItem("a1", 99); ok || err != nil {
+		t.Fatalf("expected ok=false err=nil for missing seq, got ok=%v err=%v", ok, err)
+	}
+}

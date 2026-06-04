@@ -160,6 +160,28 @@ func (s *Store) ListAssignmentItems(assignmentID string) ([]AssignmentItem, erro
 	return out, rows.Err()
 }
 
+// GetAssignmentItem returns the item at (assignmentID, seq), or ok=false if none.
+func (s *Store) GetAssignmentItem(assignmentID string, seq int) (AssignmentItem, bool, error) {
+	var it AssignmentItem
+	err := s.db.QueryRow(
+		`SELECT id, assignment_id, seq, source_path, type, COALESCE(title,''),
+                COALESCE(run_id,''), COALESCE(conversation_id,''), status,
+                COALESCE(confidence,''), COALESCE(answer_json,''), COALESCE(flags_json,''),
+                COALESCE(answer_path,''), COALESCE(error,''), created_at, updated_at
+           FROM assignment_items WHERE assignment_id=? AND seq=?`, assignmentID, seq).Scan(
+		&it.ID, &it.AssignmentID, &it.Seq, &it.SourcePath, &it.Type, &it.Title,
+		&it.RunID, &it.ConversationID, &it.Status, &it.Confidence,
+		&it.AnswerJSON, &it.FlagsJSON, &it.AnswerPath, &it.Error,
+		&it.CreatedAt, &it.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return AssignmentItem{}, false, nil
+	}
+	if err != nil {
+		return AssignmentItem{}, false, err
+	}
+	return it, true, nil
+}
+
 func (s *Store) SetConversationAssignment(convID, assignmentID string) error {
 	_, err := s.db.Exec(`UPDATE conversations SET assignment_id=? WHERE id=?`,
 		assignmentID, convID)
