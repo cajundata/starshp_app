@@ -16,7 +16,7 @@ import (
 )
 
 // copyFixtures copies the mod04 _json fixtures into a temp _json dir and returns
-// the parent directory (the companion dir SolveAssignment expects).
+// that _json directory (the companion dir Load/SolveAssignment expect).
 func copyFixtures(t *testing.T) string {
 	t.Helper()
 	src := filepath.Join("..", "assignment", "testdata", "mod04", "_json")

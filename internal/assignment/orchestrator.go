@@ -163,13 +163,19 @@ func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
 }
 
 // Start prepares synchronously (so the assignment id is available immediately)
-// then runs the batch in a background goroutine.
-func (o *Orchestrator) Start(ctx context.Context, dir string) (string, error) {
+// then runs the batch in a background goroutine. onDone (may be nil) runs when
+// the batch finishes — callers use it to release the run's context.
+func (o *Orchestrator) Start(ctx context.Context, dir string, onDone func()) (string, error) {
 	asgID, loaded, prior, err := o.prepare(ctx, dir)
 	if err != nil {
 		return "", err
 	}
-	go o.runItems(ctx, dir, asgID, loaded, prior)
+	go func() {
+		if onDone != nil {
+			defer onDone()
+		}
+		o.runItems(ctx, dir, asgID, loaded, prior)
+	}()
 	return asgID, nil
 }
 

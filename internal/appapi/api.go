@@ -316,7 +316,7 @@ func (a *API) SolveAssignment(dir string) (string, error) {
 	a.asgCancel = cancel
 	a.mu.Unlock()
 
-	id, err := orc.Start(cctx, dir)
+	id, err := orc.Start(cctx, dir, cancel)
 	if err != nil {
 		cancel()
 		return "", provider.NormalizeError(err)
