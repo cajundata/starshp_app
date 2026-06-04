@@ -1,5 +1,6 @@
 import './style.css'
 import * as App from '../wailsjs/go/appapi/API'
+import { store } from '../wailsjs/go/models'
 import { EventsOn } from '../wailsjs/runtime/runtime'
 
 let activeConv: string | null = null
@@ -610,6 +611,378 @@ async function deleteEditorItem() {
   }
   closeEditor()
   await openLibraryPanel()
+}
+
+// ---- Assignments review view -----------------------------------------------
+// A batch "assignment" solves a folder of questions. The view lists items with
+// status/confidence/flag indicators; live progress arrives via assignment:*
+// events. Drilling into an item renders its persisted run (display events) with
+// the same bubble/tool-block structure the chat thread uses.
+
+const asgView = $('asgView')
+const asgHeader = $('asgHeader')
+const asgItems = $('asgItems')
+const asgDetail = $('asgDetail')
+const asgStopBtn = $('asgStopBtn') as HTMLButtonElement
+
+let currentAssignmentId: string | null = null
+// Index item rows by seq so progress events can update them in place.
+const asgItemRows = new Map<number, HTMLElement>()
+let asgProgressDone = 0
+let asgProgressTotal = 0
+
+function openAssignments() {
+  asgView.classList.remove('hidden')
+  void loadAssignmentsHome()
+}
+
+function closeAssignments() {
+  asgView.classList.add('hidden')
+}
+
+// loadAssignmentsHome shows the most recent assignment (if any) so the view is
+// not blank on open; the explicit "Solve a folder…" action starts a new batch.
+async function loadAssignmentsHome() {
+  let list: Awaited<ReturnType<typeof App.ListAssignments>>
+  try {
+    list = (await App.ListAssignments()) || []
+  } catch (e: any) {
+    asgHeader.innerHTML = ''
+    const err = document.createElement('p')
+    err.className = 'asg-error'
+    err.textContent = `Could not load assignments: ${e?.userMessage || e}`
+    asgHeader.appendChild(err)
+    return
+  }
+  if (currentAssignmentId) return // a batch is already loaded/in-flight
+  if (list.length === 0) {
+    asgHeader.innerHTML = '<p class="asg-empty">No assignments yet. Solve a folder to get started.</p>'
+    asgItems.innerHTML = ''
+    asgDetail.innerHTML = ''
+    return
+  }
+  await selectAssignment(list[0].ID)
+}
+
+async function solveFolder() {
+  const dir = prompt('Folder to solve (absolute path):')
+  if (!dir || !dir.trim()) return
+  asgDetail.innerHTML = ''
+  asgHeader.innerHTML = '<p class="asg-empty">Preparing…</p>'
+  try {
+    const id = await App.SolveAssignment(dir.trim())
+    currentAssignmentId = id
+    asgItemRows.clear()
+    asgStopBtn.classList.remove('hidden')
+    await selectAssignment(id)
+  } catch (e: any) {
+    asgHeader.innerHTML = ''
+    const err = document.createElement('p')
+    err.className = 'asg-error'
+    err.textContent = `Could not start: ${e?.userMessage || e}`
+    asgHeader.appendChild(err)
+  }
+}
+
+// selectAssignment loads an assignment's header + items from the store. Used on
+// open, after solve start, and on completed/cancelled refresh.
+async function selectAssignment(id: string) {
+  currentAssignmentId = id
+  asgItemRows.clear()
+  asgDetail.innerHTML = ''
+  let asg: Awaited<ReturnType<typeof App.GetAssignment>>
+  let items: Awaited<ReturnType<typeof App.ListAssignmentItems>>
+  try {
+    asg = await App.GetAssignment(id)
+    items = (await App.ListAssignmentItems(id)) || []
+  } catch (e: any) {
+    asgHeader.innerHTML = ''
+    const err = document.createElement('p')
+    err.className = 'asg-error'
+    err.textContent = `Could not load assignment: ${e?.userMessage || e}`
+    asgHeader.appendChild(err)
+    return
+  }
+  const done = items.filter(it => it.Status === 'answered' || it.Status === 'failed' || it.Status === 'cancelled').length
+  renderAssignmentHeader(asg.Title || asg.SourceDir, done, asg.TotalItems || items.length, asg.Status)
+  asgItems.innerHTML = ''
+  for (const it of items) renderItemRow(it)
+  // A still-running batch keeps the Stop button visible.
+  if (asg.Status === 'running' || asg.Status === 'solving') asgStopBtn.classList.remove('hidden')
+  else asgStopBtn.classList.add('hidden')
+}
+
+function renderAssignmentHeader(title: string, done: number, total: number, status: string) {
+  asgProgressDone = done
+  asgProgressTotal = total
+  asgHeader.innerHTML = ''
+  const h = document.createElement('div')
+  h.className = 'asg-title'
+  h.textContent = title
+  asgHeader.appendChild(h)
+
+  const sub = document.createElement('div')
+  sub.className = 'asg-sub'
+  const pill = document.createElement('span')
+  pill.className = 'status-pill status-' + (status || 'unknown')
+  pill.textContent = status || 'unknown'
+  sub.appendChild(pill)
+  asgHeader.appendChild(sub)
+
+  const bar = document.createElement('div')
+  bar.className = 'assignment-progress'
+  const fill = document.createElement('div')
+  fill.className = 'assignment-progress-fill'
+  fill.style.width = total > 0 ? `${Math.round((done / total) * 100)}%` : '0%'
+  bar.appendChild(fill)
+  asgHeader.appendChild(bar)
+
+  const count = document.createElement('div')
+  count.className = 'assignment-progress-count'
+  count.textContent = `${done} / ${total}`
+  asgHeader.appendChild(count)
+}
+
+function updateProgress(doneDelta: number) {
+  asgProgressDone += doneDelta
+  const fill = asgHeader.querySelector('.assignment-progress-fill') as HTMLElement | null
+  if (fill) fill.style.width = asgProgressTotal > 0 ? `${Math.round((asgProgressDone / asgProgressTotal) * 100)}%` : '0%'
+  const count = asgHeader.querySelector('.assignment-progress-count') as HTMLElement | null
+  if (count) count.textContent = `${asgProgressDone} / ${asgProgressTotal}`
+}
+
+function confidenceClass(c: string): string {
+  if (c === 'high' || c === 'medium' || c === 'low') return 'confidence-' + c
+  return 'confidence-unknown'
+}
+
+function renderItemRow(it: store.AssignmentItem) {
+  const flagCount = flagCountFromJSON(it.FlagsJSON)
+  const row = document.createElement('div')
+  row.className = 'assignment-item'
+  row.dataset.seq = String(it.Seq)
+  applyItemDecorations(row, it.Confidence, flagCount)
+
+  const seq = document.createElement('span')
+  seq.className = 'item-seq'
+  seq.textContent = String(it.Seq)
+  row.appendChild(seq)
+
+  const title = document.createElement('span')
+  title.className = 'item-title'
+  title.textContent = it.Title || it.SourcePath || '(untitled)'
+  row.appendChild(title)
+
+  const type = document.createElement('span')
+  type.className = 'item-type'
+  type.textContent = it.Type || ''
+  row.appendChild(type)
+
+  const conf = document.createElement('span')
+  conf.className = 'item-conf ' + confidenceClass(it.Confidence)
+  conf.textContent = it.Confidence || '—'
+  row.appendChild(conf)
+
+  const flag = document.createElement('span')
+  flag.className = 'item-flag'
+  flag.textContent = flagCount > 0 ? `⚑ ${flagCount}` : ''
+  row.appendChild(flag)
+
+  const pill = document.createElement('span')
+  pill.className = 'status-pill status-' + (it.Status || 'pending')
+  pill.textContent = it.Status || 'pending'
+  row.appendChild(pill)
+
+  // Only items with a persisted conversation can be drilled into.
+  if (it.ConversationID) {
+    row.classList.add('drillable')
+    row.onclick = () => void openItemDetail(it.ConversationID, it.Seq)
+  }
+
+  asgItems.appendChild(row)
+  asgItemRows.set(it.Seq, row)
+}
+
+function applyItemDecorations(row: HTMLElement, confidence: string, flagCount: number) {
+  row.classList.toggle('item-flagged', flagCount > 0)
+  row.classList.toggle('item-low', confidence === 'low')
+}
+
+function flagCountFromJSON(s: string): number {
+  if (!s) return 0
+  try {
+    const arr = JSON.parse(s)
+    return Array.isArray(arr) ? arr.length : 0
+  } catch {
+    return 0
+  }
+}
+
+// ---- Item detail: render a persisted run from display events ---------------
+// Mirrors the chat thread's bubble/tool-block structure (same CSS) but targets
+// the assignment detail container instead of the global thread.
+
+function bytesToText(b: any): string {
+  if (b == null) return ''
+  if (typeof b === 'string') return b
+  if (Array.isArray(b)) {
+    try { return new TextDecoder().decode(Uint8Array.from(b)) } catch { return '' }
+  }
+  return ''
+}
+
+async function openItemDetail(conversationId: string, seq: number) {
+  asgItems.querySelectorAll('.assignment-item.selected').forEach(n => n.classList.remove('selected'))
+  asgItemRows.get(seq)?.classList.add('selected')
+  asgDetail.innerHTML = ''
+  let events: Awaited<ReturnType<typeof App.GetConversationDisplayEvents>>
+  try {
+    events = (await App.GetConversationDisplayEvents(conversationId)) || []
+  } catch (e: any) {
+    const err = document.createElement('p')
+    err.className = 'asg-error'
+    err.textContent = `Could not load run: ${e?.userMessage || e}`
+    asgDetail.appendChild(err)
+    return
+  }
+  // Build run bubbles keyed by runId inside the detail container.
+  const bubbles = new Map<string, { el: HTMLElement; curText: HTMLElement | null; tools: Map<string, HTMLElement> }>()
+  const ensure = (runId: string) => {
+    let b = bubbles.get(runId)
+    if (!b) {
+      const el = document.createElement('div')
+      el.className = 'msg assistant'
+      asgDetail.appendChild(el)
+      b = { el, curText: null, tools: new Map() }
+      bubbles.set(runId, b)
+    }
+    return b
+  }
+  for (const ev of events) {
+    if (ev.kind === 'user_message') {
+      const um = document.createElement('div')
+      um.className = 'msg user'
+      const t = document.createElement('div')
+      t.className = 'msg-text'
+      t.textContent = ev.text || ''
+      um.appendChild(t)
+      asgDetail.appendChild(um)
+      continue
+    }
+    if (!ev.runId) continue
+    const b = ensure(ev.runId)
+    if (ev.kind === 'assistant_text') {
+      if (!b.curText) {
+        b.curText = document.createElement('div')
+        b.curText.className = 'msg-text'
+        b.el.appendChild(b.curText)
+      }
+      b.curText.textContent += ev.text || ''
+    } else if (ev.kind === 'assistant_tool_call') {
+      b.curText = null
+      const div = document.createElement('div')
+      div.className = 'tool-call'
+      const icon = document.createElement('span')
+      icon.className = 'tool-icon'
+      icon.textContent = toolIcon(ev.toolName || '')
+      const nm = document.createElement('span')
+      nm.className = 'tool-name'
+      nm.textContent = ev.toolName || ''
+      const arg = document.createElement('span')
+      arg.className = 'tool-arg'
+      arg.textContent = argPreview(bytesToText(ev.toolInput))
+      div.append(icon, nm, arg)
+      const full = bytesToText(ev.toolInput)
+      if (full) {
+        const detail = document.createElement('div')
+        detail.className = 'tool-summary'
+        detail.textContent = full
+        div.appendChild(detail)
+      }
+      b.el.appendChild(div)
+      b.tools.set(ev.toolCallId || '', div)
+    } else if (ev.kind === 'tool_result') {
+      const el = b.tools.get(ev.toolCallId || '')
+      const txt = ev.text || ''
+      if (el && txt) {
+        const detail = document.createElement('div')
+        detail.className = 'tool-summary'
+        detail.textContent = txt
+        if (ev.isError) el.classList.add('errored')
+        el.appendChild(detail)
+      }
+    }
+  }
+  if (bubbles.size === 0) {
+    asgDetail.innerHTML = '<p class="asg-empty">No worked run recorded for this item.</p>'
+  }
+}
+
+// ---- Live progress events --------------------------------------------------
+
+EventsOn('assignment:started', (p: any) => {
+  if (p.assignmentId !== currentAssignmentId) return
+  asgItemRows.clear()
+  asgItems.innerHTML = ''
+  renderAssignmentHeader(p.title || '', 0, p.total || 0, 'running')
+  asgStopBtn.classList.remove('hidden')
+})
+
+EventsOn('assignment:item_started', (p: any) => {
+  if (p.assignmentId !== currentAssignmentId) return
+  let row = asgItemRows.get(p.seq)
+  if (!row) {
+    // Row not yet rendered (fresh batch) — create a placeholder.
+    row = document.createElement('div')
+    row.className = 'assignment-item'
+    row.dataset.seq = String(p.seq)
+    const seq = document.createElement('span'); seq.className = 'item-seq'; seq.textContent = String(p.seq)
+    const title = document.createElement('span'); title.className = 'item-title'; title.textContent = p.title || ''
+    const type = document.createElement('span'); type.className = 'item-type'; type.textContent = p.type || ''
+    const conf = document.createElement('span'); conf.className = 'item-conf confidence-unknown'; conf.textContent = '—'
+    const flag = document.createElement('span'); flag.className = 'item-flag'
+    const pill = document.createElement('span'); pill.className = 'status-pill status-solving'; pill.textContent = 'solving'
+    row.append(seq, title, type, conf, flag, pill)
+    asgItems.appendChild(row)
+    asgItemRows.set(p.seq, row)
+  } else {
+    const pill = row.querySelector('.status-pill') as HTMLElement
+    if (pill) { pill.className = 'status-pill status-solving'; pill.textContent = 'solving' }
+  }
+})
+
+EventsOn('assignment:item_done', (p: any) => {
+  if (p.assignmentId !== currentAssignmentId) return
+  const row = asgItemRows.get(p.seq)
+  if (row) {
+    const pill = row.querySelector('.status-pill') as HTMLElement
+    if (pill) { pill.className = 'status-pill status-' + (p.status || 'done'); pill.textContent = p.status || 'done' }
+    const conf = row.querySelector('.item-conf') as HTMLElement
+    if (conf) { conf.className = 'item-conf ' + confidenceClass(p.confidence); conf.textContent = p.confidence || '—' }
+    const flag = row.querySelector('.item-flag') as HTMLElement
+    if (flag) flag.textContent = p.flagCount > 0 ? `⚑ ${p.flagCount}` : ''
+    applyItemDecorations(row, p.confidence, p.flagCount || 0)
+  }
+  updateProgress(1)
+})
+
+EventsOn('assignment:completed', (p: any) => {
+  if (p.assignmentId !== currentAssignmentId) return
+  asgStopBtn.classList.add('hidden')
+  if (currentAssignmentId) void selectAssignment(currentAssignmentId)
+})
+
+EventsOn('assignment:cancelled', (p: any) => {
+  if (p.assignmentId !== currentAssignmentId) return
+  asgStopBtn.classList.add('hidden')
+  if (currentAssignmentId) void selectAssignment(currentAssignmentId)
+})
+
+$('asgBtn').onclick = () => openAssignments()
+$('asgBack').onclick = () => closeAssignments()
+$('asgSolveBtn').onclick = () => void solveFolder()
+asgStopBtn.onclick = () => {
+  if (currentAssignmentId) void App.CancelAssignment(currentAssignmentId)
 }
 
 $('newChat').onclick = newChat

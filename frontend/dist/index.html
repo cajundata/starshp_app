@@ -1,12 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8" /><title>Starshp</title>  <script type="module" crossorigin src="/assets/index.c18402e6.js"></script>
-  <link rel="stylesheet" href="/assets/index.beacea8b.css">
+<head><meta charset="UTF-8" /><title>Starshp</title>  <script type="module" crossorigin src="/assets/index.e045cc70.js"></script>
+  <link rel="stylesheet" href="/assets/index.03dbb22b.css">
 </head>
 <body>
   <div id="app">
     <aside id="sidebar">
       <button id="newChat">+ New chat</button>
+      <button id="asgBtn">📂 Assignments</button>
       <div class="cap">History</div>
       <div id="convList"></div>
     </aside>
@@ -25,6 +26,22 @@
         </div>
       </div>
     </main>
+  </div>
+  <div id="asgView" class="hidden">
+    <div id="asgBar">
+      <button id="asgBack">← Chat</button>
+      <span id="asgBarTitle">Assignments</span>
+      <span class="spacer"></span>
+      <button id="asgSolveBtn">+ Solve a folder…</button>
+      <button id="asgStopBtn" class="hidden">Stop ◼</button>
+    </div>
+    <div id="asgBody">
+      <div id="asgListPane">
+        <div id="asgHeader"></div>
+        <div id="asgItems" class="assignment-list"></div>
+      </div>
+      <div id="asgDetail"></div>
+    </div>
   </div>
   <div id="tbModal" class="hidden"><div id="tbModalInner"></div></div>
   <div id="libModal" class="hidden"><div id="libModalInner"></div></div>
