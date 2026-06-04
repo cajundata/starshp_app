@@ -40,6 +40,7 @@ type API struct {
 	assignmentFactory assignment.ProviderFactory     // overridable in tests
 	emit              func(name string, payload any) // wruntime.EventsEmit wrapper; overridable in tests
 	asgCancel         context.CancelFunc
+	rerunning         bool // guards against concurrent single-item reruns (a.mu)
 }
 
 func NewAPI(cfg config.Config, st *store.Store, reg provider.Registry, ragAdpt *rag.Adapter) *API {
@@ -322,6 +323,54 @@ func (a *API) SolveAssignment(dir string) (string, error) {
 		return "", provider.NormalizeError(err)
 	}
 	return id, nil
+}
+
+// RerunAssignmentItem re-solves a single item in place and returns the new
+// conversation id. Idle-only: errors if another rerun is already in flight or a
+// batch is running. The prior answer (and its _answers/NNN.json file) is
+// overwritten. Runs synchronously: it returns when the item has been re-solved.
+func (a *API) RerunAssignmentItem(asgID string, seq int) (string, error) {
+	a.mu.Lock()
+	if a.rerunning {
+		a.mu.Unlock()
+		return "", provider.AppError{Code: "busy", UserMessage: "Another rerun is already running.", Retryable: false}
+	}
+	a.rerunning = true
+	a.mu.Unlock()
+	defer func() {
+		a.mu.Lock()
+		a.rerunning = false
+		a.mu.Unlock()
+	}()
+
+	model := a.defaultModelID()
+	if model == "" {
+		return "", provider.AppError{Code: "config", UserMessage: "No model configured.", Retryable: false}
+	}
+	var search tools.Tool
+	if a.ragAdpt != nil {
+		search = searchtextbook.New(ragRetrieverShim{a: a}, chatStoreResolver{st: a.st}, 4000)
+	}
+	opts := assignment.Options{
+		Model:       model,
+		Concurrency: 1,
+		Grounding:   assignment.NoGrounding{},
+		SafeMath:    safemath.New(),
+		SearchTool:  search,
+		Emit:        func(_ string, _ any) {}, // decoupled from batch progress events
+	}
+	orc := assignment.New(a.st, a.chatSvc, a.assignmentFactory, opts)
+
+	// Synchronous, no per-call cancel in v1: uses the app-lifetime context.
+	// (Optional rerun cancel is a documented follow-up.)
+	updated, err := orc.RerunItem(a.ctx, asgID, seq)
+	if err != nil {
+		if ae, ok := err.(provider.AppError); ok {
+			return "", ae // preserve typed code; NormalizeError would mask it as "unknown"
+		}
+		return "", provider.NormalizeError(err)
+	}
+	return updated.ConversationID, nil
 }
 
 // CancelAssignment aborts the in-flight assignment batch, if any.
