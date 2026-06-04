@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Loaded is the result of reading a companion _json directory.
@@ -48,16 +49,16 @@ func Load(dir string) (*Loaded, error) {
 	return out, nil
 }
 
-// jsonFileFor maps "001.html" -> "001.json".
+// jsonFileFor maps a manifest html path like "001.html" to its sibling
+// "001.json". An extensionless path maps to "<path>.json".
 func jsonFileFor(htmlPath string) string {
-	ext := filepath.Ext(htmlPath)
-	return htmlPath[:len(htmlPath)-len(ext)] + ".json"
+	return strings.TrimSuffix(htmlPath, filepath.Ext(htmlPath)) + ".json"
 }
 
 func loadQuestion(path string, entry ManifestEntry) (Question, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return Question{}, err
+		return Question{}, fmt.Errorf("read %s: %w", path, err)
 	}
 	var raw rawQuestion
 	if err := json.Unmarshal(b, &raw); err != nil {

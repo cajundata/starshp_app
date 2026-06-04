@@ -19,6 +19,12 @@ func TestLoad_ParsesManifestAndQuestions(t *testing.T) {
 	if loaded.Manifest.Count != 24 {
 		t.Fatalf("manifest count want 24, got %d", loaded.Manifest.Count)
 	}
+	if len(loaded.Questions) != 2 {
+		t.Fatalf("want 2 loaded questions (only 001 and 004 fixtures present), got %d", len(loaded.Questions))
+	}
+	if len(loaded.LoadErrors) != 22 {
+		t.Fatalf("want 22 load errors for the missing fixtures, got %d", len(loaded.LoadErrors))
+	}
 	byPath := map[string]Question{}
 	for _, q := range loaded.Questions {
 		byPath[q.Path] = q

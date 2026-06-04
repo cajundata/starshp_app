@@ -1,5 +1,4 @@
-// Package assignment loads companion-exported question sets and solves them in
-// a bounded-concurrent fan-out over the agentic chat loop.
+// Package assignment loads companion-exported question sets from a _json directory.
 package assignment
 
 // Type is the companion question kind.
