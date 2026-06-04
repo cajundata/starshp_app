@@ -42,7 +42,7 @@ func TestQuality_SolvesRealQuestions(t *testing.T) {
 		SafeMath: safemath.New(), Emit: func(string, any) {},
 	})
 
-	asgID, err := orc.Run(context.Background(), tmpAssignmentDir(t))
+	asgID, err := orc.Run(context.Background(), tmpAssignmentDir(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

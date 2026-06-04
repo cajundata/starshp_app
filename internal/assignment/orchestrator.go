@@ -34,6 +34,9 @@ type Options struct {
 	// disables that tool. appapi sets these; unit tests leave them nil.
 	SafeMath   tools.Tool
 	SearchTool tools.Tool
+	// Resolver resolves a conversation's attached textbooks into book scope for
+	// the search_textbook tool. appapi injects chatStoreResolver; nil disables.
+	Resolver chat.ScopeResolver
 }
 
 type Orchestrator struct {
@@ -58,7 +61,7 @@ func New(st *store.Store, chatSvc *chat.Service, pf ProviderFactory, opts Option
 
 // prepare loads the dir, ensures grounding, and finds-or-creates the assignment
 // row, returning its id and the state runItems needs.
-func (o *Orchestrator) prepare(ctx context.Context, dir string) (string, *Loaded, map[string]store.AssignmentItem, error) {
+func (o *Orchestrator) prepare(ctx context.Context, dir string, scopes []store.TextbookScope) (string, *Loaded, map[string]store.AssignmentItem, error) {
 	loaded, err := Load(dir)
 	if err != nil {
 		return "", nil, nil, err
@@ -91,6 +94,14 @@ func (o *Orchestrator) prepare(ctx context.Context, dir string) (string, *Loaded
 			return "", nil, nil, err
 		}
 	}
+	// A provided scope (non-nil, possibly empty) is authoritative for this run,
+	// including on resume. A nil scope means "caller has no opinion" — leave any
+	// previously-stored scope untouched (avoids clobbering on a no-scope resume).
+	if scopes != nil {
+		if err := o.st.SetAssignmentScope(asgID, scopes); err != nil {
+			return "", nil, nil, err
+		}
+	}
 	return asgID, loaded, priorByPath, nil
 }
 
@@ -101,6 +112,11 @@ func (o *Orchestrator) prepare(ctx context.Context, dir string) (string, *Loaded
 func (o *Orchestrator) runItems(ctx context.Context, dir, asgID string, loaded *Loaded, priorByPath map[string]store.AssignmentItem) {
 	o.opts.Emit("assignment:started", map[string]any{
 		"assignmentId": asgID, "total": len(loaded.Questions), "title": titleFor(dir, loaded)})
+
+	scope, serr := o.st.GetAssignmentScope(asgID)
+	if serr != nil {
+		slog.Warn("assignment: read scope failed; solving without textbooks", "assignmentId", asgID, "err", serr)
+	}
 
 	sem := make(chan struct{}, o.opts.Concurrency)
 	var wg sync.WaitGroup
@@ -133,7 +149,7 @@ func (o *Orchestrator) runItems(ctx context.Context, dir, asgID string, loaded *
 		go func(itemID string, seq int, q Question) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			o.solveItem(ctx, dir, asgID, itemID, seq, q)
+			o.solveItem(ctx, dir, asgID, itemID, seq, q, scope)
 		}(itemID, i, q)
 	}
 	wg.Wait()
@@ -155,8 +171,8 @@ func (o *Orchestrator) runItems(ctx context.Context, dir, asgID string, loaded *
 }
 
 // Run solves a directory synchronously (used by tests).
-func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
-	asgID, loaded, prior, err := o.prepare(ctx, dir)
+func (o *Orchestrator) Run(ctx context.Context, dir string, scopes []store.TextbookScope) (string, error) {
+	asgID, loaded, prior, err := o.prepare(ctx, dir, scopes)
 	if err != nil {
 		return "", err
 	}
@@ -215,7 +231,11 @@ func (o *Orchestrator) RerunItem(ctx context.Context, asgID string, seq int) (st
 	if err := o.opts.Grounding.Ensure(ctx); err != nil {
 		return store.AssignmentItem{}, fmt.Errorf("grounding: %w", err)
 	}
-	o.solveItem(ctx, asg.SourceDir, asgID, item.ID, seq, q)
+	scope, serr := o.st.GetAssignmentScope(asgID)
+	if serr != nil {
+		slog.Warn("assignment: rerun read scope failed; solving without textbooks", "assignmentId", asgID, "err", serr)
+	}
+	o.solveItem(ctx, asg.SourceDir, asgID, item.ID, seq, q, scope)
 
 	updated, _, err := o.st.GetAssignmentItem(asgID, seq) // ok always true: solveItem updates, never deletes
 	if err != nil {
@@ -227,8 +247,8 @@ func (o *Orchestrator) RerunItem(ctx context.Context, asgID string, seq int) (st
 // Start prepares synchronously (so the assignment id is available immediately)
 // then runs the batch in a background goroutine. onDone (may be nil) runs when
 // the batch finishes — callers use it to release the run's context.
-func (o *Orchestrator) Start(ctx context.Context, dir string, onDone func()) (string, error) {
-	asgID, loaded, prior, err := o.prepare(ctx, dir)
+func (o *Orchestrator) Start(ctx context.Context, dir string, scopes []store.TextbookScope, onDone func()) (string, error) {
+	asgID, loaded, prior, err := o.prepare(ctx, dir, scopes)
 	if err != nil {
 		return "", err
 	}
@@ -257,7 +277,7 @@ func (o *Orchestrator) markUnfinishedCancelled(asgID string) int {
 }
 
 // solveItem runs one question through the agentic loop and persists the result.
-func (o *Orchestrator) solveItem(ctx context.Context, dir, asgID, itemID string, seq int, q Question) {
+func (o *Orchestrator) solveItem(ctx context.Context, dir, asgID, itemID string, seq int, q Question, scope []store.TextbookScope) {
 	item := store.AssignmentItem{ID: itemID, AssignmentID: asgID, Seq: seq,
 		SourcePath: q.Path, Type: string(q.Type), Title: q.Title}
 
@@ -286,13 +306,16 @@ func (o *Orchestrator) solveItem(ctx context.Context, dir, asgID, itemID string,
 		return
 	}
 	_ = o.st.SetConversationAssignment(conv.ID, asgID)
+	if len(scope) > 0 {
+		_ = o.st.SetConversationTextbooks(conv.ID, scope)
+	}
 	item.ConversationID = conv.ID
 	item.Status = "solving"
 	_ = o.st.UpdateAssignmentItem(item)
 	o.opts.Emit("assignment:item_started",
 		map[string]any{"assignmentId": asgID, "seq": seq, "title": q.Title, "type": q.Type})
 
-	reg := o.buildRegistry(q)
+	reg := o.buildRegistry(q, len(scope) > 0)
 	system, user := RenderPrompt(q)
 	mode := chat.RetrievalNoRetrieval
 	if o.opts.Grounding.Retriever() != nil {
@@ -301,7 +324,7 @@ func (o *Orchestrator) solveItem(ctx context.Context, dir, asgID, itemID string,
 	res, sendErr := o.chat.Send(ctx, chat.SendParams{
 		ConversationID: conv.ID, UserText: user, SystemPrompt: system,
 		Model: o.opts.Model, Provider: prov, ProviderName: provName,
-		Registry: reg, Resolver: nil, Retriever: o.opts.Grounding.Retriever(),
+		Registry: reg, Resolver: o.opts.Resolver, Retriever: o.opts.Grounding.Retriever(),
 		RetrievalMode: mode,
 	}, nil)
 	item.RunID = res.RunID
@@ -346,13 +369,13 @@ func (o *Orchestrator) solveItem(ctx context.Context, dir, asgID, itemID string,
 	o.emitItemDone(asgID, item)
 }
 
-func (o *Orchestrator) buildRegistry(q Question) *tools.Registry {
+func (o *Orchestrator) buildRegistry(q Question, hasScope bool) *tools.Registry {
 	reg := tools.NewRegistry(30 * time.Second)
 	_ = reg.Register(NewSubmitAnswer(q))
 	if o.opts.SafeMath != nil {
 		_ = reg.Register(o.opts.SafeMath)
 	}
-	if o.opts.SearchTool != nil {
+	if hasScope && o.opts.SearchTool != nil {
 		_ = reg.Register(o.opts.SearchTool)
 	}
 	return reg

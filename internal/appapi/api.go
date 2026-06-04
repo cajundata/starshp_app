@@ -315,6 +315,7 @@ func (a *API) SolveAssignment(dir string) (string, error) {
 		Grounding:   assignment.NoGrounding{}, // v1: textbooks via the search_textbook tool, no pre-turn grounding
 		SafeMath:    safemath.New(),
 		SearchTool:  search,
+		Resolver:    chatStoreResolver{st: a.st},
 		Emit:        a.emit,
 	}
 	orc := assignment.New(a.st, a.chatSvc, a.assignmentFactory, opts)
@@ -324,7 +325,7 @@ func (a *API) SolveAssignment(dir string) (string, error) {
 	a.asgCancel = cancel
 	a.mu.Unlock()
 
-	id, err := orc.Start(cctx, dir, cancel)
+	id, err := orc.Start(cctx, dir, nil, cancel)
 	if err != nil {
 		cancel()
 		return "", provider.NormalizeError(err)
@@ -364,6 +365,7 @@ func (a *API) RerunAssignmentItem(asgID string, seq int) (string, error) {
 		Grounding:   assignment.NoGrounding{},
 		SafeMath:    safemath.New(),
 		SearchTool:  search,
+		Resolver:    chatStoreResolver{st: a.st},
 		Emit:        func(_ string, _ any) {}, // decoupled from batch progress events
 	}
 	orc := assignment.New(a.st, a.chatSvc, a.assignmentFactory, opts)

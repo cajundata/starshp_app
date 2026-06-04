@@ -6,11 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/cajundata/starshp_app/internal/chat"
 	"github.com/cajundata/starshp_app/internal/eval/fakeprovider"
 	"github.com/cajundata/starshp_app/internal/provider"
 	"github.com/cajundata/starshp_app/internal/store"
+	"github.com/cajundata/starshp_app/internal/tools"
 )
 
 func openStore(t *testing.T) *store.Store {
@@ -79,7 +81,7 @@ func TestOrchestrator_SolvesOneItem(t *testing.T) {
 	pf := scriptedFactory(`{"confidence":"high","answerIndex":1}`)
 	orc := newTestOrchestrator(t, st, pf)
 
-	asgID, err := orc.Run(context.Background(), tmpAssignmentDir(t))
+	asgID, err := orc.Run(context.Background(), tmpAssignmentDir(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +111,7 @@ func TestOrchestrator_AllItemsSolvedConcurrently(t *testing.T) {
 	pf := scriptedFactory(`{"confidence":"high","answerIndex":0}`)
 	orc := New(st, chat.New(st), pf, Options{Model: "m", Concurrency: 4,
 		Grounding: NoGrounding{}, Emit: func(string, any) {}})
-	asgID, err := orc.Run(context.Background(), tmpAssignmentDir(t))
+	asgID, err := orc.Run(context.Background(), tmpAssignmentDir(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +136,7 @@ func TestOrchestrator_CancelStopsBatch(t *testing.T) {
 		Grounding: NoGrounding{}, Emit: func(string, any) {}})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before running
-	asgID, _ := orc.Run(ctx, tmpAssignmentDir(t))
+	asgID, _ := orc.Run(ctx, tmpAssignmentDir(t), nil)
 	a, _ := st.GetAssignment(asgID)
 	if a.Status != "cancelled" {
 		t.Fatalf("assignment status want cancelled, got %q", a.Status)
@@ -147,7 +149,7 @@ func TestOrchestrator_ResumeSkipsAnswered(t *testing.T) {
 	orc := New(st, chat.New(st), scriptedFactory(`{"confidence":"high","answerIndex":0}`),
 		Options{Model: "m", Concurrency: 2, Grounding: NoGrounding{}, Emit: func(string, any) {}})
 
-	asgID, err := orc.Run(context.Background(), dir)
+	asgID, err := orc.Run(context.Background(), dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +159,7 @@ func TestOrchestrator_ResumeSkipsAnswered(t *testing.T) {
 		runByPath[it.SourcePath] = it.RunID
 	}
 
-	asgID2, err := orc.Run(context.Background(), dir)
+	asgID2, err := orc.Run(context.Background(), dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +182,7 @@ func TestRerunItem_OverwritesInPlace(t *testing.T) {
 	dir := tmpAssignmentDir(t)
 	orc := newTestOrchestrator(t, st, scriptedFactory(`{"confidence":"low","answerIndex":0}`))
 
-	asgID, err := orc.Run(context.Background(), dir)
+	asgID, err := orc.Run(context.Background(), dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,5 +265,114 @@ func TestRerunItem_RejectsWhileBatchInProgress(t *testing.T) {
 	ae, ok := err.(provider.AppError)
 	if !ok || ae.Code != "busy" {
 		t.Fatalf("want busy AppError, got %v", err)
+	}
+}
+
+// fakeTool is a minimal tools.Tool stand-in for asserting registry gating.
+type fakeTool struct{ name string }
+
+func (f fakeTool) Name() string                { return f.name }
+func (f fakeTool) Description() string          { return "fake" }
+func (f fakeTool) InputSchema() json.RawMessage { return json.RawMessage(`{"type":"object"}`) }
+func (f fakeTool) Execute(context.Context, tools.ExecContext, json.RawMessage) (tools.ExecResult, error) {
+	return tools.ExecResult{}, nil
+}
+func (f fakeTool) Timeout() time.Duration { return 0 }
+
+func hasTool(cat []provider.ToolDef, name string) bool {
+	for _, d := range cat {
+		if d.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func TestBuildRegistry_GatesSearchToolOnScope(t *testing.T) {
+	st := openStore(t)
+	orc := New(st, chat.New(st), scriptedFactory(`{}`), Options{
+		Model: "m", Concurrency: 1, Grounding: NoGrounding{},
+		Emit: func(string, any) {}, SearchTool: fakeTool{name: "search_textbook"},
+	})
+	q := Question{Type: TypeMultipleChoice, Title: "t", MultipleChoice: &MultipleChoiceBody{Stem: "s"}}
+
+	if !hasTool(orc.buildRegistry(q, true).Catalog(), "search_textbook") {
+		t.Error("search_textbook must be registered when scope is present")
+	}
+	if hasTool(orc.buildRegistry(q, false).Catalog(), "search_textbook") {
+		t.Error("search_textbook must NOT be registered when scope is empty")
+	}
+}
+
+func TestSolve_AttachesScopeToItemConversation(t *testing.T) {
+	st := openStore(t)
+	dir := tmpAssignmentDir(t)
+	orc := newTestOrchestrator(t, st, scriptedFactory(`{"confidence":"low","answerIndex":0}`))
+
+	asgID, err := orc.Run(context.Background(), dir, []store.TextbookScope{{Name: "blaw"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, _ := st.ListAssignmentItems(asgID)
+	var convID string
+	for _, it := range items {
+		if it.SourcePath == "001.html" {
+			convID = it.ConversationID
+		}
+	}
+	if convID == "" {
+		t.Fatal("001.html item has no conversation")
+	}
+	tb, _ := st.GetConversationTextbooks(convID)
+	if len(tb) != 1 || tb[0].Name != "blaw" {
+		t.Fatalf("expected blaw attached to item conversation, got %+v", tb)
+	}
+}
+
+func TestPrepare_NilScopeDoesNotClobber(t *testing.T) {
+	st := openStore(t)
+	dir := tmpAssignmentDir(t)
+	orc := newTestOrchestrator(t, st, scriptedFactory(`{"confidence":"low","answerIndex":0}`))
+
+	asgID, err := orc.Run(context.Background(), dir, []store.TextbookScope{{Name: "blaw"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Re-solving with a nil scope must NOT wipe the stored selection.
+	if _, err := orc.Run(context.Background(), dir, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := st.GetAssignmentScope(asgID)
+	if len(got) != 1 || got[0].Name != "blaw" {
+		t.Fatalf("nil re-solve clobbered scope: %+v", got)
+	}
+}
+
+func TestRerunItem_AttachesStoredScope(t *testing.T) {
+	st := openStore(t)
+	dir := tmpAssignmentDir(t)
+	orc := newTestOrchestrator(t, st, scriptedFactory(`{"confidence":"low","answerIndex":0}`))
+
+	asgID, err := orc.Run(context.Background(), dir, nil) // solve with no scope
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAssignmentScope(asgID, []store.TextbookScope{{Name: "blaw"}}); err != nil {
+		t.Fatal(err)
+	}
+	items, _ := st.ListAssignmentItems(asgID)
+	var seq int
+	for _, it := range items {
+		if it.SourcePath == "001.html" {
+			seq = it.Seq
+		}
+	}
+	updated, err := orc.RerunItem(context.Background(), asgID, seq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tb, _ := st.GetConversationTextbooks(updated.ConversationID)
+	if len(tb) != 1 || tb[0].Name != "blaw" {
+		t.Fatalf("rerun should attach stored scope, got %+v", tb)
 	}
 }
