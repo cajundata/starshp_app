@@ -1,14 +1,89 @@
 package appapi
 
 import (
+	"context"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cajundata/starshp_app/internal/config"
+	"github.com/cajundata/starshp_app/internal/eval/fakeprovider"
 	"github.com/cajundata/starshp_app/internal/provider"
 	"github.com/cajundata/starshp_app/internal/store"
 )
+
+// copyFixtures copies the mod04 _json fixtures into a temp _json dir and returns
+// the parent directory (the companion dir SolveAssignment expects).
+func copyFixtures(t *testing.T) string {
+	t.Helper()
+	src := filepath.Join("..", "assignment", "testdata", "mod04", "_json")
+	dst := filepath.Join(t.TempDir(), "_json")
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"manifest.json", "001.json", "004.json"} {
+		b, err := os.ReadFile(filepath.Join(src, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dst, name), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dst
+}
+
+func TestSolveAssignment_RunsAndLists(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "app.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer st.Close()
+	reg := provider.Registry{Models: []provider.ModelInfo{{Display: "X", ID: "m1", Provider: "openai"}}}
+	a := NewAPI(config.Config{}, st, reg, nil)
+	a.Startup(context.Background())
+	a.emit = func(string, any) {} // avoid live Wails runtime in tests
+	a.assignmentFactory = func(string) (provider.ChatProvider, string, error) {
+		return &fakeprovider.Scripted{Iterations: [][]provider.Delta{
+			{
+				{ToolCall: &provider.ToolCall{ID: "c1", Name: "submit_answer",
+					Input: json.RawMessage(`{"confidence":"high","answerIndex":1}`)}},
+				{Done: true, StopReason: "tool_use"},
+			},
+			{{Text: "done"}, {Done: true, StopReason: "end_turn"}},
+		}}, "openai", nil
+	}
+	dir := copyFixtures(t)
+	id, err := a.SolveAssignment(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Poll for completion (scripted provider is fast).
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		asg, err := a.GetAssignment(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if asg.Status == "completed" || asg.Status == "cancelled" || asg.Status == "errored" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("assignment did not finish; status=%s", asg.Status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	items, err := a.ListAssignmentItems(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) == 0 {
+		t.Fatal("no items returned")
+	}
+}
 
 // When ragAdpt is nil but the conversation has a textbook scope, SendMessage
 // must not panic. It will fail earlier at provider.New (no API key / unknown
@@ -46,7 +121,9 @@ func TestTitleFromText(t *testing.T) {
 		t.Fatalf("empty: got %q", got)
 	}
 	long := ""
-	for i := 0; i < 100; i++ { long += "x" }
+	for i := 0; i < 100; i++ {
+		long += "x"
+	}
 	got := titleFromText(long)
 	if []rune(got)[len([]rune(got))-1] != '…' || len([]rune(got)) != 61 {
 		t.Fatalf("truncation wrong: len=%d got=%q", len([]rune(got)), got)

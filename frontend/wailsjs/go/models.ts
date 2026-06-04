@@ -81,6 +81,78 @@ export namespace provider {
 
 export namespace store {
 	
+	export class Assignment {
+	    ID: string;
+	    SourceDir: string;
+	    Title: string;
+	    ManifestHash: string;
+	    Model: string;
+	    GroundingScope: string;
+	    Status: string;
+	    TotalItems: number;
+	    CreatedAt: number;
+	    UpdatedAt: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Assignment(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ID = source["ID"];
+	        this.SourceDir = source["SourceDir"];
+	        this.Title = source["Title"];
+	        this.ManifestHash = source["ManifestHash"];
+	        this.Model = source["Model"];
+	        this.GroundingScope = source["GroundingScope"];
+	        this.Status = source["Status"];
+	        this.TotalItems = source["TotalItems"];
+	        this.CreatedAt = source["CreatedAt"];
+	        this.UpdatedAt = source["UpdatedAt"];
+	    }
+	}
+	export class AssignmentItem {
+	    ID: string;
+	    AssignmentID: string;
+	    Seq: number;
+	    SourcePath: string;
+	    Type: string;
+	    Title: string;
+	    RunID: string;
+	    ConversationID: string;
+	    Status: string;
+	    Confidence: string;
+	    AnswerJSON: string;
+	    FlagsJSON: string;
+	    AnswerPath: string;
+	    Error: string;
+	    CreatedAt: number;
+	    UpdatedAt: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AssignmentItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ID = source["ID"];
+	        this.AssignmentID = source["AssignmentID"];
+	        this.Seq = source["Seq"];
+	        this.SourcePath = source["SourcePath"];
+	        this.Type = source["Type"];
+	        this.Title = source["Title"];
+	        this.RunID = source["RunID"];
+	        this.ConversationID = source["ConversationID"];
+	        this.Status = source["Status"];
+	        this.Confidence = source["Confidence"];
+	        this.AnswerJSON = source["AnswerJSON"];
+	        this.FlagsJSON = source["FlagsJSON"];
+	        this.AnswerPath = source["AnswerPath"];
+	        this.Error = source["Error"];
+	        this.CreatedAt = source["CreatedAt"];
+	        this.UpdatedAt = source["UpdatedAt"];
+	    }
+	}
 	export class Conversation {
 	    id: string;
 	    title: string;

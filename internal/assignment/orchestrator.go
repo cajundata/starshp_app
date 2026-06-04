@@ -54,30 +54,27 @@ func New(st *store.Store, chatSvc *chat.Service, pf ProviderFactory, opts Option
 	return &Orchestrator{st: st, chat: chatSvc, pf: pf, opts: opts}
 }
 
-// Run loads the companion directory, creates the assignment + item rows, then
-// solves the questions via a bounded-concurrent worker pool. Cancellation via
-// ctx stops scheduling new items and marks the batch + unfinished items
-// cancelled; per-item failures are isolated and never abort the batch.
-func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
+// prepare loads the dir, ensures grounding, and finds-or-creates the assignment
+// row, returning its id and the state runItems needs.
+func (o *Orchestrator) prepare(ctx context.Context, dir string) (string, *Loaded, map[string]store.AssignmentItem, error) {
 	loaded, err := Load(dir)
 	if err != nil {
-		return "", err
+		return "", nil, nil, err
 	}
 	if err := o.opts.Grounding.Ensure(ctx); err != nil {
-		return "", fmt.Errorf("grounding: %w", err)
+		return "", nil, nil, fmt.Errorf("grounding: %w", err)
 	}
 	manifestHash := hashManifest(loaded)
-
-	var asgID string
 	priorByPath := map[string]store.AssignmentItem{}
+	var asgID string
 	if existing, ok, ferr := o.st.FindAssignmentByManifest(dir, manifestHash); ferr != nil {
-		return "", ferr
+		return "", nil, nil, ferr
 	} else if ok {
 		asgID = existing.ID
 		_ = o.st.UpdateAssignmentStatus(asgID, "in_progress")
 		prior, perr := o.st.ListAssignmentItems(asgID)
 		if perr != nil {
-			return "", fmt.Errorf("list prior items: %w", perr)
+			return "", nil, nil, fmt.Errorf("list prior items: %w", perr)
 		}
 		for _, it := range prior {
 			priorByPath[it.SourcePath] = it
@@ -89,9 +86,17 @@ func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
 			ManifestHash: manifestHash, Model: o.opts.Model,
 			Status: "in_progress", TotalItems: len(loaded.Questions),
 		}); err != nil {
-			return "", err
+			return "", nil, nil, err
 		}
 	}
+	return asgID, loaded, priorByPath, nil
+}
+
+// runItems executes the bounded-concurrent fan-out for a prepared assignment
+// and finalizes its status. Cancellation via ctx stops scheduling new items and
+// marks the batch + unfinished items cancelled; per-item failures are isolated
+// and never abort the batch.
+func (o *Orchestrator) runItems(ctx context.Context, dir, asgID string, loaded *Loaded, priorByPath map[string]store.AssignmentItem) {
 	o.opts.Emit("assignment:started", map[string]any{
 		"assignmentId": asgID, "total": len(loaded.Questions), "title": titleFor(dir, loaded)})
 
@@ -145,6 +150,26 @@ func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
 	}
 	_ = o.st.UpdateAssignmentStatus(asgID, status)
 	o.opts.Emit("assignment:"+status, map[string]any{"assignmentId": asgID})
+}
+
+// Run solves a directory synchronously (used by tests).
+func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
+	asgID, loaded, prior, err := o.prepare(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	o.runItems(ctx, dir, asgID, loaded, prior)
+	return asgID, nil
+}
+
+// Start prepares synchronously (so the assignment id is available immediately)
+// then runs the batch in a background goroutine.
+func (o *Orchestrator) Start(ctx context.Context, dir string) (string, error) {
+	asgID, loaded, prior, err := o.prepare(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	go o.runItems(ctx, dir, asgID, loaded, prior)
 	return asgID, nil
 }
 

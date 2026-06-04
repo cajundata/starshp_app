@@ -5,10 +5,13 @@ package appapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/cajundata/starshp_app/internal/assignment"
 	"github.com/cajundata/starshp_app/internal/chat"
 	"github.com/cajundata/starshp_app/internal/config"
 	"github.com/cajundata/starshp_app/internal/library"
@@ -33,6 +36,10 @@ type API struct {
 	toolReg        *tools.Registry
 	mu             sync.Mutex
 	cancelInFlight context.CancelFunc
+
+	assignmentFactory assignment.ProviderFactory     // overridable in tests
+	emit              func(name string, payload any) // wruntime.EventsEmit wrapper; overridable in tests
+	asgCancel         context.CancelFunc
 }
 
 func NewAPI(cfg config.Config, st *store.Store, reg provider.Registry, ragAdpt *rag.Adapter) *API {
@@ -49,6 +56,14 @@ func NewAPI(cfg config.Config, st *store.Store, reg provider.Registry, ragAdpt *
 		))
 	}
 	_ = a.toolReg.Register(safemath.New())
+	a.assignmentFactory = func(modelID string) (provider.ChatProvider, string, error) {
+		p, err := provider.New(a.reg, modelID, a.cfg.OpenAIAPIKey, a.cfg.AnthropicAPIKey)
+		if err != nil {
+			return nil, "", err
+		}
+		return p, providerNameFromModelID(a.reg, modelID), nil
+	}
+	a.emit = func(name string, payload any) { wruntime.EventsEmit(a.ctx, name, payload) }
 	return a
 }
 
@@ -137,7 +152,7 @@ func (a *API) DeleteConversation(id string) error { return a.st.DeleteConversati
 // GetConversationDisplayEvents. Returns an empty slice so older frontend builds
 // degrade gracefully rather than mixing schemas during rollout.
 func (a *API) ListMessages(_ string) ([]store.Message, error) { return nil, nil }
-func (a *API) Models() []provider.ModelInfo { return a.reg.Models }
+func (a *API) Models() []provider.ModelInfo                   { return a.reg.Models }
 func (a *API) ListBooks() ([]textbooks.Book, error) {
 	return textbooks.Scan(a.cfg.TextbooksConfig)
 }
@@ -273,6 +288,73 @@ func (a *API) CancelMessage() {
 	if c != nil {
 		c()
 	}
+}
+
+// SolveAssignment loads a companion _json directory and solves every question
+// concurrently in the background. Returns the assignment id immediately.
+func (a *API) SolveAssignment(dir string) (string, error) {
+	model := a.defaultModelID()
+	if model == "" {
+		return "", provider.AppError{Code: "config", UserMessage: "No model configured.", Retryable: false}
+	}
+	var search tools.Tool
+	if a.ragAdpt != nil {
+		search = searchtextbook.New(ragRetrieverShim{a: a}, chatStoreResolver{st: a.st}, 4000)
+	}
+	opts := assignment.Options{
+		Model:       model,
+		Concurrency: assignmentConcurrency(),
+		Grounding:   assignment.NoGrounding{}, // v1: textbooks via the search_textbook tool, no pre-turn grounding
+		SafeMath:    safemath.New(),
+		SearchTool:  search,
+		Emit:        a.emit,
+	}
+	orc := assignment.New(a.st, a.chatSvc, a.assignmentFactory, opts)
+
+	cctx, cancel := context.WithCancel(a.ctx)
+	a.mu.Lock()
+	a.asgCancel = cancel
+	a.mu.Unlock()
+
+	id, err := orc.Start(cctx, dir)
+	if err != nil {
+		cancel()
+		return "", provider.NormalizeError(err)
+	}
+	return id, nil
+}
+
+// CancelAssignment aborts the in-flight assignment batch, if any.
+func (a *API) CancelAssignment(_ string) {
+	a.mu.Lock()
+	c := a.asgCancel
+	a.mu.Unlock()
+	if c != nil {
+		c()
+	}
+}
+
+func (a *API) ListAssignments() ([]store.Assignment, error)      { return a.st.ListAssignments() }
+func (a *API) GetAssignment(id string) (store.Assignment, error) { return a.st.GetAssignment(id) }
+func (a *API) ListAssignmentItems(id string) ([]store.AssignmentItem, error) {
+	return a.st.ListAssignmentItems(id)
+}
+
+func (a *API) defaultModelID() string {
+	if len(a.reg.Models) > 0 {
+		return a.reg.Models[0].ID
+	}
+	return ""
+}
+
+func assignmentConcurrency() int {
+	if v := os.Getenv("STARSHP_ASSIGNMENT_CONCURRENCY"); v != "" {
+		var n int
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 4
 }
 
 // booksToIndex returns configured book names that are in the requested set,
