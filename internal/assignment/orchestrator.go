@@ -75,7 +75,10 @@ func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
 	} else if ok {
 		asgID = existing.ID
 		_ = o.st.UpdateAssignmentStatus(asgID, "in_progress")
-		prior, _ := o.st.ListAssignmentItems(asgID)
+		prior, perr := o.st.ListAssignmentItems(asgID)
+		if perr != nil {
+			return "", fmt.Errorf("list prior items: %w", perr)
+		}
 		for _, it := range prior {
 			priorByPath[it.SourcePath] = it
 		}
