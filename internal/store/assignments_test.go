@@ -77,3 +77,16 @@ func TestSetConversationAssignment_HidesFromList(t *testing.T) {
 		t.Fatal("normal conversation should still be listed")
 	}
 }
+
+func TestFindAssignmentByManifest(t *testing.T) {
+	st := openTestStore(t)
+	if _, ok, err := st.FindAssignmentByManifest("/d", "h"); err != nil || ok {
+		t.Fatalf("expected not found; ok=%v err=%v", ok, err)
+	}
+	_ = st.CreateAssignment(Assignment{ID: "a1", SourceDir: "/d", Title: "t",
+		ManifestHash: "h", Model: "m", Status: "completed"})
+	got, ok, err := st.FindAssignmentByManifest("/d", "h")
+	if err != nil || !ok || got.ID != "a1" {
+		t.Fatalf("expected a1; got %+v ok=%v err=%v", got, ok, err)
+	}
+}

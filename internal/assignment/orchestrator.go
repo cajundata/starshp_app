@@ -66,17 +66,31 @@ func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
 	if err := o.opts.Grounding.Ensure(ctx); err != nil {
 		return "", fmt.Errorf("grounding: %w", err)
 	}
-	asgID := uuid.NewString()
-	asg := store.Assignment{
-		ID: asgID, SourceDir: dir, Title: titleFor(dir, loaded),
-		ManifestHash: hashManifest(loaded), Model: o.opts.Model,
-		Status: "in_progress", TotalItems: len(loaded.Questions),
-	}
-	if err := o.st.CreateAssignment(asg); err != nil {
-		return "", err
+	manifestHash := hashManifest(loaded)
+
+	var asgID string
+	priorByPath := map[string]store.AssignmentItem{}
+	if existing, ok, ferr := o.st.FindAssignmentByManifest(dir, manifestHash); ferr != nil {
+		return "", ferr
+	} else if ok {
+		asgID = existing.ID
+		_ = o.st.UpdateAssignmentStatus(asgID, "in_progress")
+		prior, _ := o.st.ListAssignmentItems(asgID)
+		for _, it := range prior {
+			priorByPath[it.SourcePath] = it
+		}
+	} else {
+		asgID = uuid.NewString()
+		if err := o.st.CreateAssignment(store.Assignment{
+			ID: asgID, SourceDir: dir, Title: titleFor(dir, loaded),
+			ManifestHash: manifestHash, Model: o.opts.Model,
+			Status: "in_progress", TotalItems: len(loaded.Questions),
+		}); err != nil {
+			return "", err
+		}
 	}
 	o.opts.Emit("assignment:started", map[string]any{
-		"assignmentId": asgID, "total": len(loaded.Questions), "title": asg.Title})
+		"assignmentId": asgID, "total": len(loaded.Questions), "title": titleFor(dir, loaded)})
 
 	sem := make(chan struct{}, o.opts.Concurrency)
 	var wg sync.WaitGroup
@@ -86,14 +100,23 @@ func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
 			cancelled = true
 			break
 		}
-		itemID := uuid.NewString()
-		if err := o.st.CreateAssignmentItem(store.AssignmentItem{
-			ID: itemID, AssignmentID: asgID, Seq: i, SourcePath: q.Path,
-			Type: string(q.Type), Title: q.Title, Status: "pending",
-		}); err != nil {
-			slog.Error("assignment: create item failed; skipping",
-				"assignmentId", asgID, "seq", i, "path", q.Path, "err", err)
-			continue
+		prior, hasPrior := priorByPath[q.Path]
+		if hasPrior && prior.Status == "answered" {
+			continue // already solved on a previous run
+		}
+		var itemID string
+		if hasPrior {
+			itemID = prior.ID // reuse the existing row; solveItem updates it
+		} else {
+			itemID = uuid.NewString()
+			if err := o.st.CreateAssignmentItem(store.AssignmentItem{
+				ID: itemID, AssignmentID: asgID, Seq: i, SourcePath: q.Path,
+				Type: string(q.Type), Title: q.Title, Status: "pending",
+			}); err != nil {
+				slog.Error("assignment: create item failed; skipping",
+					"assignmentId", asgID, "seq", i, "path", q.Path, "err", err)
+				continue
+			}
 		}
 		wg.Add(1)
 		sem <- struct{}{}

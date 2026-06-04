@@ -1,6 +1,9 @@
 package store
 
-import "time"
+import (
+	"database/sql"
+	"time"
+)
 
 type Assignment struct {
 	ID             string
@@ -89,6 +92,26 @@ func (s *Store) GetAssignment(id string) (Assignment, error) {
 		&a.ID, &a.SourceDir, &a.Title, &a.ManifestHash, &a.Model,
 		&a.GroundingScope, &a.Status, &a.TotalItems, &a.CreatedAt, &a.UpdatedAt)
 	return a, err
+}
+
+// FindAssignmentByManifest returns the most recent assignment for a source dir
+// + manifest hash, or ok=false if none exists.
+func (s *Store) FindAssignmentByManifest(sourceDir, manifestHash string) (Assignment, bool, error) {
+	var a Assignment
+	err := s.db.QueryRow(
+		`SELECT id, source_dir, title, manifest_hash, model,
+                COALESCE(grounding_scope,''), status, total_items, created_at, updated_at
+           FROM assignments WHERE source_dir=? AND manifest_hash=?
+          ORDER BY created_at DESC LIMIT 1`, sourceDir, manifestHash).Scan(
+		&a.ID, &a.SourceDir, &a.Title, &a.ManifestHash, &a.Model,
+		&a.GroundingScope, &a.Status, &a.TotalItems, &a.CreatedAt, &a.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return Assignment{}, false, nil
+	}
+	if err != nil {
+		return Assignment{}, false, err
+	}
+	return a, true, nil
 }
 
 func (s *Store) ListAssignments() ([]Assignment, error) {

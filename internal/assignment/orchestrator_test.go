@@ -140,3 +140,37 @@ func TestOrchestrator_CancelStopsBatch(t *testing.T) {
 		t.Fatalf("assignment status want cancelled, got %q", a.Status)
 	}
 }
+
+func TestOrchestrator_ResumeSkipsAnswered(t *testing.T) {
+	st := openStore(t)
+	dir := tmpAssignmentDir(t) // SAME dir for both runs (resume keys on dir+hash)
+	orc := New(st, chat.New(st), scriptedFactory(`{"confidence":"high","answerIndex":0}`),
+		Options{Model: "m", Concurrency: 2, Grounding: NoGrounding{}, Emit: func(string, any) {}})
+
+	asgID, err := orc.Run(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, _ := st.ListAssignmentItems(asgID)
+	runByPath := map[string]string{}
+	for _, it := range first {
+		runByPath[it.SourcePath] = it.RunID
+	}
+
+	asgID2, err := orc.Run(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asgID2 != asgID {
+		t.Fatalf("resume should reuse the assignment id; got %s vs %s", asgID2, asgID)
+	}
+	second, _ := st.ListAssignmentItems(asgID)
+	if len(second) != len(first) {
+		t.Fatalf("resume created duplicate items: %d -> %d", len(first), len(second))
+	}
+	for _, it := range second {
+		if it.Status == "answered" && it.RunID != runByPath[it.SourcePath] {
+			t.Fatalf("answered item %s was re-run on resume (runID changed)", it.SourcePath)
+		}
+	}
+}
