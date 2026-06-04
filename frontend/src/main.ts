@@ -708,7 +708,7 @@ async function selectAssignment(id: string) {
   asgItems.innerHTML = ''
   for (const it of items) renderItemRow(it)
   // A still-running batch keeps the Stop button visible.
-  if (asg.Status === 'running' || asg.Status === 'solving') asgStopBtn.classList.remove('hidden')
+  if (asg.Status === 'in_progress') asgStopBtn.classList.remove('hidden')
   else asgStopBtn.classList.add('hidden')
 }
 
