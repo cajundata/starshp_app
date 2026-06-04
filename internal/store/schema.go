@@ -67,4 +67,40 @@ CREATE INDEX IF NOT EXISTS conversation_events_run
 CREATE INDEX IF NOT EXISTS runs_conv_turn ON runs(conversation_id, turn_id);
 CREATE UNIQUE INDEX IF NOT EXISTS runs_one_active_per_turn
   ON runs(turn_id) WHERE active_for_replay = 1;
+CREATE TABLE IF NOT EXISTS assignments (
+  id              TEXT PRIMARY KEY,
+  source_dir      TEXT NOT NULL,
+  title           TEXT NOT NULL,
+  manifest_hash   TEXT NOT NULL,
+  model           TEXT NOT NULL,
+  grounding_scope TEXT,
+  status          TEXT NOT NULL CHECK (status IN (
+                      'in_progress','completed','cancelled','errored')),
+  total_items     INTEGER NOT NULL DEFAULT 0,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS assignment_items (
+  id              TEXT PRIMARY KEY,
+  assignment_id   TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+  seq             INTEGER NOT NULL,
+  source_path     TEXT NOT NULL,
+  type            TEXT NOT NULL,
+  title           TEXT,
+  run_id          TEXT,
+  conversation_id TEXT,
+  status          TEXT NOT NULL CHECK (status IN (
+                      'pending','solving','answered','no_answer',
+                      'errored','cancelled','unsupported')),
+  confidence      TEXT,
+  answer_json     TEXT,
+  flags_json      TEXT,
+  answer_path     TEXT,
+  error           TEXT,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS assignment_items_assignment
+  ON assignment_items(assignment_id, seq);
+CREATE INDEX IF NOT EXISTS assignment_items_run ON assignment_items(run_id);
 `

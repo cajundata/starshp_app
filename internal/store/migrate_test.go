@@ -218,3 +218,47 @@ func indexExists(t *testing.T, db *sql.DB, name string) bool {
 	}
 	return got == name
 }
+
+func TestMigrate_CreatesAssignments(t *testing.T) {
+	db := openTestDB(t)
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	cols := readTableColumns(t, db, "assignments")
+	for _, want := range []string{
+		"id", "source_dir", "title", "manifest_hash", "model",
+		"grounding_scope", "status", "total_items", "created_at", "updated_at",
+	} {
+		if _, ok := cols[want]; !ok {
+			t.Errorf("assignments missing column %q", want)
+		}
+	}
+}
+
+func TestMigrate_CreatesAssignmentItems(t *testing.T) {
+	db := openTestDB(t)
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	cols := readTableColumns(t, db, "assignment_items")
+	for _, want := range []string{
+		"id", "assignment_id", "seq", "source_path", "type", "title",
+		"run_id", "conversation_id", "status", "confidence", "answer_json",
+		"flags_json", "answer_path", "error", "created_at", "updated_at",
+	} {
+		if _, ok := cols[want]; !ok {
+			t.Errorf("assignment_items missing column %q", want)
+		}
+	}
+}
+
+func TestMigrate_AddsAssignmentIDToConversations(t *testing.T) {
+	db := openTestDB(t)
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	cols := readTableColumns(t, db, "conversations")
+	if _, ok := cols["assignment_id"]; !ok {
+		t.Fatal("conversations missing assignment_id column")
+	}
+}

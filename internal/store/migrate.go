@@ -46,6 +46,15 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	has, err = columnExists(db, "conversations", "assignment_id")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err := db.Exec(`ALTER TABLE conversations ADD COLUMN assignment_id TEXT`); err != nil {
+			return err
+		}
+	}
 	// conversation_events, runs, and their indexes are created by schemaSQL
 	// running before migrate(). Convert any legacy messages rows into the
 	// canonical event log + synthesized runs, then drop the messages table.
