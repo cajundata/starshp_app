@@ -30,12 +30,20 @@ export function EnsureIndexed(arg1) {
   return window['go']['appapi']['API']['EnsureIndexed'](arg1);
 }
 
+export function EnsureIndexedScope(arg1) {
+  return window['go']['appapi']['API']['EnsureIndexedScope'](arg1);
+}
+
 export function GetActiveItems(arg1) {
   return window['go']['appapi']['API']['GetActiveItems'](arg1);
 }
 
 export function GetAssignment(arg1) {
   return window['go']['appapi']['API']['GetAssignment'](arg1);
+}
+
+export function GetAssignmentScope(arg1) {
+  return window['go']['appapi']['API']['GetAssignmentScope'](arg1);
 }
 
 export function GetConversationDisplayEvents(arg1) {
@@ -102,6 +110,10 @@ export function SetConversationMeta(arg1, arg2) {
   return window['go']['appapi']['API']['SetConversationMeta'](arg1, arg2);
 }
 
+export function SetAssignmentScope(arg1, arg2) {
+  return window['go']['appapi']['API']['SetAssignmentScope'](arg1, arg2);
+}
+
 export function SetConversationScope(arg1, arg2) {
   return window['go']['appapi']['API']['SetConversationScope'](arg1, arg2);
 }
@@ -110,8 +122,8 @@ export function SetRetrievalMode(arg1, arg2) {
   return window['go']['appapi']['API']['SetRetrievalMode'](arg1, arg2);
 }
 
-export function SolveAssignment(arg1) {
-  return window['go']['appapi']['API']['SolveAssignment'](arg1);
+export function SolveAssignment(arg1, arg2) {
+  return window['go']['appapi']['API']['SolveAssignment'](arg1, arg2);
 }
 
 export function StartupIssues() {

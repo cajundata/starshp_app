@@ -20,9 +20,13 @@ export function DeleteLibraryItem(arg1:string):Promise<void>;
 
 export function EnsureIndexed(arg1:string):Promise<void>;
 
+export function EnsureIndexedScope(arg1:Array<store.TextbookScope>):Promise<void>;
+
 export function GetActiveItems(arg1:string):Promise<Array<string>>;
 
 export function GetAssignment(arg1:string):Promise<store.Assignment>;
+
+export function GetAssignmentScope(arg1:string):Promise<Array<store.TextbookScope>>;
 
 export function GetConversationDisplayEvents(arg1:string):Promise<Array<appapi.EventDTO>>;
 
@@ -56,10 +60,12 @@ export function SetActiveItems(arg1:string,arg2:Array<string>):Promise<void>;
 
 export function SetConversationMeta(arg1:string,arg2:string):Promise<void>;
 
+export function SetAssignmentScope(arg1:string,arg2:Array<store.TextbookScope>):Promise<void>;
+
 export function SetConversationScope(arg1:string,arg2:Array<store.TextbookScope>):Promise<void>;
 
 export function SetRetrievalMode(arg1:string,arg2:string):Promise<void>;
 
-export function SolveAssignment(arg1:string):Promise<string>;
+export function SolveAssignment(arg1:string,arg2:Array<store.TextbookScope>):Promise<string>;
 
 export function StartupIssues():Promise<Array<string>>;
