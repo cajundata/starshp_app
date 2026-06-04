@@ -106,9 +106,16 @@ func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
 	wg.Wait()
 
 	status := "completed"
-	if cancelled || ctx.Err() != nil {
+	if cancelled {
+		// Stopped scheduling early — definitely cancelled.
 		status = "cancelled"
 		o.markUnfinishedCancelled(asgID)
+	} else if ctx.Err() != nil {
+		// Context cancelled after all items were scheduled; only "cancelled" if
+		// something actually didn't finish.
+		if o.markUnfinishedCancelled(asgID) > 0 {
+			status = "cancelled"
+		}
 	}
 	_ = o.st.UpdateAssignmentStatus(asgID, status)
 	o.opts.Emit("assignment:"+status, map[string]any{"assignmentId": asgID})
@@ -116,15 +123,18 @@ func (o *Orchestrator) Run(ctx context.Context, dir string) (string, error) {
 }
 
 // markUnfinishedCancelled flips any pending/solving items to cancelled after a
-// batch is stopped.
-func (o *Orchestrator) markUnfinishedCancelled(asgID string) {
+// batch is stopped, returning how many it changed.
+func (o *Orchestrator) markUnfinishedCancelled(asgID string) int {
 	items, _ := o.st.ListAssignmentItems(asgID)
+	n := 0
 	for _, it := range items {
 		if it.Status == "pending" || it.Status == "solving" {
 			it.Status = "cancelled"
 			_ = o.st.UpdateAssignmentItem(it)
+			n++
 		}
 	}
+	return n
 }
 
 // solveItem runs one question through the agentic loop and persists the result.
