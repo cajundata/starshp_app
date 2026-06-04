@@ -123,3 +123,7 @@ body { font-family: system-ui, sans-serif; }
 .asg-rerun-btn:hover:not(:disabled) { background: #34343a; }
 .asg-rerun-btn:disabled { opacity: .6; cursor: default; }
 .asg-rerun-msg { color: #e08585; font-size: 12px; }
+
+/* ---- Assignments textbook button ---- */
+.asg-tb-btn { margin-left: 10px; background: #202024; color: #cfcfd3; border: 1px solid #34343a; border-radius: 999px; padding: 4px 11px; font-size: 12px; cursor: pointer; }
+.asg-tb-btn:hover { color: #e7e7e8; }

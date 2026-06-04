@@ -499,6 +499,102 @@ async function showTextbooks() {
   inner.appendChild(save)
 }
 
+// pickTextbooks opens the textbook modal as a reusable picker. It lists books,
+// pre-checks `current`, and on confirm calls onConfirm(selected) — closing the
+// modal on success, or showing the error inline on failure.
+async function pickTextbooks(
+  current: any[],
+  confirmLabel: string,
+  onConfirm: (scopes: any[]) => Promise<void>,
+) {
+  const inner = $('tbModalInner')
+  inner.innerHTML = '<h3>Attach textbooks</h3>'
+  $('tbModal').classList.remove('hidden')
+
+  let books: Awaited<ReturnType<typeof App.ListBooks>>
+  try {
+    books = (await App.ListBooks()) || []
+  } catch (e: any) {
+    const err = document.createElement('p')
+    err.className = 'tb-error'
+    err.textContent = `Could not load textbooks: ${e?.userMessage || e}`
+    inner.appendChild(err)
+    return
+  }
+
+  if (books.length === 0) {
+    const empty = document.createElement('p')
+    empty.className = 'tb-empty'
+    empty.textContent = 'No textbooks configured. Add entries to textbooks.yaml in your app directory.'
+    inner.appendChild(empty)
+  }
+
+  for (const b of books) {
+    const label = document.createElement('label')
+    const cb = document.createElement('input')
+    cb.type = 'checkbox'
+    cb.dataset.book = b.name
+    cb.checked = current.some((s: any) => s.name === b.name)
+    cb.disabled = !!b.error
+    label.appendChild(cb)
+    const span = document.createElement('span')
+    span.textContent = b.error
+      ? ` ${b.name} (unavailable: ${b.error})`
+      : ` ${b.name} (${b.chapters.length} ch)`
+    label.appendChild(span)
+    inner.appendChild(label)
+  }
+
+  const status = document.createElement('p')
+  status.className = 'tb-empty'
+  inner.appendChild(status)
+
+  const confirm = document.createElement('button')
+  confirm.textContent = confirmLabel
+  confirm.onclick = async () => {
+    const boxes = inner.querySelectorAll('input[type=checkbox]')
+    const available = new Set(books.map(b => b.name))
+    const scopes: any[] = []
+    boxes.forEach((b: any) => { if (b.checked) scopes.push({ name: b.dataset.book, chapters: null }) })
+    // Preserve already-attached books that aren't in the current catalog, so a
+    // transient ListBooks gap can't silently wipe a stored scope.
+    for (const s of current) {
+      if (!available.has(s.name)) scopes.push({ name: s.name, chapters: null })
+    }
+    confirm.disabled = true
+    status.className = 'tb-empty'
+    status.textContent = scopes.length ? 'Indexing textbooks…' : 'Working…'
+    try {
+      await onConfirm(scopes)
+      $('tbModal').classList.add('hidden')
+    } catch (e: any) {
+      status.className = 'tb-error'
+      status.textContent = `Failed: ${e?.userMessage || e}`
+      confirm.disabled = false
+    }
+  }
+  inner.appendChild(confirm)
+}
+
+// openAssignmentTextbookEditor edits the current assignment's textbook scope.
+// cf. pickTextbooks / showTextbooks (shared #tbModal, different confirm semantics).
+async function openAssignmentTextbookEditor() {
+  const id = currentAssignmentId
+  if (!id) return
+  let current: any[]
+  try {
+    current = (await App.GetAssignmentScope(id)) || []
+  } catch (e) {
+    // Don't open with empty state — a Save would wipe the real (unloaded) scope.
+    console.warn('GetAssignmentScope failed; not opening textbook editor', e)
+    return
+  }
+  await pickTextbooks(current, 'Save', async (scopes) => {
+    await App.EnsureIndexedScope(scopes)
+    await App.SetAssignmentScope(id, scopes)
+  })
+}
+
 // ---- Prompt / context library ----------------------------------------------
 
 const libModal = $('libModal')
@@ -670,21 +766,22 @@ async function loadAssignmentsHome() {
 async function solveFolder() {
   const dir = prompt('Folder to solve (absolute path):')
   if (!dir || !dir.trim()) return
-  asgDetail.innerHTML = ''
-  asgHeader.innerHTML = '<p class="asg-empty">Preparing…</p>'
-  try {
-    const id = await App.SolveAssignment(dir.trim())
-    currentAssignmentId = id
-    asgItemRows.clear()
-    asgStopBtn.classList.remove('hidden')
-    await selectAssignment(id)
-  } catch (e: any) {
-    asgHeader.innerHTML = ''
-    const err = document.createElement('p')
-    err.className = 'asg-error'
-    err.textContent = `Could not start: ${e?.userMessage || e}`
-    asgHeader.appendChild(err)
-  }
+  const d = dir.trim()
+  await pickTextbooks([], 'Solve', async (scopes) => {
+    asgDetail.innerHTML = ''
+    asgHeader.innerHTML = '<p class="asg-empty">Preparing…</p>'
+    try {
+      await App.EnsureIndexedScope(scopes)
+      const id = await App.SolveAssignment(d, scopes)
+      currentAssignmentId = id
+      asgItemRows.clear()
+      asgStopBtn.classList.remove('hidden')
+      await selectAssignment(id)
+    } catch (e) {
+      asgHeader.innerHTML = ''
+      throw e
+    }
+  })
 }
 
 // selectAssignment loads an assignment's header + items from the store. Used on
@@ -733,6 +830,11 @@ function renderAssignmentHeader(title: string, done: number, total: number, stat
   pill.className = 'status-pill status-' + (status || 'unknown')
   pill.textContent = status || 'unknown'
   sub.appendChild(pill)
+  const tbBtn = document.createElement('button')
+  tbBtn.className = 'asg-tb-btn'
+  tbBtn.textContent = '📚 Textbooks'
+  tbBtn.onclick = () => void openAssignmentTextbookEditor()
+  sub.appendChild(tbBtn)
   asgHeader.appendChild(sub)
 
   const bar = document.createElement('div')
