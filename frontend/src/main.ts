@@ -626,6 +626,9 @@ const asgDetail = $('asgDetail')
 const asgStopBtn = $('asgStopBtn') as HTMLButtonElement
 
 let currentAssignmentId: string | null = null
+let selectedItem: store.AssignmentItem | null = null
+let currentAssignmentStatus = ''
+const RERUNNABLE_STATUSES = ['answered', 'no_answer', 'errored', 'cancelled']
 // Index item rows by seq so progress events can update them in place.
 const asgItemRows = new Map<number, HTMLElement>()
 let asgProgressDone = 0
@@ -686,22 +689,24 @@ async function solveFolder() {
 
 // selectAssignment loads an assignment's header + items from the store. Used on
 // open, after solve start, and on completed/cancelled refresh.
-async function selectAssignment(id: string) {
+async function selectAssignment(id: string): Promise<store.AssignmentItem[]> {
   currentAssignmentId = id
   asgItemRows.clear()
+  selectedItem = null
   asgDetail.innerHTML = ''
   let asg: Awaited<ReturnType<typeof App.GetAssignment>>
   let items: Awaited<ReturnType<typeof App.ListAssignmentItems>>
   try {
     asg = await App.GetAssignment(id)
     items = (await App.ListAssignmentItems(id)) || []
+    currentAssignmentStatus = asg.Status || ''
   } catch (e: any) {
     asgHeader.innerHTML = ''
     const err = document.createElement('p')
     err.className = 'asg-error'
     err.textContent = `Could not load assignment: ${e?.userMessage || e}`
     asgHeader.appendChild(err)
-    return
+    return []
   }
   const done = items.filter(it => it.Status !== 'pending' && it.Status !== 'solving').length
   renderAssignmentHeader(asg.Title || asg.SourceDir, done, asg.TotalItems || items.length, asg.Status)
@@ -710,6 +715,7 @@ async function selectAssignment(id: string) {
   // A still-running batch keeps the Stop button visible.
   if (asg.Status === 'in_progress') asgStopBtn.classList.remove('hidden')
   else asgStopBtn.classList.add('hidden')
+  return items
 }
 
 function renderAssignmentHeader(title: string, done: number, total: number, status: string) {
@@ -796,7 +802,10 @@ function renderItemRow(it: store.AssignmentItem) {
   // Only items with a persisted conversation can be drilled into.
   if (it.ConversationID) {
     row.classList.add('drillable')
-    row.onclick = () => void openItemDetail(it.ConversationID, it.Seq)
+    row.onclick = () => {
+      selectedItem = it
+      void openItemDetail(it.ConversationID, it.Seq)
+    }
   }
 
   asgItems.appendChild(row)
@@ -835,6 +844,7 @@ async function openItemDetail(conversationId: string, seq: number) {
   asgItems.querySelectorAll('.assignment-item.selected').forEach(n => n.classList.remove('selected'))
   asgItemRows.get(seq)?.classList.add('selected')
   asgDetail.innerHTML = ''
+  renderDetailHeader()
   let events: Awaited<ReturnType<typeof App.GetConversationDisplayEvents>>
   try {
     events = (await App.GetConversationDisplayEvents(conversationId)) || []
@@ -914,7 +924,69 @@ async function openItemDetail(conversationId: string, seq: number) {
     }
   }
   if (bubbles.size === 0) {
-    asgDetail.innerHTML = '<p class="asg-empty">No worked run recorded for this item.</p>'
+    const empty = document.createElement('p')
+    empty.className = 'asg-empty'
+    empty.textContent = 'No worked run recorded for this item.'
+    asgDetail.appendChild(empty)
+  }
+}
+
+function itemRerunnable(it: store.AssignmentItem | null): boolean {
+  return !!it
+    && it.Type !== 'unsupported'
+    && RERUNNABLE_STATUSES.includes(it.Status)
+    && currentAssignmentStatus !== 'in_progress'
+}
+
+function renderDetailHeader() {
+  const header = document.createElement('div')
+  header.className = 'asg-detail-header'
+  if (itemRerunnable(selectedItem)) {
+    const btn = document.createElement('button')
+    btn.className = 'asg-rerun-btn'
+    btn.textContent = '↻ Rerun'
+    btn.onclick = () => void rerunSelectedItem(btn)
+    header.appendChild(btn)
+  }
+  const msg = document.createElement('span')
+  msg.className = 'asg-rerun-msg'
+  header.appendChild(msg)
+  asgDetail.appendChild(header)
+}
+
+async function rerunSelectedItem(btn: HTMLButtonElement) {
+  if (!selectedItem || !currentAssignmentId) return
+  const seq = selectedItem.Seq
+  const prior = selectedItem
+  const msg = asgDetail.querySelector('.asg-rerun-msg') as HTMLElement | null
+  const prevLabel = btn.textContent
+  btn.disabled = true
+  btn.textContent = '↻ Rerunning…'
+  if (msg) msg.textContent = ''
+  const pill = asgItemRows.get(seq)?.querySelector('.status-pill') as HTMLElement | null
+  if (pill) {
+    pill.className = 'status-pill status-solving'
+    pill.textContent = 'solving'
+  }
+  try {
+    await App.RerunAssignmentItem(currentAssignmentId, seq)
+    // selectAssignment refetches + rebuilds the rows; reuse its items (no 2nd round-trip).
+    const items = await selectAssignment(currentAssignmentId)
+    const fresh = items.find(i => i.Seq === seq) || null
+    selectedItem = fresh
+    // On success we intentionally leave this button disabled: openItemDetail below
+    // rebuilds the detail header from scratch (re-evaluating itemRerunnable).
+    if (fresh && fresh.ConversationID) {
+      await openItemDetail(fresh.ConversationID, seq)
+    }
+  } catch (e: any) {
+    if (pill) {
+      pill.className = 'status-pill status-' + prior.Status
+      pill.textContent = prior.Status
+    }
+    btn.disabled = false
+    btn.textContent = prevLabel || '↻ Rerun'
+    if (msg) msg.textContent = e?.userMessage || String(e)
   }
 }
 

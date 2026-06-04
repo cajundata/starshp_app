@@ -116,3 +116,10 @@ body { font-family: system-ui, sans-serif; }
 .status-pill.status-cancelled { background: #1d1d20; border-color: #34343a; color: #8a8a90; }
 .status-pill.status-running { background: #2a2418; border-color: #5a4a2b; color: #d7a64a; }
 .status-pill.status-completed { background: #15301d; border-color: #2ea043; color: #3fb950; }
+
+/* ---- Assignments rerun ---- */
+.asg-detail-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.asg-rerun-btn { background: #2b2b30; color: #e7e7e8; border: 1px solid #34343a; border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.asg-rerun-btn:hover:not(:disabled) { background: #34343a; }
+.asg-rerun-btn:disabled { opacity: .6; cursor: default; }
+.asg-rerun-msg { color: #e08585; font-size: 12px; }
