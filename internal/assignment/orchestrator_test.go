@@ -3,6 +3,7 @@ package assignment
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -47,12 +48,38 @@ func newTestOrchestrator(t *testing.T, st *store.Store, pf ProviderFactory) *Orc
 	})
 }
 
+func tmpAssignmentDir(t *testing.T) string {
+	t.Helper()
+	src := testdataDir(t)
+	dst := filepath.Join(t.TempDir(), "_json")
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(src, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dst, e.Name()), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dst
+}
+
 func TestOrchestrator_SolvesOneItem(t *testing.T) {
 	st := openStore(t)
 	pf := scriptedFactory(`{"confidence":"high","answerIndex":1}`)
 	orc := newTestOrchestrator(t, st, pf)
 
-	asgID, err := orc.Run(context.Background(), testdataDir(t))
+	asgID, err := orc.Run(context.Background(), tmpAssignmentDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
