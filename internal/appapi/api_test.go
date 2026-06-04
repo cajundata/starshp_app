@@ -57,7 +57,7 @@ func TestSolveAssignment_RunsAndLists(t *testing.T) {
 		}}, "openai", nil
 	}
 	dir := copyFixtures(t)
-	id, err := a.SolveAssignment(dir)
+	id, err := a.SolveAssignment(dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

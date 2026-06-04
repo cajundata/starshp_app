@@ -300,7 +300,7 @@ func (a *API) CancelMessage() {
 
 // SolveAssignment loads a companion _json directory and solves every question
 // concurrently in the background. Returns the assignment id immediately.
-func (a *API) SolveAssignment(dir string) (string, error) {
+func (a *API) SolveAssignment(dir string, scopes []store.TextbookScope) (string, error) {
 	model := a.defaultModelID()
 	if model == "" {
 		return "", provider.AppError{Code: "config", UserMessage: "No model configured.", Retryable: false}
@@ -325,7 +325,7 @@ func (a *API) SolveAssignment(dir string) (string, error) {
 	a.asgCancel = cancel
 	a.mu.Unlock()
 
-	id, err := orc.Start(cctx, dir, nil, cancel)
+	id, err := orc.Start(cctx, dir, scopes, cancel)
 	if err != nil {
 		cancel()
 		return "", provider.NormalizeError(err)
