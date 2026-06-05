@@ -80,7 +80,37 @@ func (s *Store) GetConversationDisplayEvents(convID string) ([]ConversationEvent
 	if err != nil {
 		return nil, fmt.Errorf("display selection: %w", err)
 	}
-	return s.eventsForRunsPlusUserMessages(convID, runs, "")
+	events, err := s.eventsForRunsPlusUserMessages(convID, runs, "")
+	if err != nil {
+		return nil, err
+	}
+	// A run error lives on the run record, not as an event. Append a synthetic
+	// run_error event for any selected run that errored, so a reopened
+	// conversation shows it (mirrors the live chat:run_errored rendering).
+	for _, runID := range runs {
+		run, gerr := s.GetRun(runID)
+		if gerr != nil || run.Status != "errored" {
+			continue
+		}
+		events = append(events, ConversationEvent{
+			ConversationID: convID,
+			TurnID:         run.TurnID,
+			RunID:          runID,
+			Kind:           "run_error",
+			Text:           runErrorDisplayText(run),
+		})
+	}
+	return events, nil
+}
+
+// runErrorDisplayText formats an errored run's code+message the same way the
+// live chat:run_errored handler renders it ("[code] message").
+func runErrorDisplayText(run Run) string {
+	code := run.ErrorCode.String
+	if code == "" {
+		code = "error"
+	}
+	return "[" + code + "] " + run.ErrorMessage.String
 }
 
 func (s *Store) eventsForRunsPlusUserMessages(convID string, runIDs []string, currentRunID string) ([]ConversationEvent, error) {

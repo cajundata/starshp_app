@@ -291,6 +291,16 @@ async function openConversation(id: string) {
         errCodeFromMeta((ev as any).toolMetadata), ev.toolLatencyMs || 0,
         (ev.text || '').slice(0, 200),
       )
+    } else if (ev.kind === 'run_error') {
+      // Mirror the live chat:run_errored rendering so a reopened conversation
+      // shows the error (a synthetic event the backend appends for errored runs).
+      const b = ensureRunBubble(ev.runId)
+      b.curText = null
+      const e = document.createElement('div')
+      e.className = 'msg-text run-error'
+      e.textContent = ev.text || ''
+      b.el.appendChild(e)
+      setRunStatus(ev.runId, 'errored')
     }
   }
   for (const b of runBubbles.values()) attachRunCopy(b)

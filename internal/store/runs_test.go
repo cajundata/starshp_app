@@ -162,6 +162,29 @@ func TestGetConversationDisplayEvents_FallsBackToTerminalRun(t *testing.T) {
 	}
 }
 
+func TestGetConversationDisplayEvents_IncludesRunError(t *testing.T) {
+	st := openTestStore(t)
+	conv, _ := st.CreateConversation("c")
+	u1, _ := st.AppendUserMessage(conv.ID, "q1")
+	_ = st.CreateRun(conv.ID, u1.TurnID, "r1", "openai_compat", "llama3.2", "auto_grounded_default")
+	_ = st.MarkRunErrored("r1", "provider_error", "local_unreachable", "Local model server unreachable at http://x/v1")
+
+	events, err := st.GetConversationDisplayEvents(conv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runErrText string
+	for _, e := range events {
+		if e.Kind == "run_error" && e.RunID == "r1" {
+			runErrText = e.Text
+		}
+	}
+	want := "[local_unreachable] Local model server unreachable at http://x/v1"
+	if runErrText != want {
+		t.Fatalf("display must include the run_error; got %q, want %q", runErrText, want)
+	}
+}
+
 func TestGetConversationDisplayEvents_PrefersActiveCompletedOverTerminal(t *testing.T) {
 	st := openTestStore(t)
 	conv, _ := st.CreateConversation("c")
