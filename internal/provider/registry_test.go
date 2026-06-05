@@ -3,6 +3,7 @@ package provider
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -53,5 +54,102 @@ func TestLoadRegistry(t *testing.T) {
 	m, ok := reg.ByID("claude-opus-4-7")
 	if !ok || m.Provider != "anthropic" {
 		t.Fatalf("ByID lookup failed: %+v ok=%v", m, ok)
+	}
+}
+
+func TestLoadRegistryParsesOpenAICompatFields(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "models.yaml")
+	os.WriteFile(p, []byte(`models:
+  - display: Llama 3.2 (local)
+    id: llama3.2
+    provider: openai_compat
+    base_url: http://localhost:11434/v1
+    max_context: 131072
+  - display: LM Studio Qwen
+    id: qwen2.5
+    provider: openai_compat
+    base_url: http://localhost:1234/v1
+    api_key_env: LM_STUDIO_TOKEN
+`), 0o600)
+	reg, err := LoadRegistry(p)
+	if err != nil {
+		t.Fatalf("LoadRegistry: %v", err)
+	}
+	if len(reg.Models) != 2 {
+		t.Fatalf("expected 2 models, got %d", len(reg.Models))
+	}
+	llama, ok := reg.ByID("llama3.2")
+	if !ok {
+		t.Fatal("llama3.2 not in registry")
+	}
+	if llama.Provider != "openai_compat" {
+		t.Errorf("llama.Provider = %q, want openai_compat", llama.Provider)
+	}
+	if llama.BaseURL != "http://localhost:11434/v1" {
+		t.Errorf("llama.BaseURL = %q, want http://localhost:11434/v1", llama.BaseURL)
+	}
+	if llama.APIKeyEnv != "" {
+		t.Errorf("llama.APIKeyEnv = %q, want empty (omitted in yaml)", llama.APIKeyEnv)
+	}
+	qwen, ok := reg.ByID("qwen2.5")
+	if !ok {
+		t.Fatal("qwen2.5 not in registry")
+	}
+	if qwen.APIKeyEnv != "LM_STUDIO_TOKEN" {
+		t.Errorf("qwen.APIKeyEnv = %q, want LM_STUDIO_TOKEN", qwen.APIKeyEnv)
+	}
+}
+
+func TestLoadRegistryRejectsOpenAICompatMissingBaseURL(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "models.yaml")
+	os.WriteFile(p, []byte(`models:
+  - display: Llama 3.2 (local)
+    id: llama3.2
+    provider: openai_compat
+`), 0o600)
+	_, err := LoadRegistry(p)
+	if err == nil {
+		t.Fatal("expected error for openai_compat entry missing base_url, got nil")
+	}
+	if !strings.Contains(err.Error(), "base_url") {
+		t.Errorf("error %q does not mention base_url", err)
+	}
+	if !strings.Contains(err.Error(), "llama3.2") {
+		t.Errorf("error %q does not mention the offending model id", err)
+	}
+}
+
+func TestLoadRegistryRejectsCloudProvidersWithBaseURL(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "models.yaml")
+	os.WriteFile(p, []byte(`models:
+  - display: Claude Opus 4.7
+    id: claude-opus-4-7
+    provider: anthropic
+    base_url: http://example.com
+`), 0o600)
+	_, err := LoadRegistry(p)
+	if err == nil {
+		t.Fatal("expected error for anthropic entry with stray base_url, got nil")
+	}
+	if !strings.Contains(err.Error(), "base_url") {
+		t.Errorf("error %q does not mention base_url", err)
+	}
+
+	// Same check for openai.
+	os.WriteFile(p, []byte(`models:
+  - display: GPT-5.4
+    id: gpt-5.4-2026-03-05
+    provider: openai
+    base_url: http://example.com
+`), 0o600)
+	_, err = LoadRegistry(p)
+	if err == nil {
+		t.Fatal("expected error for openai entry with stray base_url, got nil")
+	}
+	if !strings.Contains(err.Error(), "base_url") {
+		t.Errorf("openai error %q does not mention base_url", err)
 	}
 }
