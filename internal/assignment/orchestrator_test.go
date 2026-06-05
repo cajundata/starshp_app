@@ -3,6 +3,7 @@ package assignment
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -272,7 +273,7 @@ func TestRerunItem_RejectsWhileBatchInProgress(t *testing.T) {
 // fakeTool is a minimal tools.Tool stand-in for asserting registry gating.
 type fakeTool struct{ name string }
 
-func (f fakeTool) Name() string                { return f.name }
+func (f fakeTool) Name() string                 { return f.name }
 func (f fakeTool) Description() string          { return "fake" }
 func (f fakeTool) InputSchema() json.RawMessage { return json.RawMessage(`{"type":"object"}`) }
 func (f fakeTool) Execute(context.Context, tools.ExecContext, json.RawMessage) (tools.ExecResult, error) {
@@ -446,5 +447,40 @@ func TestSolveItem_AppliesLibraryPreamble(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("library preamble not found in any of the %d system prompts sent", len(systems))
+	}
+}
+
+// A provider stream error marks the run errored but the agentic Send returns
+// nil (errors flow via the run record/event). The item must surface as
+// "errored" with the message, not a silent "no_answer".
+func TestSolveItem_ProviderErrorMarksItemErrored(t *testing.T) {
+	st := openStore(t)
+	dir := tmpAssignmentDir(t)
+	pf := func(string) (provider.ChatProvider, string, error) {
+		return &fakeprovider.Scripted{Iterations: [][]provider.Delta{
+			{{Err: errors.New("dial tcp 127.0.0.1:1: connect: connection refused")}},
+		}}, "openai", nil
+	}
+	orc := newTestOrchestrator(t, st, pf)
+
+	asgID, err := orc.Run(context.Background(), dir, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, _ := st.ListAssignmentItems(asgID)
+	found := false
+	for _, it := range items {
+		if it.SourcePath == "001.html" {
+			found = true
+			if it.Status != "errored" {
+				t.Fatalf("provider error should mark item errored, got %q", it.Status)
+			}
+			if it.Error == "" {
+				t.Fatal("an errored item should carry an error message")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("001.html item not created")
 	}
 }

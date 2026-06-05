@@ -41,6 +41,10 @@ type Options struct {
 	// items; when non-empty it is prepended to each item's system prompt. appapi
 	// assembles it (from passed items on solve, stored items on rerun).
 	LibraryPreamble string
+	// RemapErr, when set, is passed to chat.Send so a provider error's AppError
+	// (e.g. a local openai_compat network failure) is upgraded — e.g. to
+	// local_unreachable — before it's recorded on the run. appapi injects it.
+	RemapErr func(provider.AppError) provider.AppError
 }
 
 type Orchestrator struct {
@@ -295,6 +299,17 @@ func withLibraryPreamble(preamble, system string) string {
 	return preamble + "\n\n" + system
 }
 
+// runErrorText extracts a user-facing error string from an errored run record.
+func runErrorText(run store.Run) string {
+	if run.ErrorMessage.Valid && run.ErrorMessage.String != "" {
+		return run.ErrorMessage.String
+	}
+	if run.ErrorCode.Valid && run.ErrorCode.String != "" {
+		return run.ErrorCode.String
+	}
+	return "provider error"
+}
+
 // solveItem runs one question through the agentic loop and persists the result.
 func (o *Orchestrator) solveItem(ctx context.Context, dir, asgID, itemID string, seq int, q Question, scope []store.TextbookScope) {
 	item := store.AssignmentItem{ID: itemID, AssignmentID: asgID, Seq: seq,
@@ -345,7 +360,7 @@ func (o *Orchestrator) solveItem(ctx context.Context, dir, asgID, itemID string,
 		ConversationID: conv.ID, UserText: user, SystemPrompt: system,
 		Model: o.opts.Model, Provider: prov, ProviderName: provName,
 		Registry: reg, Resolver: o.opts.Resolver, Retriever: o.opts.Grounding.Retriever(),
-		RetrievalMode: mode,
+		RetrievalMode: mode, RemapErr: o.opts.RemapErr,
 	}, nil)
 	item.RunID = res.RunID
 	if sendErr != nil {
@@ -365,7 +380,15 @@ func (o *Orchestrator) solveItem(ctx context.Context, dir, asgID, itemID string,
 		return
 	}
 	if len(raw) == 0 {
-		item.Status = "no_answer"
+		// A provider error marks the run errored but the agentic Send returns nil
+		// (errors flow via the run record/event), so distinguish a provider failure
+		// from a genuine no-answer.
+		if run, rerr := o.st.GetRun(res.RunID); rerr == nil && run.Status == "errored" {
+			item.Status = "errored"
+			item.Error = runErrorText(run)
+		} else {
+			item.Status = "no_answer"
+		}
 		_ = o.st.UpdateAssignmentItem(item)
 		o.emitItemDone(asgID, item)
 		return

@@ -272,14 +272,21 @@ func (a *API) SendMessage(convID, userText, modelID string) error {
 		// Upgrade a local (openai_compat) network failure to local_unreachable in
 		// the run-errored event, where agentic errors are surfaced (the agentic
 		// Send returns nil and reports errors via the sink, not the return value).
-		RemapErr: func(ae provider.AppError) provider.AppError {
-			if m, found := a.reg.ByID(modelID); found {
-				return provider.MaybeRemapLocal(ae, m)
-			}
-			return ae
-		},
+		RemapErr: a.localRemapErr(modelID),
 	}, nil)
 	return err
+}
+
+// localRemapErr returns a chat.Send RemapErr closure that upgrades a provider
+// network AppError into local_unreachable when the run's model is a local
+// openai_compat entry. Shared by the chat, solve, and rerun paths.
+func (a *API) localRemapErr(model string) func(provider.AppError) provider.AppError {
+	return func(ae provider.AppError) provider.AppError {
+		if m, found := a.reg.ByID(model); found {
+			return provider.MaybeRemapLocal(ae, m)
+		}
+		return ae
+	}
 }
 
 // CancelMessage aborts the in-flight streaming response, if any.
@@ -312,6 +319,7 @@ func (a *API) SolveAssignment(dir string, scopes []store.TextbookScope, libraryI
 		SearchTool:      search,
 		Resolver:        chatStoreResolver{st: a.st},
 		LibraryPreamble: libPreamble,
+		RemapErr:        a.localRemapErr(model),
 		Emit:            a.emit,
 	}
 	orc := assignment.New(a.st, a.chatSvc, a.assignmentFactory, opts)
@@ -368,6 +376,7 @@ func (a *API) RerunAssignmentItem(asgID string, seq int) (string, error) {
 		SearchTool:      search,
 		Resolver:        chatStoreResolver{st: a.st},
 		LibraryPreamble: libPreamble,
+		RemapErr:        a.localRemapErr(model),
 		Emit:            func(_ string, _ any) {}, // decoupled from batch progress events
 	}
 	orc := assignment.New(a.st, a.chatSvc, a.assignmentFactory, opts)
