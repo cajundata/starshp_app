@@ -26,6 +26,8 @@ export function GetActiveItems(arg1:string):Promise<Array<string>>;
 
 export function GetAssignment(arg1:string):Promise<store.Assignment>;
 
+export function GetAssignmentLibraryItems(arg1:string):Promise<Array<string>>;
+
 export function GetAssignmentScope(arg1:string):Promise<Array<store.TextbookScope>>;
 
 export function GetConversationDisplayEvents(arg1:string):Promise<Array<appapi.EventDTO>>;
@@ -66,6 +68,8 @@ export function SetConversationScope(arg1:string,arg2:Array<store.TextbookScope>
 
 export function SetRetrievalMode(arg1:string,arg2:string):Promise<void>;
 
-export function SolveAssignment(arg1:string,arg2:Array<store.TextbookScope>):Promise<string>;
+export function SetAssignmentLibraryItems(arg1:string,arg2:Array<string>):Promise<void>;
+
+export function SolveAssignment(arg1:string,arg2:Array<store.TextbookScope>,arg3:Array<string>):Promise<string>;
 
 export function StartupIssues():Promise<Array<string>>;

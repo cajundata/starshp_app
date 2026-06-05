@@ -42,6 +42,10 @@ export function GetAssignment(arg1) {
   return window['go']['appapi']['API']['GetAssignment'](arg1);
 }
 
+export function GetAssignmentLibraryItems(arg1) {
+  return window['go']['appapi']['API']['GetAssignmentLibraryItems'](arg1);
+}
+
 export function GetAssignmentScope(arg1) {
   return window['go']['appapi']['API']['GetAssignmentScope'](arg1);
 }
@@ -122,8 +126,12 @@ export function SetRetrievalMode(arg1, arg2) {
   return window['go']['appapi']['API']['SetRetrievalMode'](arg1, arg2);
 }
 
-export function SolveAssignment(arg1, arg2) {
-  return window['go']['appapi']['API']['SolveAssignment'](arg1, arg2);
+export function SetAssignmentLibraryItems(arg1, arg2) {
+  return window['go']['appapi']['API']['SetAssignmentLibraryItems'](arg1, arg2);
+}
+
+export function SolveAssignment(arg1, arg2, arg3) {
+  return window['go']['appapi']['API']['SolveAssignment'](arg1, arg2, arg3);
 }
 
 export function StartupIssues() {
