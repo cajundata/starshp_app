@@ -26,6 +26,8 @@ export namespace provider {
 	    id: string;
 	    provider: string;
 	    maxContext?: number;
+	    baseURL?: string;
+	    apiKeyEnv?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ModelInfo(source);
@@ -37,6 +39,8 @@ export namespace provider {
 	        this.id = source["id"];
 	        this.provider = source["provider"];
 	        this.maxContext = source["maxContext"];
+	        this.baseURL = source["baseURL"];
+	        this.apiKeyEnv = source["apiKeyEnv"];
 	    }
 	}
 
