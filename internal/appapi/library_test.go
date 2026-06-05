@@ -3,12 +3,44 @@ package appapi
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cajundata/starshp_app/internal/config"
+	"github.com/cajundata/starshp_app/internal/library"
 	"github.com/cajundata/starshp_app/internal/provider"
 	"github.com/cajundata/starshp_app/internal/store"
 )
+
+func TestAssembleLibraryPreamble(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "b.md"), []byte("# Beta\nbeta body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.md"), []byte("# Alpha\nalpha body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := &API{lib: library.New(dir)}
+
+	got, skipped, err := a.assembleLibraryPreamble([]string{"b.md", "a.md", "missing.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skipped) != 1 || skipped[0] != "missing.md" {
+		t.Fatalf("skipped = %v", skipped)
+	}
+	if !strings.Contains(got, "alpha body") || !strings.Contains(got, "beta body") {
+		t.Fatalf("missing bodies: %q", got)
+	}
+	// sorted by display name (H1): Alpha before Beta
+	if strings.Index(got, "alpha body") > strings.Index(got, "beta body") {
+		t.Fatalf("expected Alpha before Beta in: %q", got)
+	}
+	// empty selection → empty preamble
+	if p, _, _ := a.assembleLibraryPreamble(nil); p != "" {
+		t.Fatalf("empty selection should yield empty preamble, got %q", p)
+	}
+}
 
 func TestAssembleSystemPrompt(t *testing.T) {
 	dir := t.TempDir()
