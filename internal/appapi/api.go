@@ -235,7 +235,7 @@ func (a *API) SendMessage(convID, userText, modelID string) error {
 	}
 	if len(skipped) > 0 {
 		// A missing snippet is not fatal — skip it, surface a soft notice.
-		wruntime.EventsEmit(a.ctx, "library:notice",
+		a.emit("library:notice",
 			"Skipped missing library items: "+strings.Join(skipped, ", "))
 	}
 
@@ -515,7 +515,7 @@ func (a *API) ensureBooksIndexed(scopes []store.TextbookScope) error {
 			}
 		}
 		_, err := a.ragAdpt.IndexBook(a.ctx, b, func(done, total int) {
-			wruntime.EventsEmit(a.ctx, "rag:index", map[string]any{"book": name, "done": done, "total": total})
+			a.emit("rag:index", map[string]any{"book": name, "done": done, "total": total})
 		})
 		if err != nil {
 			return provider.NormalizeError(err)
