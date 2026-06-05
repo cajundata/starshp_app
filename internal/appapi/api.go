@@ -105,7 +105,7 @@ type wailsSink struct{ a *API }
 func (w wailsSink) Emit(e chat.SinkEvent) {
 	if e.Kind == chat.SinkToken {
 		if tok, ok := e.Payload["text"].(string); ok {
-			wruntime.EventsEmit(w.a.ctx, "chat:token", tok)
+			w.a.emit("chat:token", tok)
 		}
 	}
 	name := sinkEventName(e.Kind)
@@ -116,7 +116,7 @@ func (w wailsSink) Emit(e chat.SinkEvent) {
 	for k, v := range e.Payload {
 		payload[k] = v
 	}
-	wruntime.EventsEmit(w.a.ctx, name, payload)
+	w.a.emit(name, payload)
 }
 
 // retrievalMode reads the conversation's stored retrieval policy, falling back
@@ -142,7 +142,7 @@ func providerNameFromModelID(reg provider.Registry, modelID string) string {
 // Startup is called by Wails with the app context.
 func (a *API) Startup(ctx context.Context) { a.ctx = ctx }
 
-func (a *API) StartupIssues() []string { return ValidateStartup(a.cfg) }
+func (a *API) StartupIssues() []string { return ValidateStartup(a.cfg, a.reg) }
 
 func (a *API) ListConversations() ([]store.Conversation, error) { return a.st.ListConversations() }
 func (a *API) CreateConversation(title string) (store.Conversation, error) {
@@ -285,6 +285,15 @@ func (a *API) SendMessage(convID, userText, modelID string) error {
 		Retriever:      retr,
 		RetrievalMode:  a.retrievalMode(convID),
 		Sink:           wailsSink{a: a},
+		// Upgrade a local (openai_compat) network failure to local_unreachable in
+		// the run-errored event, where agentic errors are surfaced (the agentic
+		// Send returns nil and reports errors via the sink, not the return value).
+		RemapErr: func(ae provider.AppError) provider.AppError {
+			if m, found := a.reg.ByID(modelID); found {
+				return provider.MaybeRemapLocal(ae, m)
+			}
+			return ae
+		},
 	}, nil)
 	return err
 }

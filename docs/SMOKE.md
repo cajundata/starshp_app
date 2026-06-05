@@ -78,3 +78,14 @@ For each step, observe the assistant bubble in addition to the listed expectatio
     conversation sidebar; they are reachable only via the assignment view.
 41. [ ] **Concurrency env.** Set `STARSHP_ASSIGNMENT_CONCURRENCY=2`, re-run, and
     confirm no SQLITE_BUSY errors in logs (busy_timeout + WAL cover contention).
+
+## Local models (Ollama)
+
+42. [x] **Local model end-to-end.** With Ollama installed and `ollama pull
+    llama3.2` complete, register the Llama 3.2 entry from
+    `models.example.yaml` in your `models.yaml`, restart Starshp, pick
+    "Llama 3.2 (local)" in a new conversation, send a short prompt.
+    Confirm streaming, the Stop button, the context-footer HUD
+    (input/output tokens populate, cached shows 0), and that stopping
+    Ollama mid-session yields the `local_unreachable` error with the
+    base URL interpolated into the message.

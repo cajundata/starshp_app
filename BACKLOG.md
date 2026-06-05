@@ -21,3 +21,6 @@ Tags: `[feat]` new feature · `[chg]` change to existing behavior · `[fix]` kno
 <!-- maybe-later, not committed to a cycle -->
 
 [ui] add syntax highlighting to the library's raw-markdown editor
+[feat] auto-detect a running Ollama at its default port on startup and surface a "Local models detected" panel listing installed models, with a one-click option to register them in `models.yaml`
+[feat] per-model "Test connection" button in a model-registry settings UI so a user can validate a local entry's `base_url` without sending a real chat turn
+[feat] curated starter-model recommendations for local entries (e.g., suggested Ollama IDs by Apple Silicon RAM tier and by Windows GPU VRAM tier) shown inline when a user adds a new local model

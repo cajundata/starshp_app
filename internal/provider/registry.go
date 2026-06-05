@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -9,8 +10,10 @@ import (
 type ModelInfo struct {
 	Display    string `yaml:"display" json:"display"`
 	ID         string `yaml:"id" json:"id"`
-	Provider   string `yaml:"provider" json:"provider"` // "openai" | "anthropic"
+	Provider   string `yaml:"provider" json:"provider"` // "openai" | "anthropic" | "openai_compat"
 	MaxContext int    `yaml:"max_context,omitempty" json:"maxContext,omitempty"`
+	BaseURL    string `yaml:"base_url,omitempty" json:"baseURL,omitempty"`
+	APIKeyEnv  string `yaml:"api_key_env,omitempty" json:"apiKeyEnv,omitempty"`
 }
 
 type Registry struct {
@@ -25,6 +28,18 @@ func LoadRegistry(path string) (Registry, error) {
 	var r Registry
 	if err := yaml.Unmarshal(raw, &r); err != nil {
 		return Registry{}, err
+	}
+	for _, m := range r.Models {
+		switch m.Provider {
+		case "openai_compat":
+			if m.BaseURL == "" {
+				return Registry{}, fmt.Errorf("model %s: base_url is required for provider openai_compat", m.ID)
+			}
+		case "openai", "anthropic":
+			if m.BaseURL != "" {
+				return Registry{}, fmt.Errorf("model %s: base_url is not allowed for provider %s", m.ID, m.Provider)
+			}
+		}
 	}
 	return r, nil
 }

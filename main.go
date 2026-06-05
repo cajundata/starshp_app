@@ -62,12 +62,12 @@ func main() {
 	api := appapi.NewAPI(cfg, st, reg, ragAdpt)
 
 	if err := wails.Run(&options.App{
-		Title:  "Starshp",
-		Width:  1100,
-		Height: 760,
+		Title:       "Starshp",
+		Width:       1100,
+		Height:      760,
 		AssetServer: &assetserver.Options{Assets: assets},
-		OnStartup:  api.Startup,
-		Bind:       []any{api},
+		OnStartup:   api.Startup,
+		Bind:        []any{api},
 	}); err != nil {
 		log.Fatal(err)
 	}

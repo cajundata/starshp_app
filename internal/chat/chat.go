@@ -76,6 +76,11 @@ type SendParams struct {
 	Retriever      Retriever // may be nil
 	RetrievalMode  RetrievalMode
 	Sink           EventSink
+	// RemapErr, when set, post-processes a provider error's normalized AppError
+	// before it is recorded/emitted (e.g. to upgrade a generic network failure of
+	// a local openai_compat model into a friendlier local_unreachable message).
+	// nil leaves the AppError unchanged.
+	RemapErr func(provider.AppError) provider.AppError
 }
 
 type RunResult struct {
@@ -404,6 +409,9 @@ func (s *Service) handleStreamErr(ctx context.Context, p SendParams, runID, turn
 		return RunResult{RunID: runID, TerminalReason: "user_cancelled"}
 	}
 	ae := provider.NormalizeError(sErr)
+	if p.RemapErr != nil {
+		ae = p.RemapErr(ae)
+	}
 	_ = s.st.MarkRunErrored(runID, "provider_error", ae.Code, ae.UserMessage)
 	emit(p.Sink, SinkRunErrored, p.ConversationID, runID, turnID,
 		map[string]any{"errorCode": ae.Code, "errorMessage": ae.UserMessage,
