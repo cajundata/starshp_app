@@ -50,6 +50,14 @@ export function GetAssignmentScope(arg1) {
   return window['go']['appapi']['API']['GetAssignmentScope'](arg1);
 }
 
+export function GetAssignmentLibraryItemsForDir(arg1) {
+  return window['go']['appapi']['API']['GetAssignmentLibraryItemsForDir'](arg1);
+}
+
+export function GetAssignmentScopeForDir(arg1) {
+  return window['go']['appapi']['API']['GetAssignmentScopeForDir'](arg1);
+}
+
 export function GetConversationDisplayEvents(arg1) {
   return window['go']['appapi']['API']['GetConversationDisplayEvents'](arg1);
 }

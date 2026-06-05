@@ -30,6 +30,10 @@ export function GetAssignmentLibraryItems(arg1:string):Promise<Array<string>>;
 
 export function GetAssignmentScope(arg1:string):Promise<Array<store.TextbookScope>>;
 
+export function GetAssignmentLibraryItemsForDir(arg1:string):Promise<Array<string>>;
+
+export function GetAssignmentScopeForDir(arg1:string):Promise<Array<store.TextbookScope>>;
+
 export function GetConversationDisplayEvents(arg1:string):Promise<Array<appapi.EventDTO>>;
 
 export function GetConversationScope(arg1:string):Promise<Array<store.TextbookScope>>;
