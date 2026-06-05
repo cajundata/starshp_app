@@ -46,7 +46,9 @@ func TestTitleFromText(t *testing.T) {
 		t.Fatalf("empty: got %q", got)
 	}
 	long := ""
-	for i := 0; i < 100; i++ { long += "x" }
+	for i := 0; i < 100; i++ {
+		long += "x"
+	}
 	got := titleFromText(long)
 	if []rune(got)[len([]rune(got))-1] != '…' || len([]rune(got)) != 61 {
 		t.Fatalf("truncation wrong: len=%d got=%q", len([]rune(got)), got)
