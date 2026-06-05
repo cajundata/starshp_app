@@ -43,7 +43,7 @@ Run: `wails dev`
 
 ## Local models (Ollama)
 
-25. [ ] **Local model end-to-end.** With Ollama installed and `ollama pull
+25. [x] **Local model end-to-end.** With Ollama installed and `ollama pull
     llama3.2` complete, register the Llama 3.2 entry from
     `models.example.yaml` in your `models.yaml`, restart Starshp, pick
     "Llama 3.2 (local)" in a new conversation, send a short prompt.
