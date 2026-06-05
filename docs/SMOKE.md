@@ -40,3 +40,15 @@ Run: `wails dev`
 22. [x] **`~` marker after Stop.** Start a long reply, click Stop. The footer keeps the previous turn's values, prefixed with `~`.
 23. [x] **No denominator when `max_context` is omitted.** Remove `max_context` from one model in `models.yaml`, restart, send a message with that model. Footer shows `ctx N · cache K` (no `/ M` segment).
 24. [x] **Footer survives conversation switches.** Open a conversation with prior history; the footer seeds from the last assistant message's recorded tokens. Switch to another conversation, then back.
+
+## Local models (Ollama)
+
+25. [ ] **Local model end-to-end.** With Ollama installed and `ollama pull
+    llama3.2` complete, register the Llama 3.2 entry from
+    `models.example.yaml` in your `models.yaml`, restart Starshp, pick
+    "Llama 3.2 (local)" in a new conversation, send a short prompt.
+    Confirm streaming, the Stop button, the context-footer HUD
+    (input/output tokens populate, cached shows 0), and that stopping
+    Ollama mid-session yields the `local_unreachable` error with the
+    base URL interpolated into the message.
+
