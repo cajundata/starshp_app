@@ -47,6 +47,9 @@ plus pure-Go provider SDKs.
   go install github.com/wailsapp/wails/v2/cmd/wails@latest
   ```
   Then verify with `wails doctor`.
+- On macOS, `wails doctor` verifies Xcode Command Line Tools
+  (`xcode-select --install` if missing) and WebKit. Apple Silicon and
+  Intel both work without extra setup.
 - **OpenAI API key** — required for textbook embeddings even when chatting
   with an Anthropic model.
 - **Anthropic API key** — optional, required only to chat with Claude
@@ -144,7 +147,7 @@ The list of models offered in the per-message picker:
 models:
   - display: Claude Opus 4.7      # label shown in the UI
     id: claude-opus-4-7           # identifier sent to the provider
-    provider: anthropic           # "anthropic" or "openai"
+    provider: anthropic           # "anthropic", "openai", or "openai_compat"
   - display: GPT-5.4
     id: gpt-5.4-2026-03-05
     provider: openai
@@ -157,7 +160,9 @@ Edit it freely as model IDs evolve — no recompile. A missing or unreadable
 
 ```bash
 wails dev      # hot-reload dev mode
-wails build    # release binary at build/bin/starshp_app.exe
+wails build    # release binary: build/bin/starshp_app.exe (Windows),
+               #                  build/bin/starshp_app.app (macOS),
+               #                  build/bin/starshp_app    (Linux)
 ```
 
 `app.db` (conversations, messages, presets, scope) and `rag.db` (textbook
@@ -184,6 +189,70 @@ environment variable, since it determines where `.env` itself is found.
 | `MODELS_CONFIG` | `models.yaml` | Model registry; a relative value resolves inside the app directory. |
 | `CONTEXT_TOKEN_BUDGET` | `2500` | Max textbook context tokens injected per turn. |
 | `RAG_TOP_K` | `8` | Top-K passed to vector search (over-fetched ×6, then scope-filtered + budget-trimmed). |
+
+## Local models via Ollama
+
+Starshp talks to any OpenAI-compatible local server. Ollama is the
+reference runtime — same simple install on Windows and macOS.
+
+### Why
+
+Zero per-token cost and zero network round-trip for chat. RAG textbook
+embeddings still use OpenAI (see the project's intentional "out of
+scope: local embeddings" line); only chat traffic moves local.
+
+### Install
+
+| OS | Command |
+| --- | --- |
+| macOS | `brew install ollama && brew services start ollama`, or installer from ollama.com |
+| Windows | `winget install Ollama.Ollama`, or installer from ollama.com (auto-starts as a service) |
+
+### Pull a model
+
+```bash
+ollama pull llama3.2
+# or: ollama pull qwen2.5:7b
+# or: ollama pull mistral
+```
+
+The exact model name passed to `ollama pull` is the value that goes in
+the `id:` field of the `models.yaml` entry.
+
+### Register it in `models.yaml`
+
+```yaml
+- display: Llama 3.2 (local)
+  id: llama3.2
+  provider: openai_compat
+  base_url: http://localhost:11434/v1
+  max_context: 131072
+```
+
+`provider: openai_compat` is the new third provider type, covering any
+OpenAI-Chat-Completions-compatible endpoint (Ollama, LM Studio, vLLM,
+llama.cpp server). `base_url` is required. `api_key_env` (not shown) is
+an optional name of an env var holding a bearer token, for shims that
+require one.
+
+Restart Starshp. The model appears in the per-message picker. Pick it
+on the next turn — done.
+
+### Hardware sizing
+
+Match the model size to the available RAM/VRAM. On Apple Silicon,
+usable RAM ≈ unified memory minus ~8 GB reserved for the OS and the
+app; on Windows the bound is GPU VRAM. A more detailed tier-by-tier
+recommendation is queued in `BACKLOG.md` Someday.
+
+### Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| "Local model server unreachable at …" in the UI | Start Ollama (`ollama serve` or the Ollama menu-bar/system-tray app). |
+| Context-footer HUD denominator looks wrong | `max_context` in `models.yaml` must match the model's actual `num_ctx`. Ollama's default is small (2048 or 4096 depending on model). Override with `OLLAMA_NUM_CTX` env var or a custom modelfile. |
+| Slow first token after a model has been idle | Ollama is loading the model into memory. Subsequent turns within `keep_alive` (default 5 minutes) are fast. |
+| Cached tokens in the footer always show 0 | Ollama's OpenAI-compat shim does not surface cache-hit stats. Not a bug. |
 
 ## Testing
 
@@ -258,7 +327,7 @@ The implementation plan (all 20 tasks complete):
 Tracked here so reviewers know absences are intentional:
 
 - Visual / color refinement pass — Variant B layout is the starting point.
-- Cross-platform packaging — Windows-first; macOS/Linux later.
+- Linux packaging — Windows and macOS supported; Linux builds work but are not smoke-tested.
 - Extracting a shared `acct-rag` Go module — current copy-behind-adapter
   approach is by design.
 - Local / offline embeddings — embedding cost is negligible.
