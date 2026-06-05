@@ -37,7 +37,7 @@ func NewAPI(cfg config.Config, st *store.Store, reg provider.Registry, ragAdpt *
 // Startup is called by Wails with the app context.
 func (a *API) Startup(ctx context.Context) { a.ctx = ctx }
 
-func (a *API) StartupIssues() []string { return ValidateStartup(a.cfg) }
+func (a *API) StartupIssues() []string { return ValidateStartup(a.cfg, a.reg) }
 
 func (a *API) ListConversations() ([]store.Conversation, error) { return a.st.ListConversations() }
 func (a *API) CreateConversation(title string) (store.Conversation, error) {
