@@ -8,7 +8,9 @@
 # Each entry needs:
 #   display     — human-readable name shown in the UI
 #   id          — the provider's model identifier sent on API calls
-#   provider    — "anthropic" or "openai"
+#   provider    — "anthropic", "openai", or "openai_compat" (Ollama / LM Studio
+#                 / vLLM / any OpenAI-Chat-Completions-compatible local server;
+#                 also set base_url, and optionally api_key_env)
 #   max_context — (optional) context-window size in tokens; supplies the
 #                 denominator in the conversation footer HUD. Omit to display
 #                 absolute tokens with no denominator.
@@ -29,3 +31,13 @@ models:
     id: gpt-5.4-2026-03-05
     provider: openai
     max_context: 400000
+
+  # ---------------------------------------------------------------------------
+  # Local model via Ollama (https://ollama.com).
+  # Install Ollama on your OS, run `ollama pull llama3.2`, then uncomment:
+  # ---------------------------------------------------------------------------
+  # - display: Llama 3.2 (local)
+  #   id: llama3.2
+  #   provider: openai_compat
+  #   base_url: http://localhost:11434/v1
+  #   max_context: 131072
