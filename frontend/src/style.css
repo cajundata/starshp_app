@@ -33,6 +33,7 @@ body { font-family: system-ui, sans-serif; }
 #libModalInner .lib-empty { color: #6f6f76; font-size: 13px; padding: 6px 0; }
 #tbModalInner .tb-empty { color: #6f6f76; font-size: 13px; padding: 6px 0; }
 #tbModalInner .tb-error { color: #e08585; font-size: 13px; padding: 6px 0; }
+#libModalInner .lib-error { color: #e08585; font-size: 13px; padding: 6px 0; }
 #tbModalInner label input[disabled] + span { color: #6f6f76; }
 .lib-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
 .lib-row label { display: flex; align-items: center; gap: 8px; color: #cfcfd3; flex: 1; cursor: pointer; }

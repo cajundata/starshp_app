@@ -595,6 +595,96 @@ async function openAssignmentTextbookEditor() {
   })
 }
 
+// pickLibraryItems opens the library modal as a reusable picker. It lists items,
+// pre-checks `current` (by filename), and on confirm calls onConfirm(selected
+// filenames) — closing the modal on success, or showing the error inline.
+async function pickLibraryItems(
+  current: string[],
+  confirmLabel: string,
+  onConfirm: (items: string[]) => Promise<void>,
+) {
+  const inner = $('libModalInner')
+  inner.innerHTML = '<h3>Prompt / context library</h3>'
+  $('libModal').classList.remove('hidden')
+
+  let items: Awaited<ReturnType<typeof App.ListLibraryItems>>
+  try {
+    items = (await App.ListLibraryItems()) || []
+  } catch (e: any) {
+    const err = document.createElement('p')
+    err.className = 'lib-error'
+    err.textContent = `Could not load library: ${e?.userMessage || e}`
+    inner.appendChild(err)
+    return
+  }
+
+  if (items.length === 0) {
+    const empty = document.createElement('p')
+    empty.className = 'lib-empty'
+    empty.textContent = 'No library items yet. Create one in the Library panel.'
+    inner.appendChild(empty)
+  }
+
+  for (const it of items) {
+    const row = document.createElement('div')
+    row.className = 'lib-row'
+    const label = document.createElement('label')
+    const cb = document.createElement('input')
+    cb.type = 'checkbox'
+    cb.dataset.file = it.filename
+    cb.checked = current.includes(it.filename)
+    cb.disabled = !!it.error
+    label.appendChild(cb)
+    const span = document.createElement('span')
+    span.textContent = it.error ? ` ${it.name} (unavailable)` : ` ${it.name}`
+    label.appendChild(span)
+    row.appendChild(label)
+    inner.appendChild(row)
+  }
+
+  const status = document.createElement('p')
+  status.className = 'lib-empty'
+  inner.appendChild(status)
+
+  const confirm = document.createElement('button')
+  confirm.className = 'lib-new'
+  confirm.textContent = confirmLabel
+  confirm.onclick = async () => {
+    const boxes = inner.querySelectorAll('input[type=checkbox]')
+    const sel: string[] = []
+    boxes.forEach((b: any) => { if (b.checked && b.dataset.file) sel.push(b.dataset.file) })
+    confirm.disabled = true
+    status.className = 'lib-empty'
+    status.textContent = 'Working…'
+    try {
+      await onConfirm(sel)
+      $('libModal').classList.add('hidden')
+    } catch (e: any) {
+      status.className = 'lib-error'
+      status.textContent = `Failed: ${e?.userMessage || e}`
+      confirm.disabled = false
+    }
+  }
+  inner.appendChild(confirm)
+}
+
+// openAssignmentLibraryEditor edits the current assignment's library selection.
+async function openAssignmentLibraryEditor() {
+  const id = currentAssignmentId
+  if (!id) return
+  let current: string[]
+  try {
+    current = (await App.GetAssignmentLibraryItems(id)) || []
+  } catch (e) {
+    // Don't open with empty state — a Save would wipe the real (unloaded) selection.
+    console.warn('GetAssignmentLibraryItems failed; not opening prompt editor', e)
+    return
+  }
+  await pickLibraryItems(current, 'Save', async (items) => {
+    await App.SetAssignmentLibraryItems(id, items)
+  })
+}
+
 // ---- Prompt / context library ----------------------------------------------
 
 const libModal = $('libModal')
@@ -767,20 +857,22 @@ async function solveFolder() {
   const dir = prompt('Folder to solve (absolute path):')
   if (!dir || !dir.trim()) return
   const d = dir.trim()
-  await pickTextbooks([], 'Solve', async (scopes) => {
-    asgDetail.innerHTML = ''
-    asgHeader.innerHTML = '<p class="asg-empty">Preparing…</p>'
-    try {
-      await App.EnsureIndexedScope(scopes)
-      const id = await App.SolveAssignment(d, scopes)
-      currentAssignmentId = id
-      asgItemRows.clear()
-      asgStopBtn.classList.remove('hidden')
-      await selectAssignment(id)
-    } catch (e) {
-      asgHeader.innerHTML = ''
-      throw e
-    }
+  await pickTextbooks([], 'Next: Prompts →', async (scopes) => {
+    await pickLibraryItems([], 'Solve', async (items) => {
+      asgDetail.innerHTML = ''
+      asgHeader.innerHTML = '<p class="asg-empty">Preparing…</p>'
+      try {
+        await App.EnsureIndexedScope(scopes)
+        const id = await App.SolveAssignment(d, scopes, items)
+        currentAssignmentId = id
+        asgItemRows.clear()
+        asgStopBtn.classList.remove('hidden')
+        await selectAssignment(id)
+      } catch (e) {
+        asgHeader.innerHTML = ''
+        throw e
+      }
+    })
   })
 }
 
@@ -835,6 +927,11 @@ function renderAssignmentHeader(title: string, done: number, total: number, stat
   tbBtn.textContent = '📚 Textbooks'
   tbBtn.onclick = () => void openAssignmentTextbookEditor()
   sub.appendChild(tbBtn)
+  const libBtn = document.createElement('button')
+  libBtn.className = 'asg-tb-btn'
+  libBtn.textContent = '📝 Prompts'
+  libBtn.onclick = () => void openAssignmentLibraryEditor()
+  sub.appendChild(libBtn)
   asgHeader.appendChild(sub)
 
   const bar = document.createElement('div')
