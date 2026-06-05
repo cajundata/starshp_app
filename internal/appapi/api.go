@@ -45,7 +45,7 @@ func (a *API) CreateConversation(title string) (store.Conversation, error) {
 }
 func (a *API) DeleteConversation(id string) error              { return a.st.DeleteConversation(id) }
 func (a *API) ListMessages(id string) ([]store.Message, error) { return a.st.ListMessages(id) }
-func (a *API) Models() []provider.ModelInfo { return a.reg.Models }
+func (a *API) Models() []provider.ModelInfo                    { return a.reg.Models }
 func (a *API) ListBooks() ([]textbooks.Book, error) {
 	return textbooks.Scan(a.cfg.TextbooksConfig)
 }
@@ -159,6 +159,13 @@ func (a *API) SendMessage(convID, userText, modelID string) (string, error) {
 	})
 	if payload := buildChatUsageEvent(convID, modelID, usage); payload != nil {
 		wruntime.EventsEmit(a.ctx, "chat:usage", payload)
+	}
+	if err != nil {
+		if ae, ok := err.(provider.AppError); ok {
+			if m, found := a.reg.ByID(modelID); found {
+				err = provider.MaybeRemapLocal(ae, m)
+			}
+		}
 	}
 	return text, err
 }
