@@ -115,6 +115,27 @@ func (s *Store) FindAssignmentByManifest(sourceDir, manifestHash string) (Assign
 	return a, true, nil
 }
 
+// FindLatestAssignmentBySourceDir returns the most recently created assignment
+// for a source dir (any manifest hash), or ok=false if none. Used to pre-fill
+// the solve-time pickers.
+func (s *Store) FindLatestAssignmentBySourceDir(sourceDir string) (Assignment, bool, error) {
+	var a Assignment
+	err := s.db.QueryRow(
+		`SELECT id, source_dir, title, manifest_hash, model,
+                COALESCE(grounding_scope,''), status, total_items, created_at, updated_at
+           FROM assignments WHERE source_dir=?
+          ORDER BY created_at DESC LIMIT 1`, sourceDir).Scan(
+		&a.ID, &a.SourceDir, &a.Title, &a.ManifestHash, &a.Model,
+		&a.GroundingScope, &a.Status, &a.TotalItems, &a.CreatedAt, &a.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return Assignment{}, false, nil
+	}
+	if err != nil {
+		return Assignment{}, false, err
+	}
+	return a, true, nil
+}
+
 func (s *Store) ListAssignments() ([]Assignment, error) {
 	rows, err := s.db.Query(
 		`SELECT id, source_dir, title, manifest_hash, model,

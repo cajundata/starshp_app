@@ -159,6 +159,45 @@ func TestAssignmentLibraryItems_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestFindLatestAssignmentBySourceDir(t *testing.T) {
+	st := openTestStore(t)
+
+	// No assignment for the dir.
+	if _, ok, err := st.FindLatestAssignmentBySourceDir("/nope"); err != nil || ok {
+		t.Fatalf("want ok=false err=nil, got ok=%v err=%v", ok, err)
+	}
+
+	// Two assignments for the same dir; the most-recent created_at wins.
+	if err := st.CreateAssignment(Assignment{
+		ID: "old", SourceDir: "/d", Title: "t", ManifestHash: "h1",
+		Model: "m", Status: "completed", TotalItems: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateAssignment(Assignment{
+		ID: "new", SourceDir: "/d", Title: "t", ManifestHash: "h2",
+		Model: "m", Status: "completed", TotalItems: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Force deterministic ordering (CreateAssignment stamps now(), which can
+	// collide within the same millisecond).
+	if _, err := st.db.Exec(`UPDATE assignments SET created_at=? WHERE id=?`, int64(1000), "old"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec(`UPDATE assignments SET created_at=? WHERE id=?`, int64(2000), "new"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok, err := st.FindLatestAssignmentBySourceDir("/d")
+	if err != nil || !ok {
+		t.Fatalf("want found, got ok=%v err=%v", ok, err)
+	}
+	if got.ID != "new" {
+		t.Fatalf("want latest 'new', got %q", got.ID)
+	}
+}
+
 func TestGetAssignmentItem(t *testing.T) {
 	st := openTestStore(t)
 	if err := st.CreateAssignment(Assignment{
