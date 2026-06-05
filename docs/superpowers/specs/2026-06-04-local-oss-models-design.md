@@ -101,6 +101,11 @@ case "openai_compat":
 No `AppError{"auth", ...}` branch — local servers do not have API keys
 in the OpenAI sense.
 
+The factory's `m.BaseURL == ""` guard is belt-and-suspenders: in normal
+flow `LoadRegistry` rejects the same condition at config-load, but
+keeping the factory check protects against programmatically-built
+registries (e.g., in tests).
+
 ### Conditional startup validation
 
 `internal/appapi` currently emits a setup notice when `OPENAI_API_KEY`
@@ -121,8 +126,8 @@ selection.
 - `internal/provider/factory.go` — new case + key-resolution helper.
 - `internal/provider/errors.go` — new `local_unreachable` error code +
   classifier.
-- `internal/appapi/<startup-validation file>` — conditional checks for
-  OpenAI and Anthropic keys.
+- `internal/appapi/validate.go` — conditional checks for OpenAI and
+  Anthropic keys.
 - `internal/provider/registry_test.go` — new field parsing +
   validation tests.
 - `internal/provider/factory_test.go` (new or extended) — new branch
@@ -130,7 +135,7 @@ selection.
 - `internal/provider/openai_test.go` — extend with an `openai_compat`
   end-to-end stream against an httptest server.
 - `internal/provider/errors_test.go` — `local_unreachable` mapping.
-- `internal/appapi/*_test.go` — conditional-key-warning tests.
+- `internal/appapi/validate_test.go` — conditional-key-warning tests.
 
 ## Runtime behavior
 
@@ -284,8 +289,8 @@ All Go-side; project convention is no automated UI tests.
 | Factory honors `api_key_env` when the env var is set | `internal/provider/factory_test.go` | Future-proofs LM Studio / vLLM-with-auth. |
 | `openai_compat` end-to-end stream against an httptest server | `internal/provider/openai_test.go` (extend) | Streaming, usage capture, cancellation all work via `base_url`. |
 | Connection-refused error normalizes to `local_unreachable` with interpolated `base_url` | `internal/provider/errors_test.go` | New error code. |
-| Startup validator does not require `OPENAI_API_KEY` with only `openai_compat` + `anthropic` models | `internal/appapi/*_test.go` | Conditional-validation logic. |
-| Startup validator still requires `OPENAI_API_KEY` when textbooks are configured | `internal/appapi/*_test.go` | RAG-embeddings invariant unchanged. |
+| Startup validator does not require `OPENAI_API_KEY` with only `openai_compat` + `anthropic` models | `internal/appapi/validate_test.go` | Conditional-validation logic. |
+| Startup validator still requires `OPENAI_API_KEY` when textbooks are configured | `internal/appapi/validate_test.go` | RAG-embeddings invariant unchanged. |
 
 ## Implementation order
 
