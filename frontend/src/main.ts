@@ -857,8 +857,21 @@ async function solveFolder() {
   const dir = prompt('Folder to solve (absolute path):')
   if (!dir || !dir.trim()) return
   const d = dir.trim()
-  await pickTextbooks([], 'Next: Prompts →', async (scopes) => {
-    await pickLibraryItems([], 'Solve', async (items) => {
+  // Pre-fill the pickers from the most recent assignment for this folder so a
+  // re-solve doesn't default to empty (and wipe a stored selection). Best-effort.
+  let preScopes: any[] = []
+  let preItems: string[] = []
+  try {
+    [preScopes, preItems] = await Promise.all([
+      App.GetAssignmentScopeForDir(d).then(r => r || []),
+      App.GetAssignmentLibraryItemsForDir(d).then(r => r || []),
+    ])
+  } catch (e) {
+    // Best-effort pre-fill: default to empty, but surface unexpected failures.
+    console.debug('solve pre-fill fetch failed; defaulting to empty', e)
+  }
+  await pickTextbooks(preScopes, 'Next: Prompts →', async (scopes) => {
+    await pickLibraryItems(preItems, 'Solve', async (items) => {
       asgDetail.innerHTML = ''
       asgHeader.innerHTML = '<p class="asg-empty">Preparing…</p>'
       try {
