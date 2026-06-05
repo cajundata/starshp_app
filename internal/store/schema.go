@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS assignments (
   manifest_hash   TEXT NOT NULL,
   model           TEXT NOT NULL,
   grounding_scope TEXT,
+  library_items   TEXT,
   status          TEXT NOT NULL CHECK (status IN (
                       'in_progress','completed','cancelled','errored')),
   total_items     INTEGER NOT NULL DEFAULT 0,

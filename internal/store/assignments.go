@@ -216,6 +216,40 @@ func (s *Store) GetAssignmentScope(asgID string) ([]TextbookScope, error) {
 	return scopes, nil
 }
 
+// SetAssignmentLibraryItems stores the assignment's selected library item
+// filenames as JSON in library_items. An empty slice clears it (NULL).
+func (s *Store) SetAssignmentLibraryItems(asgID string, items []string) error {
+	var js string
+	if len(items) > 0 {
+		b, err := json.Marshal(items)
+		if err != nil {
+			return err
+		}
+		js = string(b)
+	}
+	_, err := s.db.Exec(`UPDATE assignments SET library_items=?, updated_at=? WHERE id=?`,
+		nullIfEmpty(js), time.Now().UnixMilli(), asgID)
+	return err
+}
+
+// GetAssignmentLibraryItems returns the assignment's selected library item
+// filenames (nil if none).
+func (s *Store) GetAssignmentLibraryItems(asgID string) ([]string, error) {
+	var js string
+	if err := s.db.QueryRow(
+		`SELECT COALESCE(library_items,'') FROM assignments WHERE id=?`, asgID).Scan(&js); err != nil {
+		return nil, err
+	}
+	if js == "" {
+		return nil, nil
+	}
+	var items []string
+	if err := json.Unmarshal([]byte(js), &items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func (s *Store) SetConversationAssignment(convID, assignmentID string) error {
 	_, err := s.db.Exec(`UPDATE conversations SET assignment_id=? WHERE id=?`,
 		assignmentID, convID)

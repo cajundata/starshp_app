@@ -127,6 +127,38 @@ func TestAssignmentScope_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestAssignmentLibraryItems_RoundTrip(t *testing.T) {
+	st := openTestStore(t)
+	if err := st.CreateAssignment(Assignment{
+		ID: "a1", SourceDir: "/d", Title: "t", ManifestHash: "h",
+		Model: "m", Status: "in_progress", TotalItems: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, err := st.GetAssignmentLibraryItems("a1"); err != nil || got != nil {
+		t.Fatalf("want nil default, got %v err %v", got, err)
+	}
+
+	if err := st.SetAssignmentLibraryItems("a1", []string{"tone.md", "rubric.md"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.GetAssignmentLibraryItems("a1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != "tone.md" || got[1] != "rubric.md" {
+		t.Fatalf("unexpected: %+v", got)
+	}
+
+	if err := st.SetAssignmentLibraryItems("a1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := st.GetAssignmentLibraryItems("a1"); got != nil {
+		t.Fatalf("want nil after clear, got %+v", got)
+	}
+}
+
 func TestGetAssignmentItem(t *testing.T) {
 	st := openTestStore(t)
 	if err := st.CreateAssignment(Assignment{
