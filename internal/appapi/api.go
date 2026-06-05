@@ -301,7 +301,7 @@ func (a *API) CancelMessage() {
 
 // SolveAssignment loads a companion _json directory and solves every question
 // concurrently in the background. Returns the assignment id immediately.
-func (a *API) SolveAssignment(dir string, scopes []store.TextbookScope) (string, error) {
+func (a *API) SolveAssignment(dir string, scopes []store.TextbookScope, libraryItems []string) (string, error) {
 	model := a.defaultModelID()
 	if model == "" {
 		return "", provider.AppError{Code: "config", UserMessage: "No model configured.", Retryable: false}
@@ -310,14 +310,16 @@ func (a *API) SolveAssignment(dir string, scopes []store.TextbookScope) (string,
 	if a.ragAdpt != nil {
 		search = searchtextbook.New(ragRetrieverShim{a: a}, chatStoreResolver{st: a.st}, 4000)
 	}
+	libPreamble, _, _ := a.assembleLibraryPreamble(libraryItems)
 	opts := assignment.Options{
-		Model:       model,
-		Concurrency: assignmentConcurrency(),
-		Grounding:   assignment.NoGrounding{}, // v1: textbooks via the search_textbook tool, no pre-turn grounding
-		SafeMath:    safemath.New(),
-		SearchTool:  search,
-		Resolver:    chatStoreResolver{st: a.st},
-		Emit:        a.emit,
+		Model:           model,
+		Concurrency:     assignmentConcurrency(),
+		Grounding:       assignment.NoGrounding{}, // v1: textbooks via the search_textbook tool, no pre-turn grounding
+		SafeMath:        safemath.New(),
+		SearchTool:      search,
+		Resolver:        chatStoreResolver{st: a.st},
+		LibraryPreamble: libPreamble,
+		Emit:            a.emit,
 	}
 	orc := assignment.New(a.st, a.chatSvc, a.assignmentFactory, opts)
 
@@ -326,7 +328,7 @@ func (a *API) SolveAssignment(dir string, scopes []store.TextbookScope) (string,
 	a.asgCancel = cancel
 	a.mu.Unlock()
 
-	id, err := orc.Start(cctx, dir, scopes, nil, cancel)
+	id, err := orc.Start(cctx, dir, scopes, libraryItems, cancel)
 	if err != nil {
 		cancel()
 		return "", provider.NormalizeError(err)
