@@ -213,22 +213,6 @@ func (r ragRetriever) Retrieve(ctx context.Context, q string) (string, string, [
 	return res.Context, srcJSON, sources, nil
 }
 
-// buildChatUsageEvent assembles the payload sent on the "chat:usage" Wails
-// event. Returns nil when usage is nil — callers should skip emitting in
-// that case.
-func buildChatUsageEvent(convID, modelID string, usage *provider.Usage) map[string]any {
-	if usage == nil {
-		return nil
-	}
-	return map[string]any{
-		"convID":  convID,
-		"input":   usage.InputTokens,
-		"output":  usage.OutputTokens,
-		"cached":  usage.CachedInputTokens,
-		"modelID": modelID,
-	}
-}
-
 // SendMessage runs the agentic loop for one user turn. Assistant output is
 // surfaced to the frontend through the chat:* Wails event taxonomy (the bubble
 // renders from events), so the method returns only a normalized error. The

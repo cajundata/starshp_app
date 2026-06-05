@@ -95,6 +95,17 @@ func TestSend_HappyPath_PersistsEventsAndCompletesRun(t *testing.T) {
 			t.Errorf("expected sink event %s", want)
 		}
 	}
+	// The usage event must carry modelID so the frontend footer can resolve the
+	// model's max_context for the ctx N / M denominator.
+	var usageModelID string
+	for _, e := range sink.events {
+		if e.Kind == SinkUsage {
+			usageModelID, _ = e.Payload["modelID"].(string)
+		}
+	}
+	if usageModelID != "gpt-x" {
+		t.Errorf("usage event modelID = %q, want gpt-x", usageModelID)
+	}
 	_ = json.Valid // import guard for json package; used in later tests
 }
 

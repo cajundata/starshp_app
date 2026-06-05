@@ -391,8 +391,9 @@ func (s *Service) completeRunSuccess(p SendParams, runID, turnID, stopReason str
 			"totalIterations": iter})
 	emit(p.Sink, SinkUsage, p.ConversationID, runID, turnID,
 		map[string]any{"input": totalUsage.InputTokens,
-			"output": totalUsage.OutputTokens,
-			"cached": totalUsage.CachedInputTokens})
+			"output":  totalUsage.OutputTokens,
+			"cached":  totalUsage.CachedInputTokens,
+			"modelID": p.Model}) // frontend footer resolves max_context by modelID
 	return RunResult{RunID: runID, TerminalReason: stopReason,
 		TotalUsage: totalUsage, TotalToolCalls: totalToolCalls,
 		TotalIterations: iter}, nil
