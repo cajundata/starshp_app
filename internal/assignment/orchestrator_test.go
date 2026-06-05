@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -81,7 +82,7 @@ func TestOrchestrator_SolvesOneItem(t *testing.T) {
 	pf := scriptedFactory(`{"confidence":"high","answerIndex":1}`)
 	orc := newTestOrchestrator(t, st, pf)
 
-	asgID, err := orc.Run(context.Background(), tmpAssignmentDir(t), nil)
+	asgID, err := orc.Run(context.Background(), tmpAssignmentDir(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +112,7 @@ func TestOrchestrator_AllItemsSolvedConcurrently(t *testing.T) {
 	pf := scriptedFactory(`{"confidence":"high","answerIndex":0}`)
 	orc := New(st, chat.New(st), pf, Options{Model: "m", Concurrency: 4,
 		Grounding: NoGrounding{}, Emit: func(string, any) {}})
-	asgID, err := orc.Run(context.Background(), tmpAssignmentDir(t), nil)
+	asgID, err := orc.Run(context.Background(), tmpAssignmentDir(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +137,7 @@ func TestOrchestrator_CancelStopsBatch(t *testing.T) {
 		Grounding: NoGrounding{}, Emit: func(string, any) {}})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before running
-	asgID, _ := orc.Run(ctx, tmpAssignmentDir(t), nil)
+	asgID, _ := orc.Run(ctx, tmpAssignmentDir(t), nil, nil)
 	a, _ := st.GetAssignment(asgID)
 	if a.Status != "cancelled" {
 		t.Fatalf("assignment status want cancelled, got %q", a.Status)
@@ -149,7 +150,7 @@ func TestOrchestrator_ResumeSkipsAnswered(t *testing.T) {
 	orc := New(st, chat.New(st), scriptedFactory(`{"confidence":"high","answerIndex":0}`),
 		Options{Model: "m", Concurrency: 2, Grounding: NoGrounding{}, Emit: func(string, any) {}})
 
-	asgID, err := orc.Run(context.Background(), dir, nil)
+	asgID, err := orc.Run(context.Background(), dir, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +160,7 @@ func TestOrchestrator_ResumeSkipsAnswered(t *testing.T) {
 		runByPath[it.SourcePath] = it.RunID
 	}
 
-	asgID2, err := orc.Run(context.Background(), dir, nil)
+	asgID2, err := orc.Run(context.Background(), dir, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +183,7 @@ func TestRerunItem_OverwritesInPlace(t *testing.T) {
 	dir := tmpAssignmentDir(t)
 	orc := newTestOrchestrator(t, st, scriptedFactory(`{"confidence":"low","answerIndex":0}`))
 
-	asgID, err := orc.Run(context.Background(), dir, nil)
+	asgID, err := orc.Run(context.Background(), dir, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +310,7 @@ func TestSolve_AttachesScopeToItemConversation(t *testing.T) {
 	dir := tmpAssignmentDir(t)
 	orc := newTestOrchestrator(t, st, scriptedFactory(`{"confidence":"low","answerIndex":0}`))
 
-	asgID, err := orc.Run(context.Background(), dir, []store.TextbookScope{{Name: "blaw"}})
+	asgID, err := orc.Run(context.Background(), dir, []store.TextbookScope{{Name: "blaw"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,12 +335,12 @@ func TestPrepare_NilScopeDoesNotClobber(t *testing.T) {
 	dir := tmpAssignmentDir(t)
 	orc := newTestOrchestrator(t, st, scriptedFactory(`{"confidence":"low","answerIndex":0}`))
 
-	asgID, err := orc.Run(context.Background(), dir, []store.TextbookScope{{Name: "blaw"}})
+	asgID, err := orc.Run(context.Background(), dir, []store.TextbookScope{{Name: "blaw"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Re-solving with a nil scope must NOT wipe the stored selection.
-	if _, err := orc.Run(context.Background(), dir, nil); err != nil {
+	if _, err := orc.Run(context.Background(), dir, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := st.GetAssignmentScope(asgID)
@@ -353,7 +354,7 @@ func TestRerunItem_AttachesStoredScope(t *testing.T) {
 	dir := tmpAssignmentDir(t)
 	orc := newTestOrchestrator(t, st, scriptedFactory(`{"confidence":"low","answerIndex":0}`))
 
-	asgID, err := orc.Run(context.Background(), dir, nil) // solve with no scope
+	asgID, err := orc.Run(context.Background(), dir, nil, nil) // solve with no scope
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,5 +375,76 @@ func TestRerunItem_AttachesStoredScope(t *testing.T) {
 	tb, _ := st.GetConversationTextbooks(updated.ConversationID)
 	if len(tb) != 1 || tb[0].Name != "blaw" {
 		t.Fatalf("rerun should attach stored scope, got %+v", tb)
+	}
+}
+
+func TestWithLibraryPreamble(t *testing.T) {
+	if got := withLibraryPreamble("", "BASE"); got != "BASE" {
+		t.Fatalf("empty preamble should pass through, got %q", got)
+	}
+	got := withLibraryPreamble("PRE", "BASE")
+	if got != "PRE\n\nBASE" {
+		t.Fatalf("got %q", got)
+	}
+	// the operative base prompt must remain last (recency)
+	if !strings.HasSuffix(got, "BASE") {
+		t.Fatalf("base must be last, got %q", got)
+	}
+}
+
+func TestPrepare_PersistsAndNilGuardsLibraryItems(t *testing.T) {
+	st := openStore(t)
+	dir := tmpAssignmentDir(t)
+	orc := newTestOrchestrator(t, st, scriptedFactory(`{"confidence":"low","answerIndex":0}`))
+
+	asgID, err := orc.Run(context.Background(), dir, nil, []string{"tone.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := st.GetAssignmentLibraryItems(asgID); len(got) != 1 || got[0] != "tone.md" {
+		t.Fatalf("solve did not persist library items: %+v", got)
+	}
+	// Re-solve with nil library items must NOT wipe the stored selection.
+	if _, err := orc.Run(context.Background(), dir, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := st.GetAssignmentLibraryItems(asgID); len(got) != 1 || got[0] != "tone.md" {
+		t.Fatalf("nil re-solve clobbered library items: %+v", got)
+	}
+}
+
+func TestSolveItem_AppliesLibraryPreamble(t *testing.T) {
+	st := openStore(t)
+	dir := tmpAssignmentDir(t)
+	var systems []string
+	pf := func(string) (provider.ChatProvider, string, error) {
+		return &fakeprovider.Scripted{
+			Iterations: [][]provider.Delta{
+				{
+					{ToolCall: &provider.ToolCall{ID: "c1", Name: "submit_answer",
+						Input: json.RawMessage(`{"confidence":"low","answerIndex":0}`)}},
+					{Done: true, StopReason: "tool_use"},
+				},
+				{{Text: "done"}, {Done: true, StopReason: "end_turn"}},
+			},
+			Hook: func(_ int, req provider.ChatRequest) { systems = append(systems, req.System) },
+		}, "openai", nil
+	}
+	orc := New(st, chat.New(st), pf, Options{
+		Model: "m", Concurrency: 1, Grounding: NoGrounding{},
+		Emit: func(string, any) {}, LibraryPreamble: "LIBRARY-PREAMBLE-XYZ",
+	})
+
+	if _, err := orc.Run(context.Background(), dir, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, s := range systems {
+		if strings.Contains(s, "LIBRARY-PREAMBLE-XYZ") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("library preamble not found in any of the %d system prompts sent", len(systems))
 	}
 }

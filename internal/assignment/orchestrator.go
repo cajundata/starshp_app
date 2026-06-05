@@ -37,6 +37,10 @@ type Options struct {
 	// Resolver resolves a conversation's attached textbooks into book scope for
 	// the search_textbook tool. appapi injects chatStoreResolver; nil disables.
 	Resolver chat.ScopeResolver
+	// LibraryPreamble is the assembled text of the assignment's selected library
+	// items; when non-empty it is prepended to each item's system prompt. appapi
+	// assembles it (from passed items on solve, stored items on rerun).
+	LibraryPreamble string
 }
 
 type Orchestrator struct {
@@ -61,7 +65,7 @@ func New(st *store.Store, chatSvc *chat.Service, pf ProviderFactory, opts Option
 
 // prepare loads the dir, ensures grounding, and finds-or-creates the assignment
 // row, returning its id and the state runItems needs.
-func (o *Orchestrator) prepare(ctx context.Context, dir string, scopes []store.TextbookScope) (string, *Loaded, map[string]store.AssignmentItem, error) {
+func (o *Orchestrator) prepare(ctx context.Context, dir string, scopes []store.TextbookScope, libraryItems []string) (string, *Loaded, map[string]store.AssignmentItem, error) {
 	loaded, err := Load(dir)
 	if err != nil {
 		return "", nil, nil, err
@@ -99,6 +103,12 @@ func (o *Orchestrator) prepare(ctx context.Context, dir string, scopes []store.T
 	// previously-stored scope untouched (avoids clobbering on a no-scope resume).
 	if scopes != nil {
 		if err := o.st.SetAssignmentScope(asgID, scopes); err != nil {
+			return "", nil, nil, err
+		}
+	}
+	// Same authoritative-vs-nil contract as the textbook scope above.
+	if libraryItems != nil {
+		if err := o.st.SetAssignmentLibraryItems(asgID, libraryItems); err != nil {
 			return "", nil, nil, err
 		}
 	}
@@ -171,8 +181,8 @@ func (o *Orchestrator) runItems(ctx context.Context, dir, asgID string, loaded *
 }
 
 // Run solves a directory synchronously (used by tests).
-func (o *Orchestrator) Run(ctx context.Context, dir string, scopes []store.TextbookScope) (string, error) {
-	asgID, loaded, prior, err := o.prepare(ctx, dir, scopes)
+func (o *Orchestrator) Run(ctx context.Context, dir string, scopes []store.TextbookScope, libraryItems []string) (string, error) {
+	asgID, loaded, prior, err := o.prepare(ctx, dir, scopes, libraryItems)
 	if err != nil {
 		return "", err
 	}
@@ -247,8 +257,8 @@ func (o *Orchestrator) RerunItem(ctx context.Context, asgID string, seq int) (st
 // Start prepares synchronously (so the assignment id is available immediately)
 // then runs the batch in a background goroutine. onDone (may be nil) runs when
 // the batch finishes — callers use it to release the run's context.
-func (o *Orchestrator) Start(ctx context.Context, dir string, scopes []store.TextbookScope, onDone func()) (string, error) {
-	asgID, loaded, prior, err := o.prepare(ctx, dir, scopes)
+func (o *Orchestrator) Start(ctx context.Context, dir string, scopes []store.TextbookScope, libraryItems []string, onDone func()) (string, error) {
+	asgID, loaded, prior, err := o.prepare(ctx, dir, scopes, libraryItems)
 	if err != nil {
 		return "", err
 	}
@@ -274,6 +284,15 @@ func (o *Orchestrator) markUnfinishedCancelled(asgID string) int {
 		}
 	}
 	return n
+}
+
+// withLibraryPreamble prepends a non-empty library preamble before the base
+// system prompt, keeping the base (operative) instructions last for recency.
+func withLibraryPreamble(preamble, system string) string {
+	if preamble == "" {
+		return system
+	}
+	return preamble + "\n\n" + system
 }
 
 // solveItem runs one question through the agentic loop and persists the result.
@@ -317,6 +336,7 @@ func (o *Orchestrator) solveItem(ctx context.Context, dir, asgID, itemID string,
 
 	reg := o.buildRegistry(q, len(scope) > 0)
 	system, user := RenderPrompt(q)
+	system = withLibraryPreamble(o.opts.LibraryPreamble, system)
 	mode := chat.RetrievalNoRetrieval
 	if o.opts.Grounding.Retriever() != nil {
 		mode = chat.RetrievalAutoGroundedDefault

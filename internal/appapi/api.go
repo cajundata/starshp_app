@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -325,7 +326,7 @@ func (a *API) SolveAssignment(dir string, scopes []store.TextbookScope) (string,
 	a.asgCancel = cancel
 	a.mu.Unlock()
 
-	id, err := orc.Start(cctx, dir, scopes, cancel)
+	id, err := orc.Start(cctx, dir, scopes, nil, cancel)
 	if err != nil {
 		cancel()
 		return "", provider.NormalizeError(err)
@@ -359,14 +360,20 @@ func (a *API) RerunAssignmentItem(asgID string, seq int) (string, error) {
 	if a.ragAdpt != nil {
 		search = searchtextbook.New(ragRetrieverShim{a: a}, chatStoreResolver{st: a.st}, 4000)
 	}
+	libItems, lerr := a.st.GetAssignmentLibraryItems(asgID)
+	if lerr != nil {
+		slog.Warn("assignment: rerun read library items failed; solving without library preamble", "assignmentId", asgID, "err", lerr)
+	}
+	libPreamble, _, _ := a.assembleLibraryPreamble(libItems)
 	opts := assignment.Options{
-		Model:       model,
-		Concurrency: 1,
-		Grounding:   assignment.NoGrounding{},
-		SafeMath:    safemath.New(),
-		SearchTool:  search,
-		Resolver:    chatStoreResolver{st: a.st},
-		Emit:        func(_ string, _ any) {}, // decoupled from batch progress events
+		Model:           model,
+		Concurrency:     1,
+		Grounding:       assignment.NoGrounding{},
+		SafeMath:        safemath.New(),
+		SearchTool:      search,
+		Resolver:        chatStoreResolver{st: a.st},
+		LibraryPreamble: libPreamble,
+		Emit:            func(_ string, _ any) {}, // decoupled from batch progress events
 	}
 	orc := assignment.New(a.st, a.chatSvc, a.assignmentFactory, opts)
 
