@@ -167,3 +167,43 @@ func TestBuildChatUsageEventNilUsage(t *testing.T) {
 		t.Fatalf("got %+v, want nil", got)
 	}
 }
+
+func TestGetSelectionForDir(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "app.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	a := &API{st: st}
+
+	// No assignment for the dir → empty, no error.
+	if sc, err := a.GetAssignmentScopeForDir("/d"); err != nil || sc != nil {
+		t.Fatalf("want nil scope, got %v err %v", sc, err)
+	}
+	if it, err := a.GetAssignmentLibraryItemsForDir("/d"); err != nil || it != nil {
+		t.Fatalf("want nil items, got %v err %v", it, err)
+	}
+
+	// Create an assignment for /d with a scope + library items.
+	if err := st.CreateAssignment(store.Assignment{
+		ID: "a1", SourceDir: "/d", Title: "t", ManifestHash: "h",
+		Model: "m", Status: "completed", TotalItems: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAssignmentScope("a1", []store.TextbookScope{{Name: "blaw"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAssignmentLibraryItems("a1", []string{"tone.md"}); err != nil {
+		t.Fatal(err)
+	}
+
+	sc, err := a.GetAssignmentScopeForDir("/d")
+	if err != nil || len(sc) != 1 || sc[0].Name != "blaw" {
+		t.Fatalf("scope = %+v err %v", sc, err)
+	}
+	it, err := a.GetAssignmentLibraryItemsForDir("/d")
+	if err != nil || len(it) != 1 || it[0] != "tone.md" {
+		t.Fatalf("items = %+v err %v", it, err)
+	}
+}

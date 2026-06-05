@@ -391,6 +391,37 @@ func (a *API) RerunAssignmentItem(asgID string, seq int) (string, error) {
 	return updated.ConversationID, nil
 }
 
+// latestAssignmentIDForDir returns the id of the most recent assignment for dir.
+// Best-effort: any lookup error is swallowed into found=false, so solve-time
+// pre-fill never blocks solving.
+func (a *API) latestAssignmentIDForDir(dir string) (string, bool) {
+	asg, ok, err := a.st.FindLatestAssignmentBySourceDir(dir)
+	if err != nil || !ok {
+		return "", false
+	}
+	return asg.ID, true
+}
+
+// GetAssignmentScopeForDir returns the textbook scope of the most recent
+// assignment for dir (nil if none) — used to pre-fill the solve-time picker.
+func (a *API) GetAssignmentScopeForDir(dir string) ([]store.TextbookScope, error) {
+	id, ok := a.latestAssignmentIDForDir(dir)
+	if !ok {
+		return nil, nil
+	}
+	return a.st.GetAssignmentScope(id)
+}
+
+// GetAssignmentLibraryItemsForDir returns the library item selection of the most
+// recent assignment for dir (nil if none) — used to pre-fill the solve-time picker.
+func (a *API) GetAssignmentLibraryItemsForDir(dir string) ([]string, error) {
+	id, ok := a.latestAssignmentIDForDir(dir)
+	if !ok {
+		return nil, nil
+	}
+	return a.st.GetAssignmentLibraryItems(id)
+}
+
 // CancelAssignment aborts the in-flight assignment batch, if any.
 func (a *API) CancelAssignment(_ string) {
 	a.mu.Lock()
