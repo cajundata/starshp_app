@@ -17,3 +17,44 @@ func TestPipelineSchemaTablesExist(t *testing.T) {
 		}
 	}
 }
+
+func TestIdeaCRUD(t *testing.T) {
+	st := openTestStore(t)
+	i := Idea{
+		ID: "id1", Title: "HDPE cooler mounts", Summary: "marine mounts",
+		Pathway: "small_project", Status: "raw", FinancialFlag: true,
+		Source: "import",
+	}
+	if err := st.CreateIdea(i); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.GetIdea("id1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "HDPE cooler mounts" || got.Pathway != "small_project" {
+		t.Fatalf("get mismatch: %+v", got)
+	}
+	if !got.FinancialFlag {
+		t.Fatalf("financial flag not persisted: %+v", got)
+	}
+	got.Summary = "updated"
+	got.FinancialFlag = false
+	if err := st.UpdateIdea(got); err != nil {
+		t.Fatal(err)
+	}
+	reread, _ := st.GetIdea("id1")
+	if reread.Summary != "updated" || reread.FinancialFlag {
+		t.Fatalf("update not persisted: %+v", reread)
+	}
+	list, err := st.ListIdeas()
+	if err != nil || len(list) != 1 {
+		t.Fatalf("list want 1, got %d err=%v", len(list), err)
+	}
+	if err := st.DeleteIdea("id1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetIdea("id1"); err == nil {
+		t.Fatal("expected error getting deleted idea")
+	}
+}
