@@ -128,3 +128,31 @@ body { font-family: system-ui, sans-serif; }
 /* ---- Assignments textbook button ---- */
 .asg-tb-btn { margin-left: 10px; background: #202024; color: #cfcfd3; border: 1px solid #34343a; border-radius: 999px; padding: 4px 11px; font-size: 12px; cursor: pointer; }
 .asg-tb-btn:hover { color: #e7e7e8; }
+
+/* ---- Pipeline view ---- */
+#pipelineView { position: fixed; inset: 0; background: var(--bg, #1b1b1f); z-index: 20;
+  display: flex; flex-direction: column; }
+#pipelineBar { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border-bottom: 1px solid #333; }
+#pipelineBar .spacer { flex: 1; }
+#pipelineBody { flex: 1; display: flex; min-height: 0; }
+#ideaListPane { width: 340px; border-right: 1px solid #333; overflow-y: auto; }
+#ideaDetail { flex: 1; padding: 16px; overflow-y: auto; }
+.idea-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  cursor: pointer; border-bottom: 1px solid #2a2a2e; }
+.idea-row.selected, .idea-row:hover { background: #26262b; }
+.idea-title { flex: 1; }
+.idea-pathway { font-size: 11px; opacity: 0.6; }
+.fin-flag { color: #e0b341; font-weight: bold; }
+.status-chip { font-size: 11px; padding: 1px 6px; border-radius: 10px; background: #333; }
+.status-go { background: #2e6b34; } .status-killed { background: #7a2b2b; }
+.status-parked { background: #5a4a1f; } .status-validating { background: #2b5a7a; }
+.badge { background: #c0392b; color: #fff; border-radius: 10px; padding: 0 6px;
+  font-size: 11px; margin-left: 4px; }
+#reviewsDuePanel { padding: 8px 12px; background: #3a2f1a; border-bottom: 1px solid #5a4a1f; }
+.rd-title { font-weight: bold; margin-bottom: 4px; }
+.rd-row { font-size: 13px; padding: 2px 0; }
+.kc-table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+.kc-table th, .kc-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #2a2a2e; }
+.detail-row { margin: 6px 0; } .detail-row label { opacity: 0.6; margin-right: 8px; }
+.pl-empty, .pl-error { opacity: 0.6; padding: 12px; }

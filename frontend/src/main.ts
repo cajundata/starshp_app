@@ -2,6 +2,7 @@ import './style.css'
 import * as App from '../wailsjs/go/appapi/API'
 import { store } from '../wailsjs/go/models'
 import { EventsOn } from '../wailsjs/runtime/runtime'
+import { initPipeline, refreshReviewsDue } from './pipeline'
 
 let activeConv: string | null = null
 let streaming = false
@@ -1278,6 +1279,9 @@ $('asgSolveBtn').onclick = () => void solveFolder()
 asgStopBtn.onclick = () => {
   if (currentAssignmentId) void App.CancelAssignment(currentAssignmentId)
 }
+
+initPipeline()
+void refreshReviewsDue() // launch sweep: badge appears if anything is due
 
 $('newChat').onclick = newChat
 sendBtn.onclick = () => { if (streaming) { App.CancelMessage() } else { void send() } }
