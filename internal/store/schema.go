@@ -104,4 +104,89 @@ CREATE TABLE IF NOT EXISTS assignment_items (
 CREATE INDEX IF NOT EXISTS assignment_items_assignment
   ON assignment_items(assignment_id, seq);
 CREATE INDEX IF NOT EXISTS assignment_items_run ON assignment_items(run_id);
+CREATE TABLE IF NOT EXISTS ideas (
+  id              TEXT PRIMARY KEY,
+  title           TEXT NOT NULL,
+  summary         TEXT NOT NULL DEFAULT '',
+  pathway         TEXT,
+  status          TEXT NOT NULL CHECK (status IN (
+                      'raw','triaged','in_review','validating',
+                      'go','parked','killed')),
+  kill_reason     TEXT,
+  financial_flag  INTEGER NOT NULL DEFAULT 0,
+  source          TEXT NOT NULL DEFAULT 'manual' CHECK (source IN (
+                      'manual','scout','import')),
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS idea_status_history (
+  id          TEXT PRIMARY KEY,
+  idea_id     TEXT NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
+  from_status TEXT,
+  to_status   TEXT NOT NULL,
+  reason      TEXT NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS idea_reviews (
+  id              TEXT PRIMARY KEY,
+  idea_id         TEXT NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
+  conversation_id TEXT,
+  pathway         TEXT NOT NULL,
+  model           TEXT NOT NULL DEFAULT '',
+  status          TEXT NOT NULL CHECK (status IN (
+                      'in_progress','completed','parked','cancelled','errored')),
+  bluf_verdict    TEXT,
+  bluf_json       TEXT,
+  document_md     TEXT,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS idea_review_roles (
+  id            TEXT PRIMARY KEY,
+  review_id     TEXT NOT NULL REFERENCES idea_reviews(id) ON DELETE CASCADE,
+  seq           INTEGER NOT NULL,
+  role_key      TEXT NOT NULL,
+  role_name     TEXT NOT NULL,
+  status        TEXT NOT NULL CHECK (status IN (
+                    'pending','running','done','errored','cancelled')),
+  verdict       TEXT,
+  findings_json TEXT,
+  run_id        TEXT,
+  error         TEXT,
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS kill_criteria (
+  id          TEXT PRIMARY KEY,
+  idea_id     TEXT NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
+  review_id   TEXT REFERENCES idea_reviews(id) ON DELETE SET NULL,
+  metric      TEXT NOT NULL,
+  threshold   TEXT NOT NULL,
+  review_date INTEGER NOT NULL,
+  on_miss     TEXT NOT NULL CHECK (on_miss IN ('kill','park','halt')),
+  status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
+                  'pending','met','missed','resolved')),
+  notes       TEXT NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS send_backs (
+  id          TEXT PRIMARY KEY,
+  review_id   TEXT NOT NULL REFERENCES idea_reviews(id) ON DELETE CASCADE,
+  from_role   TEXT NOT NULL,
+  question    TEXT NOT NULL,
+  answer      TEXT,
+  effect      TEXT NOT NULL DEFAULT '',
+  status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','answered')),
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idea_status_history_idea
+  ON idea_status_history(idea_id, created_at);
+CREATE INDEX IF NOT EXISTS idea_reviews_idea ON idea_reviews(idea_id);
+CREATE INDEX IF NOT EXISTS idea_review_roles_review
+  ON idea_review_roles(review_id, seq);
+CREATE INDEX IF NOT EXISTS kill_criteria_idea ON kill_criteria(idea_id);
+CREATE INDEX IF NOT EXISTS kill_criteria_due
+  ON kill_criteria(review_date) WHERE status = 'pending';
 `
