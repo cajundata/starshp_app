@@ -86,9 +86,10 @@ func (a *API) ListKillCriteria(ideaID string) ([]store.KillCriterion, error) {
 // ListReviewsDue runs the on-launch sweep: pending kill criteria due at or
 // before now, shaped with days-overdue for the Reviews Due panel.
 func (a *API) ListReviewsDue() ([]pipeline.DueReviewView, error) {
-	rows, err := a.st.ListDueKillCriteria(time.Now().UnixMilli())
+	now := time.Now().UnixMilli()
+	rows, err := a.st.ListDueKillCriteria(now)
 	if err != nil {
 		return nil, err
 	}
-	return pipeline.ShapeDueReviews(rows, time.Now().UnixMilli()), nil
+	return pipeline.ShapeDueReviews(rows, now), nil
 }
