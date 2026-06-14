@@ -58,3 +58,38 @@ func TestIdeaCRUD(t *testing.T) {
 		t.Fatal("expected error getting deleted idea")
 	}
 }
+
+func TestSetIdeaStatusWritesHistoryAtomically(t *testing.T) {
+	st := openTestStore(t)
+	_ = st.CreateIdea(Idea{ID: "id1", Title: "t", Status: "raw", Source: "manual"})
+
+	if err := st.SetIdeaStatus("id1", "triaged", "looks worth a look"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := st.GetIdea("id1")
+	if got.Status != "triaged" {
+		t.Fatalf("status want triaged, got %q", got.Status)
+	}
+
+	if err := st.SetIdeaStatus("id1", "killed", "no channel"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = st.GetIdea("id1")
+	if got.Status != "killed" || got.KillReason != "no channel" {
+		t.Fatalf("kill not recorded: %+v", got)
+	}
+
+	hist, err := st.ListStatusHistory("id1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hist) != 2 {
+		t.Fatalf("want 2 history rows, got %d", len(hist))
+	}
+	if hist[0].FromStatus != "raw" || hist[0].ToStatus != "triaged" {
+		t.Fatalf("row0 wrong: %+v", hist[0])
+	}
+	if hist[1].ToStatus != "killed" || hist[1].Reason != "no channel" {
+		t.Fatalf("row1 wrong: %+v", hist[1])
+	}
+}
