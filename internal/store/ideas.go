@@ -197,3 +197,76 @@ func (s *Store) ListStatusHistory(ideaID string) ([]StatusChange, error) {
 	}
 	return out, rows.Err()
 }
+
+func (s *Store) AddKillCriterion(k KillCriterion) error {
+	now := time.Now().UnixMilli()
+	_, err := s.db.Exec(
+		`INSERT INTO kill_criteria
+		    (id, idea_id, review_id, metric, threshold, review_date,
+		     on_miss, status, notes, created_at, updated_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		k.ID, k.IdeaID, nullIfEmpty(k.ReviewID), k.Metric, k.Threshold, k.ReviewDate,
+		k.OnMiss, defaultStr(k.Status, "pending"), k.Notes, now, now)
+	return err
+}
+
+func (s *Store) UpdateKillCriterion(k KillCriterion) error {
+	_, err := s.db.Exec(
+		`UPDATE kill_criteria
+		    SET metric=?, threshold=?, review_date=?, on_miss=?, status=?, notes=?, updated_at=?
+		  WHERE id=?`,
+		k.Metric, k.Threshold, k.ReviewDate, k.OnMiss, k.Status, k.Notes,
+		time.Now().UnixMilli(), k.ID)
+	return err
+}
+
+func (s *Store) DeleteKillCriterion(id string) error {
+	_, err := s.db.Exec(`DELETE FROM kill_criteria WHERE id=?`, id)
+	return err
+}
+
+func (s *Store) ListKillCriteria(ideaID string) ([]KillCriterion, error) {
+	rows, err := s.db.Query(
+		`SELECT id, idea_id, COALESCE(review_id,''), metric, threshold, review_date,
+		        on_miss, status, notes, created_at, updated_at
+		   FROM kill_criteria WHERE idea_id=? ORDER BY review_date ASC`, ideaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []KillCriterion
+	for rows.Next() {
+		var k KillCriterion
+		if err := rows.Scan(&k.ID, &k.IdeaID, &k.ReviewID, &k.Metric, &k.Threshold,
+			&k.ReviewDate, &k.OnMiss, &k.Status, &k.Notes, &k.CreatedAt, &k.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}
+
+// ListDueKillCriteria returns pending kill criteria whose review_date is at or
+// before asOf, joined to the parent idea, oldest review date first.
+func (s *Store) ListDueKillCriteria(asOf int64) ([]DueReview, error) {
+	rows, err := s.db.Query(
+		`SELECT k.id, k.idea_id, i.title, i.status, k.metric, k.threshold,
+		        k.review_date, k.on_miss
+		   FROM kill_criteria k JOIN ideas i ON i.id = k.idea_id
+		  WHERE k.status='pending' AND k.review_date <= ?
+		  ORDER BY k.review_date ASC`, asOf)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DueReview
+	for rows.Next() {
+		var d DueReview
+		if err := rows.Scan(&d.CriterionID, &d.IdeaID, &d.IdeaTitle, &d.IdeaStatus,
+			&d.Metric, &d.Threshold, &d.ReviewDate, &d.OnMiss); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}

@@ -95,3 +95,42 @@ func TestSetIdeaStatusWritesHistoryAtomically(t *testing.T) {
 		t.Fatalf("row1 wrong: %+v", hist[1])
 	}
 }
+
+func TestKillCriteriaAndDueReviews(t *testing.T) {
+	st := openTestStore(t)
+	_ = st.CreateIdea(Idea{ID: "id1", Title: "Home automation", Status: "validating", Source: "import"})
+
+	overdue := KillCriterion{
+		ID: "k1", IdeaID: "id1", Metric: "Paid installs", Threshold: ">=2 in 30d",
+		ReviewDate: 1000, OnMiss: "kill", Status: "pending",
+	}
+	future := KillCriterion{
+		ID: "k2", IdeaID: "id1", Metric: "Churn", Threshold: "<10%/mo",
+		ReviewDate: 9_000_000_000_000, OnMiss: "park", Status: "pending",
+	}
+	resolved := KillCriterion{
+		ID: "k3", IdeaID: "id1", Metric: "Capital", Threshold: "<=1500",
+		ReviewDate: 500, OnMiss: "halt", Status: "resolved",
+	}
+	for _, k := range []KillCriterion{overdue, future, resolved} {
+		if err := st.AddKillCriterion(k); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	all, err := st.ListKillCriteria("id1")
+	if err != nil || len(all) != 3 {
+		t.Fatalf("list want 3, got %d err=%v", len(all), err)
+	}
+
+	due, err := st.ListDueKillCriteria(2000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 1 || due[0].CriterionID != "k1" {
+		t.Fatalf("due want [k1], got %+v", due)
+	}
+	if due[0].IdeaTitle != "Home automation" || due[0].OnMiss != "kill" {
+		t.Fatalf("due row not joined to idea: %+v", due[0])
+	}
+}
