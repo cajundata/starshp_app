@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS assignment_items (
 CREATE INDEX IF NOT EXISTS assignment_items_assignment
   ON assignment_items(assignment_id, seq);
 CREATE INDEX IF NOT EXISTS assignment_items_run ON assignment_items(run_id);
+
 CREATE TABLE IF NOT EXISTS ideas (
   id              TEXT PRIMARY KEY,
   title           TEXT NOT NULL,
