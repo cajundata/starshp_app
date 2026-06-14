@@ -3,6 +3,8 @@ package pipeline
 import (
 	"errors"
 	"testing"
+
+	import_store "github.com/cajundata/starshp_app/internal/store"
 )
 
 func TestValidateTransition(t *testing.T) {
@@ -38,5 +40,23 @@ func TestValidateTransition(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestShapeDueReviews(t *testing.T) {
+	const day = int64(86_400_000)
+	rows := []import_store.DueReview{
+		{CriterionID: "k1", IdeaTitle: "A", Metric: "m", ReviewDate: 0},
+		{CriterionID: "k2", IdeaTitle: "B", Metric: "n", ReviewDate: 5 * day},
+	}
+	out := ShapeDueReviews(rows, 5*day) // asOf = 5 days
+	if len(out) != 2 {
+		t.Fatalf("want 2, got %d", len(out))
+	}
+	if out[0].DaysOverdue != 5 {
+		t.Fatalf("k1 overdue want 5, got %d", out[0].DaysOverdue)
+	}
+	if out[1].DaysOverdue != 0 {
+		t.Fatalf("k2 due-today overdue want 0, got %d", out[1].DaysOverdue)
 	}
 }
