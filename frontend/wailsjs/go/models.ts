@@ -56,6 +56,39 @@ export namespace library {
 
 }
 
+export namespace pipeline {
+	
+	export class DueReviewView {
+	    CriterionID: string;
+	    IdeaID: string;
+	    IdeaTitle: string;
+	    IdeaStatus: string;
+	    Metric: string;
+	    Threshold: string;
+	    ReviewDate: number;
+	    OnMiss: string;
+	    DaysOverdue: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new DueReviewView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.CriterionID = source["CriterionID"];
+	        this.IdeaID = source["IdeaID"];
+	        this.IdeaTitle = source["IdeaTitle"];
+	        this.IdeaStatus = source["IdeaStatus"];
+	        this.Metric = source["Metric"];
+	        this.Threshold = source["Threshold"];
+	        this.ReviewDate = source["ReviewDate"];
+	        this.OnMiss = source["OnMiss"];
+	        this.DaysOverdue = source["DaysOverdue"];
+	    }
+	}
+
+}
+
 export namespace provider {
 	
 	export class ModelInfo {
@@ -177,6 +210,68 @@ export namespace store {
 	        this.pinnedModel = source["pinnedModel"];
 	    }
 	}
+	export class Idea {
+	    ID: string;
+	    Title: string;
+	    Summary: string;
+	    Pathway: string;
+	    Status: string;
+	    KillReason: string;
+	    FinancialFlag: boolean;
+	    Source: string;
+	    CreatedAt: number;
+	    UpdatedAt: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Idea(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ID = source["ID"];
+	        this.Title = source["Title"];
+	        this.Summary = source["Summary"];
+	        this.Pathway = source["Pathway"];
+	        this.Status = source["Status"];
+	        this.KillReason = source["KillReason"];
+	        this.FinancialFlag = source["FinancialFlag"];
+	        this.Source = source["Source"];
+	        this.CreatedAt = source["CreatedAt"];
+	        this.UpdatedAt = source["UpdatedAt"];
+	    }
+	}
+	export class KillCriterion {
+	    ID: string;
+	    IdeaID: string;
+	    ReviewID: string;
+	    Metric: string;
+	    Threshold: string;
+	    ReviewDate: number;
+	    OnMiss: string;
+	    Status: string;
+	    Notes: string;
+	    CreatedAt: number;
+	    UpdatedAt: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new KillCriterion(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ID = source["ID"];
+	        this.IdeaID = source["IdeaID"];
+	        this.ReviewID = source["ReviewID"];
+	        this.Metric = source["Metric"];
+	        this.Threshold = source["Threshold"];
+	        this.ReviewDate = source["ReviewDate"];
+	        this.OnMiss = source["OnMiss"];
+	        this.Status = source["Status"];
+	        this.Notes = source["Notes"];
+	        this.CreatedAt = source["CreatedAt"];
+	        this.UpdatedAt = source["UpdatedAt"];
+	    }
+	}
 	export class Message {
 	    id: string;
 	    conversationId: string;
@@ -207,6 +302,28 @@ export namespace store {
 	        this.inputTokens = source["inputTokens"];
 	        this.outputTokens = source["outputTokens"];
 	        this.cachedInputTokens = source["cachedInputTokens"];
+	    }
+	}
+	export class StatusChange {
+	    ID: string;
+	    IdeaID: string;
+	    FromStatus: string;
+	    ToStatus: string;
+	    Reason: string;
+	    CreatedAt: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new StatusChange(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ID = source["ID"];
+	        this.IdeaID = source["IdeaID"];
+	        this.FromStatus = source["FromStatus"];
+	        this.ToStatus = source["ToStatus"];
+	        this.Reason = source["Reason"];
+	        this.CreatedAt = source["CreatedAt"];
 	    }
 	}
 	export class TextbookScope {
