@@ -181,7 +181,7 @@ func (s *Store) SetIdeaStatus(id, toStatus, reason string) error {
 func (s *Store) ListStatusHistory(ideaID string) ([]StatusChange, error) {
 	rows, err := s.db.Query(
 		`SELECT id, idea_id, COALESCE(from_status,''), to_status, reason, created_at
-		   FROM idea_status_history WHERE idea_id=? ORDER BY created_at ASC`, ideaID)
+		   FROM idea_status_history WHERE idea_id=? ORDER BY created_at ASC, rowid ASC`, ideaID)
 	if err != nil {
 		return nil, err
 	}

@@ -61,7 +61,9 @@ func TestIdeaCRUD(t *testing.T) {
 
 func TestSetIdeaStatusWritesHistoryAtomically(t *testing.T) {
 	st := openTestStore(t)
-	_ = st.CreateIdea(Idea{ID: "id1", Title: "t", Status: "raw", Source: "manual"})
+	if err := st.CreateIdea(Idea{ID: "id1", Title: "t", Status: "raw", Source: "manual"}); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := st.SetIdeaStatus("id1", "triaged", "looks worth a look"); err != nil {
 		t.Fatal(err)
