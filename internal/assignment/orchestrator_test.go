@@ -450,6 +450,38 @@ func TestSolveItem_AppliesLibraryPreamble(t *testing.T) {
 	}
 }
 
+// A user Stop cancels the in-flight run: the agentic Send returns nil and the
+// run is marked cancelled (not errored), with no submit_answer recorded. The
+// item must surface as "cancelled", not a misleading "no_answer".
+func TestSolveItem_CancelledMidSolveMarksItemCancelled(t *testing.T) {
+	st := openStore(t)
+	dir := tmpAssignmentDir(t)
+	pf := func(string) (provider.ChatProvider, string, error) {
+		return &fakeprovider.Scripted{Iterations: [][]provider.Delta{
+			{{Text: "thinking"}, {Err: context.Canceled, Done: true}},
+		}}, "openai", nil
+	}
+	orc := newTestOrchestrator(t, st, pf)
+
+	asgID, err := orc.Run(context.Background(), dir, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, _ := st.ListAssignmentItems(asgID)
+	found := false
+	for _, it := range items {
+		if it.SourcePath == "001.html" {
+			found = true
+			if it.Status != "cancelled" {
+				t.Fatalf("cancelled mid-solve should mark item cancelled, got %q", it.Status)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("001.html item not created")
+	}
+}
+
 // A provider stream error marks the run errored but the agentic Send returns
 // nil (errors flow via the run record/event). The item must surface as
 // "errored" with the message, not a silent "no_answer".

@@ -1054,13 +1054,16 @@ function flagCountFromJSON(s: string): number {
 // Mirrors the chat thread's bubble/tool-block structure (same CSS) but targets
 // the assignment detail container instead of the global thread.
 
-function bytesToText(b: any): string {
-  if (b == null) return ''
-  if (typeof b === 'string') return b
-  if (Array.isArray(b)) {
-    try { return new TextDecoder().decode(Uint8Array.from(b)) } catch { return '' }
+// toolInput crosses the wails bridge as a parsed JSON value (Go json.RawMessage
+// marshals as raw JSON), so it's normally an object — not a string or byte array.
+// Older rows / other shapes may still be a string or byte array; handle all three.
+function toolInputText(v: any): string {
+  if (v == null) return ''
+  if (typeof v === 'string') return v
+  if (v instanceof Uint8Array) {
+    try { return new TextDecoder().decode(v) } catch { return '' }
   }
-  return ''
+  try { return JSON.stringify(v, null, 2) } catch { return '' }
 }
 
 async function openItemDetail(conversationId: string, seq: number) {
@@ -1123,9 +1126,9 @@ async function openItemDetail(conversationId: string, seq: number) {
       nm.textContent = ev.toolName || ''
       const arg = document.createElement('span')
       arg.className = 'tool-arg'
-      arg.textContent = argPreview(bytesToText(ev.toolInput))
+      arg.textContent = argPreview(ev.toolInput)
       div.append(icon, nm, arg)
-      const full = bytesToText(ev.toolInput)
+      const full = toolInputText(ev.toolInput)
       if (full) {
         const detail = document.createElement('div')
         detail.className = 'tool-summary'

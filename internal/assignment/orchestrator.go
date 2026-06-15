@@ -380,13 +380,19 @@ func (o *Orchestrator) solveItem(ctx context.Context, dir, asgID, itemID string,
 		return
 	}
 	if len(raw) == 0 {
-		// A provider error marks the run errored but the agentic Send returns nil
-		// (errors flow via the run record/event), so distinguish a provider failure
-		// from a genuine no-answer.
-		if run, rerr := o.st.GetRun(res.RunID); rerr == nil && run.Status == "errored" {
+		// A provider error or a user Stop both leave the agentic Send returning nil
+		// (those outcomes flow via the run record, not sendErr), so consult the run
+		// to tell three cases apart: a provider failure -> errored; a cancellation
+		// -> cancelled (re-runnable on resume); otherwise the model genuinely never
+		// submitted -> no_answer.
+		run, rerr := o.st.GetRun(res.RunID)
+		switch {
+		case rerr == nil && run.Status == "errored":
 			item.Status = "errored"
 			item.Error = runErrorText(run)
-		} else {
+		case ctx.Err() != nil || (rerr == nil && run.Status == "cancelled"):
+			item.Status = "cancelled"
+		default:
 			item.Status = "no_answer"
 		}
 		_ = o.st.UpdateAssignmentItem(item)
