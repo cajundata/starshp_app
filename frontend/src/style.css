@@ -130,29 +130,50 @@ body { font-family: system-ui, sans-serif; }
 .asg-tb-btn:hover { color: #e7e7e8; }
 
 /* ---- Pipeline view ---- */
-#pipelineView { position: fixed; inset: 0; background: var(--bg, #1b1b1f); z-index: 20;
-  display: flex; flex-direction: column; }
-#pipelineBar { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
-  border-bottom: 1px solid #333; }
+/* Sidebar button matches #asgBtn / #newChat exactly. */
+#pipelineBtn { background: #2b2b30; border: 0; color: #fff; border-radius: 7px;
+  padding: 9px; font-weight: 600; cursor: pointer; display: flex; align-items: center;
+  justify-content: center; gap: 6px; }
+/* Full-screen overlay mirrors #asgView; color is set here because the view is
+   fixed-positioned outside #app (which carries the app's default text color). */
+#pipelineView { position: fixed; inset: 0; z-index: 10; background: #0f0f10;
+  color: #e7e7e8; display: flex; flex-direction: column; }
+#pipelineBar { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border-bottom: 1px solid #26262a; background: #141416; }
 #pipelineBar .spacer { flex: 1; }
+#pipelineBarTitle { color: #e7e7e8; font-weight: 600; }
+#pipelineBack, #pipelineNewBtn { background: #202024; color: #cfcfd3;
+  border: 1px solid #34343a; border-radius: 7px; padding: 6px 11px; font-size: 12px;
+  cursor: pointer; }
 #pipelineBody { flex: 1; display: flex; min-height: 0; }
-#ideaListPane { width: 340px; border-right: 1px solid #333; overflow-y: auto; }
-#ideaDetail { flex: 1; padding: 16px; overflow-y: auto; }
-.idea-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
-  cursor: pointer; border-bottom: 1px solid #2a2a2e; }
-.idea-row.selected, .idea-row:hover { background: #26262b; }
+#ideaListPane { width: 46%; min-width: 360px; border-right: 1px solid #26262a; overflow-y: auto; }
+#ideaDetail { flex: 1; padding: 20px; overflow-y: auto; }
+#ideaDetail h2, #ideaDetail h3 { color: #e7e7e8; }
+.idea-summary { color: #a9a9ad; margin: 4px 0 12px; }
+.idea-row { display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+  cursor: pointer; border-bottom: 1px solid #26262a; }
+.idea-row.selected, .idea-row:hover { background: #202024; }
 .idea-title { flex: 1; }
-.idea-pathway { font-size: 11px; opacity: 0.6; }
+.idea-pathway { font-size: 11px; color: #6f6f76; }
 .fin-flag { color: #e0b341; font-weight: bold; }
-.status-chip { font-size: 11px; padding: 1px 6px; border-radius: 10px; background: #333; }
+.status-chip { font-size: 11px; padding: 1px 7px; border-radius: 10px;
+  background: #34343a; color: #e7e7e8; }
 .status-go { background: #2e6b34; } .status-killed { background: #7a2b2b; }
 .status-parked { background: #5a4a1f; } .status-validating { background: #2b5a7a; }
 .badge { background: #c0392b; color: #fff; border-radius: 10px; padding: 0 6px;
-  font-size: 11px; margin-left: 4px; }
-#reviewsDuePanel { padding: 8px 12px; background: #3a2f1a; border-bottom: 1px solid #5a4a1f; }
-.rd-title { font-weight: bold; margin-bottom: 4px; }
+  font-size: 11px; }
+#reviewsDuePanel { padding: 10px 14px; background: #3a2f1a; color: #f0e6d2;
+  border-bottom: 1px solid #5a4a1f; }
+.rd-title { font-weight: 600; margin-bottom: 4px; }
 .rd-row { font-size: 13px; padding: 2px 0; }
 .kc-table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
-.kc-table th, .kc-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #2a2a2e; }
-.detail-row { margin: 6px 0; } .detail-row label { opacity: 0.6; margin-right: 8px; }
-.pl-empty, .pl-error { opacity: 0.6; padding: 12px; }
+.kc-table th, .kc-table td { text-align: left; padding: 5px 6px; border-bottom: 1px solid #26262a; }
+.kc-table th { color: #9a9aa0; font-weight: 600; }
+.kc-del { background: transparent; border: 0; color: #c77; cursor: pointer; }
+#statusSel, #pipelineView select { background: #202024; color: #e7e7e8;
+  border: 1px solid #34343a; border-radius: 6px; padding: 4px 6px; }
+#addKcBtn { background: #202024; color: #cfcfd3; border: 1px solid #34343a;
+  border-radius: 7px; padding: 6px 11px; font-size: 12px; cursor: pointer; margin-top: 4px; }
+.detail-row { margin: 6px 0; display: flex; align-items: center; gap: 8px; }
+.detail-row label { color: #6f6f76; margin-right: 4px; }
+.pl-empty, .pl-error { color: #6f6f76; padding: 12px; }
