@@ -247,13 +247,16 @@ func (s *Store) ListKillCriteria(ideaID string) ([]KillCriterion, error) {
 }
 
 // ListDueKillCriteria returns pending kill criteria whose review_date is at or
-// before asOf, joined to the parent idea, oldest review date first.
+// before asOf, joined to the parent idea, oldest review date first. Criteria on
+// killed ideas are excluded — a killed idea is permanent, so its reviews should
+// not resurface. Parked ideas are intentionally included: their reviews are the
+// reminder to revisit them.
 func (s *Store) ListDueKillCriteria(asOf int64) ([]DueReview, error) {
 	rows, err := s.db.Query(
 		`SELECT k.id, k.idea_id, i.title, i.status, k.metric, k.threshold,
 		        k.review_date, k.on_miss
 		   FROM kill_criteria k JOIN ideas i ON i.id = k.idea_id
-		  WHERE k.status='pending' AND k.review_date <= ?
+		  WHERE k.status='pending' AND k.review_date <= ? AND i.status != 'killed'
 		  ORDER BY k.review_date ASC`, asOf)
 	if err != nil {
 		return nil, err

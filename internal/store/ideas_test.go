@@ -134,3 +134,37 @@ func TestKillCriteriaAndDueReviews(t *testing.T) {
 		t.Fatalf("due row not joined to idea: %+v", due[0])
 	}
 }
+
+func TestListDueKillCriteria_SkipsKilledIdeas(t *testing.T) {
+	st := openTestStore(t)
+	_ = st.CreateIdea(Idea{ID: "live", Title: "Live", Status: "validating", Source: "manual"})
+	_ = st.CreateIdea(Idea{ID: "dead", Title: "Dead", Status: "killed", Source: "manual"})
+	_ = st.CreateIdea(Idea{ID: "rest", Title: "Rested", Status: "parked", Source: "manual"})
+
+	// One overdue, pending criterion on each idea.
+	for _, id := range []string{"live", "dead", "rest"} {
+		if err := st.AddKillCriterion(KillCriterion{
+			ID: "k-" + id, IdeaID: id, Metric: "m", Threshold: "t",
+			ReviewDate: 1000, OnMiss: "kill", Status: "pending",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	due, err := st.ListDueKillCriteria(2000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, d := range due {
+		got[d.IdeaID] = true
+	}
+	// Killed ideas are permanent, so their reviews must not resurface. Parked
+	// ideas are revisited later, so their reviews should still surface.
+	if got["dead"] {
+		t.Fatalf("killed idea's criterion must not surface: %+v", due)
+	}
+	if !got["live"] || !got["rest"] {
+		t.Fatalf("live and parked ideas must surface: %+v", due)
+	}
+}
