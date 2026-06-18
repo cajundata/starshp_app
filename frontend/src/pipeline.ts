@@ -87,6 +87,7 @@ async function renderDetail(id: string) {
         <td><button class="kc-del" data-id="${k.ID}">✕</button></td></tr>`).join('')}
     </tbody></table>
     <button id="addKcBtn">+ Add kill criterion</button>
+    <div class="detail-danger"><button id="deleteIdeaBtn">Delete idea</button></div>
   `
 
   ;($('statusSel') as HTMLSelectElement).onchange = (e) => {
@@ -94,12 +95,28 @@ async function renderDetail(id: string) {
     if (to) void moveStatus(idea.ID, to)
   }
   $('addKcBtn').onclick = () => void addCriterion(idea.ID)
+  $('deleteIdeaBtn').onclick = () => void deleteIdea(idea.ID)
   detail.querySelectorAll('.kc-del').forEach(btn => {
     ;(btn as HTMLElement).onclick = async () => {
       await App.DeleteKillCriterion((btn as HTMLElement).dataset.id!)
       void renderDetail(idea.ID)
     }
   })
+}
+
+async function deleteIdea(id: string) {
+  const idea = ideas.find(i => i.ID === id)
+  if (!confirm(`Delete "${idea?.Title ?? 'this idea'}" and its kill criteria? This cannot be undone.`)) return
+  try {
+    await App.DeleteIdea(id)
+  } catch (e: any) {
+    alert(e?.userMessage || `Could not delete idea: ${e}`)
+    return
+  }
+  if (selectedId === id) selectedId = null
+  $('ideaDetail').innerHTML = ''
+  await loadIdeas()
+  void refreshReviewsDue() // a deleted idea's criteria leave the sweep
 }
 
 async function moveStatus(id: string, to: string) {
