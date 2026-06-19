@@ -62,12 +62,12 @@ For each step, observe the assistant bubble in addition to the listed expectatio
         solving → answered/no_answer/errored as the batch runs.
         NOTE: point the picker at the `_json` dir itself (contains manifest.json),
         not its parent. BUG FIXED: `#tbModal`/`#libModal` lacked a z-index, so the
-        textbook/library pickers opened *behind* the `z-index:10` Assignments view
+        textbook/library pickers opened _behind_ the `z-index:10` Assignments view
         and the solve flow appeared dead (style.css: added `z-index: 20`).
 35. [x] **Review an item.** Click an answered item → its run opens with the
         worked reasoning, tool calls (safe_math / search_textbook), and the
         submit_answer payload (MC choice or worksheet cell map).
-        BUG FIXED: the detail pane never showed tool-call *input* (only results)
+        BUG FIXED: the detail pane never showed tool-call _input_ (only results)
         because `bytesToText()` returned '' for `toolInput`, which crosses the wails
         bridge as a parsed JSON object (json.RawMessage), not a string/byte array.
         Replaced with `toolInputText()` + `argPreview(ev.toolInput)` (main.ts).
@@ -106,10 +106,41 @@ For each step, observe the assistant bubble in addition to the listed expectatio
 ## Local models (Ollama)
 
 42. [x] **Local model end-to-end.** With Ollama installed and `ollama pull
-    llama3.2` complete, register the Llama 3.2 entry from
-    `models.example.yaml` in your `models.yaml`, restart Starshp, pick
-    "Llama 3.2 (local)" in a new conversation, send a short prompt.
-    Confirm streaming, the Stop button, the context-footer HUD
-    (input/output tokens populate, cached shows 0), and that stopping
-    Ollama mid-session yields the `local_unreachable` error with the
-    base URL interpolated into the message.
+llama3.2` complete, register the Llama 3.2 entry from
+        `models.example.yaml` in your `models.yaml`, restart Starshp, pick
+        "Llama 3.2 (local)" in a new conversation, send a short prompt.
+        Confirm streaming, the Stop button, the context-footer HUD
+        (input/output tokens populate, cached shows 0), and that stopping
+        Ollama mid-session yields the `local_unreachable` error with the
+        base URL interpolated into the message.
+
+## Business pipeline
+
+43. [x] **Pipeline view opens.** The sidebar shows a "🎯 Pipeline" button;
+        clicking it opens the full-screen Pipeline view. "← Chat" returns to
+        the chat view. The view matches the app dark theme.
+44. [x] **Create an idea.** "+ New idea" prompts for title/summary/pathway/
+        financial flag; the new idea appears in the list at status `raw`.
+        Selecting it opens the detail pane. A blank title is rejected with a
+        clear message.
+45. [x] **Status transitions.** The detail "Move to…" dropdown changes status.
+        A legal move (e.g. `raw → triaged`) succeeds; an illegal move (e.g.
+        `raw → go`) is rejected with the `invalid_transition` user message.
+        Moving to `killed` or `parked` prompts for a reason and rejects an
+        empty one (`reason_required`).
+46. [x] **Kill criteria.** "+ Add kill criterion" adds a row (metric,
+        threshold, review date, on-miss); the ✕ control deletes it. The row
+        persists across a reopen of the detail pane.
+47. [x] **Reviews Due launch sweep.** Add a kill criterion with a review date
+        in the past (e.g. yesterday). Stop and restart `wails dev`. On launch
+        the "🎯 Pipeline" button shows a red badge with count ≥ 1, and the
+        Pipeline view shows the Reviews Due panel listing that criterion with
+        "Nd overdue".
+48. [x] **Future-dated criterion excluded.** Add a second criterion dated in
+        the future. Restart. The badge count does not include it.
+49. [x] **Killed ideas excluded from the sweep.** Move an idea with a
+        past-due pending criterion to `killed`. Restart. The badge no longer
+        counts that criterion (killed ideas drop out of the reviews-due sweep).
+50. [x] **Delete an idea.** The detail pane's delete control removes the idea
+        (and cascades its status history and kill criteria); it disappears
+        from the list with no orphan rows or crash.
