@@ -1,13 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8" /><title>Starshp</title>  <script type="module" crossorigin src="/assets/index.a6b7624e.js"></script>
-  <link rel="stylesheet" href="/assets/index.03dbb22b.css">
+<head><meta charset="UTF-8" /><title>Starshp</title>  <script type="module" crossorigin src="/assets/index.df84a717.js"></script>
+  <link rel="stylesheet" href="/assets/index.ed93fe87.css">
 </head>
 <body>
   <div id="app">
     <aside id="sidebar">
       <button id="newChat">+ New chat</button>
       <button id="asgBtn">📂 Assignments</button>
+      <button id="pipelineBtn">🎯 Pipeline <span id="reviewsDueBadge" class="badge hidden">0</span></button>
       <div class="cap">History</div>
       <div id="convList"></div>
     </aside>
@@ -41,6 +42,19 @@
         <div id="asgItems" class="assignment-list"></div>
       </div>
       <div id="asgDetail"></div>
+    </div>
+  </div>
+  <div id="pipelineView" class="hidden">
+    <div id="pipelineBar">
+      <button id="pipelineBack">← Chat</button>
+      <span id="pipelineBarTitle">Pipeline</span>
+      <span class="spacer"></span>
+      <button id="pipelineNewBtn">+ New idea</button>
+    </div>
+    <div id="reviewsDuePanel" class="hidden"></div>
+    <div id="pipelineBody">
+      <div id="ideaListPane"><div id="ideaList"></div></div>
+      <div id="ideaDetail"></div>
     </div>
   </div>
   <div id="tbModal" class="hidden"><div id="tbModalInner"></div></div>

@@ -7,7 +7,7 @@ import { initPipeline, refreshReviewsDue } from './pipeline'
 let activeConv: string | null = null
 let streaming = false
 
-type Usage = { input: number; output: number; cached: number; modelID: string; stale: boolean }
+type Usage = { input: number; output: number; cached: number; lastInput: number; lastOutput: number; modelID: string; stale: boolean }
 const latestUsage = new Map<string, Usage>()
 let usagePendingForConv: string | null = null  // set at send-start; cleared by chat:usage; if still set after send completes, mark stale
 
@@ -28,7 +28,10 @@ function updateFooter() {
   const max = modelMaxContext(u.modelID, cachedModels)
   const prefix = u.stale ? '~' : ''
   const denom = max > 0 ? ` / ${fmt(max)}` : ''
-  el.textContent = `ctx ${prefix}${fmt(u.input)}${denom} · cache ${fmt(u.cached)}`
+  const occ = (Number.isFinite(u.lastInput) && Number.isFinite(u.lastOutput))
+    ? u.lastInput + u.lastOutput
+    : u.input
+  el.textContent = `context ${prefix}${fmt(occ)}${denom} · this turn ${fmt(u.input)}→${fmt(u.output)} · cache ${fmt(u.cached)}`
   el.classList.remove('hidden')
 }
 
@@ -425,7 +428,7 @@ EventsOn('chat:run_cancelled', (p: any) => {
   setRunStatus(p.runID, 'cancelled')
 })
 
-EventsOn('chat:usage', (p: { convID: string; input: number; output: number; cached: number; modelID: string }) => {
+EventsOn('chat:usage', (p: { convID: string; input: number; output: number; cached: number; lastInput: number; lastOutput: number; modelID: string }) => {
   latestUsage.set(p.convID, { ...p, stale: false })
   if (p.convID === activeConv) {
     usagePendingForConv = null
