@@ -198,6 +198,7 @@ func (s *Service) runLoop(ctx context.Context, p SendParams, runID, turnID, grou
 	}
 	var (
 		totalUsage     provider.Usage
+		lastCall       provider.Usage
 		totalToolCalls int
 		catalog        []provider.ToolDef
 	)
@@ -246,6 +247,7 @@ func (s *Service) runLoop(ctx context.Context, p SendParams, runID, turnID, grou
 				totalUsage.InputTokens += d.Usage.InputTokens
 				totalUsage.OutputTokens += d.Usage.OutputTokens
 				totalUsage.CachedInputTokens += d.Usage.CachedInputTokens
+				lastCall = *d.Usage
 			}
 			if d.Done && d.StopReason != "" {
 				stopReason = d.StopReason
@@ -262,7 +264,7 @@ func (s *Service) runLoop(ctx context.Context, p SendParams, runID, turnID, grou
 		}
 		if stopReason != "tool_use" {
 			return s.completeRunSuccess(p, runID, turnID, stopReason, totalUsage,
-				totalToolCalls, iter)
+				lastCall, totalToolCalls, iter)
 		}
 		// Dispatch tool calls sequentially in emitted order.
 		for _, tc := range toolCalls {
@@ -339,6 +341,7 @@ func (s *Service) finalizeWithoutTools(ctx context.Context, p SendParams, runID,
 	}
 	var (
 		text      strings.Builder
+		lastCall  provider.Usage
 		streamErr error
 	)
 	for d := range ch {
@@ -355,6 +358,7 @@ func (s *Service) finalizeWithoutTools(ctx context.Context, p SendParams, runID,
 			totalUsage.InputTokens += d.Usage.InputTokens
 			totalUsage.OutputTokens += d.Usage.OutputTokens
 			totalUsage.CachedInputTokens += d.Usage.CachedInputTokens
+			lastCall = *d.Usage
 		}
 		// Any tool call in this turn is ignored — tools were withheld.
 	}
@@ -366,11 +370,11 @@ func (s *Service) finalizeWithoutTools(ctx context.Context, p SendParams, runID,
 	if streamErr != nil {
 		return s.handleStreamErr(ctx, p, runID, turnID, streamErr), nil
 	}
-	return s.completeRunSuccess(p, runID, turnID, "max_iterations", totalUsage, totalToolCalls, maxIter+1)
+	return s.completeRunSuccess(p, runID, turnID, "max_iterations", totalUsage, lastCall, totalToolCalls, maxIter+1)
 }
 
 func (s *Service) completeRunSuccess(p SendParams, runID, turnID, stopReason string,
-	totalUsage provider.Usage, totalToolCalls, iter int) (RunResult, error) {
+	totalUsage, lastCall provider.Usage, totalToolCalls, iter int) (RunResult, error) {
 	if stopReason == "" {
 		stopReason = "end_turn"
 	}
@@ -391,9 +395,11 @@ func (s *Service) completeRunSuccess(p SendParams, runID, turnID, stopReason str
 			"totalIterations": iter})
 	emit(p.Sink, SinkUsage, p.ConversationID, runID, turnID,
 		map[string]any{"input": totalUsage.InputTokens,
-			"output":  totalUsage.OutputTokens,
-			"cached":  totalUsage.CachedInputTokens,
-			"modelID": p.Model}) // frontend footer resolves max_context by modelID
+			"output":     totalUsage.OutputTokens,
+			"cached":     totalUsage.CachedInputTokens,
+			"lastInput":  lastCall.InputTokens,
+			"lastOutput": lastCall.OutputTokens,
+			"modelID":    p.Model}) // frontend footer resolves max_context by modelID
 	return RunResult{RunID: runID, TerminalReason: stopReason,
 		TotalUsage: totalUsage, TotalToolCalls: totalToolCalls,
 		TotalIterations: iter}, nil

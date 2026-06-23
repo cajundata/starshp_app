@@ -338,3 +338,125 @@ func TestSend_StreamErr_AfterCancel_MarksCancelled(t *testing.T) {
 		t.Fatal("sink should have received run_cancelled")
 	}
 }
+
+// usagePayload returns the payload of the (last) SinkUsage event, or nil.
+func usagePayload(sink *captureSink) map[string]any {
+	var p map[string]any
+	for _, e := range sink.events {
+		if e.Kind == SinkUsage {
+			p = e.Payload
+		}
+	}
+	return p
+}
+
+func TestSend_ToolLoop_OccupancyVsCumulative(t *testing.T) {
+	st := openStore(t)
+	conv, _ := st.CreateConversation("c")
+	svc := New(st)
+	sink := &captureSink{}
+	reg := tools.NewRegistry(time.Second)
+	p1 := probe.New("p1", `{"type":"object"}`)
+	p1.Out = "r1"
+	_ = reg.Register(p1)
+
+	prov := &scriptedProvider{iterations: [][]provider.Delta{
+		{
+			{ToolCall: &provider.ToolCall{ID: "c1", Name: "p1", Input: json.RawMessage(`{}`)}},
+			{Done: true, StopReason: "tool_use",
+				Usage: &provider.Usage{InputTokens: 50000, OutputTokens: 0}},
+		},
+		{
+			{Text: "answer"},
+			{Done: true, StopReason: "end_turn",
+				Usage: &provider.Usage{InputTokens: 200000, OutputTokens: 2000}},
+		},
+	}}
+
+	_, err := svc.Send(context.Background(), SendParams{
+		ConversationID: conv.ID, UserText: "q",
+		Model: "x", Provider: prov, Registry: reg,
+		Resolver: emptyResolver{}, RetrievalMode: RetrievalAutoGroundedDefault,
+		Sink: sink,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pl := usagePayload(sink)
+	if pl == nil {
+		t.Fatal("no usage event emitted")
+	}
+	// Cumulative (summed across iterations).
+	if pl["input"] != 250000 || pl["output"] != 2000 {
+		t.Errorf("cumulative: input=%v output=%v want 250000/2000", pl["input"], pl["output"])
+	}
+	// Final call only (occupancy basis).
+	if pl["lastInput"] != 200000 || pl["lastOutput"] != 2000 {
+		t.Errorf("final call: lastInput=%v lastOutput=%v want 200000/2000", pl["lastInput"], pl["lastOutput"])
+	}
+}
+
+func TestSend_SingleCall_LastEqualsCumulative(t *testing.T) {
+	st := openStore(t)
+	conv, _ := st.CreateConversation("c")
+	svc := New(st)
+	sink := &captureSink{}
+	reg := tools.NewRegistry(time.Second)
+
+	_, err := svc.Send(context.Background(), SendParams{
+		ConversationID: conv.ID, UserText: "hi",
+		Model: "x", Provider: oneShotProvider{text: "hello"}, Registry: reg,
+		Resolver: emptyResolver{}, RetrievalMode: RetrievalAutoGroundedDefault,
+		Sink: sink,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pl := usagePayload(sink)
+	// oneShotProvider reports Usage{Input:10, Output:5}.
+	if pl["lastInput"] != 10 || pl["lastOutput"] != 5 {
+		t.Errorf("lastInput=%v lastOutput=%v want 10/5", pl["lastInput"], pl["lastOutput"])
+	}
+	if pl["lastInput"] != pl["input"] || pl["lastOutput"] != pl["output"] {
+		t.Errorf("single call: last should equal cumulative; got last=%v/%v cum=%v/%v",
+			pl["lastInput"], pl["lastOutput"], pl["input"], pl["output"])
+	}
+}
+
+func TestSend_FinalCallNoUsage_RetainsLastReported(t *testing.T) {
+	st := openStore(t)
+	conv, _ := st.CreateConversation("c")
+	svc := New(st)
+	sink := &captureSink{}
+	reg := tools.NewRegistry(time.Second)
+	p1 := probe.New("p1", `{"type":"object"}`)
+	p1.Out = "r1"
+	_ = reg.Register(p1)
+
+	prov := &scriptedProvider{iterations: [][]provider.Delta{
+		{
+			{ToolCall: &provider.ToolCall{ID: "c1", Name: "p1", Input: json.RawMessage(`{}`)}},
+			{Done: true, StopReason: "tool_use",
+				Usage: &provider.Usage{InputTokens: 50000, OutputTokens: 1000}},
+		},
+		{
+			{Text: "answer"},
+			{Done: true, StopReason: "end_turn"}, // no Usage on the terminal call
+		},
+	}}
+
+	_, err := svc.Send(context.Background(), SendParams{
+		ConversationID: conv.ID, UserText: "q",
+		Model: "x", Provider: prov, Registry: reg,
+		Resolver: emptyResolver{}, RetrievalMode: RetrievalAutoGroundedDefault,
+		Sink: sink,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pl := usagePayload(sink)
+	// Final call reported no usage; lastCall retains the last call that did.
+	if pl["lastInput"] != 50000 || pl["lastOutput"] != 1000 {
+		t.Errorf("lastInput=%v lastOutput=%v want 50000/1000 (retained)", pl["lastInput"], pl["lastOutput"])
+	}
+}
