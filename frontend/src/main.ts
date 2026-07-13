@@ -397,10 +397,17 @@ async function loadMeta() {
 async function send() {
   if (streaming || !input.value.trim()) return
   if (!activeConv) await newChat()
+  // Capture the target conversation and persona before the first await. Neither
+  // indexing nor the agentic run disables the sidebar or the persona picker, and
+  // a run can take a minute — so any later read of activeConv/personaSel.value
+  // could pick up whatever the operator clicked to next, and we would pin and
+  // send against the wrong conversation.
+  const conv = activeConv!
+  const pid = personaSel.value
   const idxStatus = addMsg('assistant', 'Preparing textbook context…')
   ragStatusEl = idxStatus
   try {
-    await App.EnsureIndexed(activeConv!)
+    await App.EnsureIndexed(conv)
     idxStatus.remove()
   } catch (e: any) {
     msgText(idxStatus).textContent = `Cannot send: textbook indexing failed — ${e?.userMessage || e}`
@@ -411,13 +418,6 @@ async function send() {
   const text = input.value.trim()
   input.value = ''
   addMsg('user', text)
-  // Capture the target conversation and persona now, before any further
-  // awaits. An agentic run can take a minute, and nothing disables the
-  // sidebar or the persona picker while it streams — a post-await read of
-  // activeConv/personaSel.value could pick up whatever the operator clicked
-  // to next, and pin/send against the wrong conversation.
-  const conv = activeConv!
-  const pid = personaSel.value
   // The assistant bubble is created by the chat:run_started event; the loop's
   // output flows in through the chat:* taxonomy below.
   streaming = true
