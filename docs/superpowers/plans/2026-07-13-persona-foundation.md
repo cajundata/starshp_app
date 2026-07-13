@@ -1221,16 +1221,9 @@ func (s *Store) CreateRun(convID, turnID, runID, providerName, model, mode, pers
 		time.Now().UnixMilli())
 	return err
 }
-
-// nullIfEmpty stores "" as SQL NULL, so "no persona" is one value in the
-// column, not two.
-func nullIfEmpty(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}
 ```
+
+`nullIfEmpty` (stores `""` as SQL NULL, so "no persona" is one value in the column rather than two) **already exists** in `internal/store/store.go:34` — Task 1 relocated it there from the deleted `assignments.go` because `ideas.go` also uses it. Do **not** redefine it; just call it.
 
 Change `GetRun`'s query and scan to include `persona_id`:
 
