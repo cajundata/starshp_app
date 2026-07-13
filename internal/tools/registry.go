@@ -165,6 +165,33 @@ func (r *Registry) Execute(
 	return out, false, latency, nil
 }
 
+// Subset returns a registry holding only the named tools. An empty list means
+// no restriction and returns the receiver unchanged.
+//
+// Names that are not registered are silently ignored rather than treated as an
+// error: search_textbook is registered only when RAG is available, and a
+// persona that names it must still run when RAG is down — with that tool
+// absent, not with the persona disabled. Typos are caught earlier, when the
+// persona registry validates tool names against the set of tools the app can
+// register.
+func (r *Registry) Subset(names []string) *Registry {
+	if len(names) == 0 {
+		return r
+	}
+	want := make(map[string]bool, len(names))
+	for _, n := range names {
+		want[n] = true
+	}
+	out := NewRegistry(r.defaultTimeout)
+	for name, t := range r.tools {
+		if want[name] {
+			out.tools[name] = t
+			out.schemas[name] = r.schemas[name]
+		}
+	}
+	return out
+}
+
 func errorMetadata(code, message string) json.RawMessage {
 	type m struct {
 		Code    string `json:"error_code"`

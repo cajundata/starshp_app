@@ -37,6 +37,9 @@ func main() {
 	if cfg.LibraryDir == "" {
 		cfg.LibraryDir = filepath.Join(appDir, "library")
 	}
+	if cfg.PersonaDir == "" {
+		cfg.PersonaDir = filepath.Join(appDir, "personas")
+	}
 	// Books live under <app-dir>/textbooks/<book>/chapter-NN.md by convention.
 	// Pre-create the parent so a fresh install has the expected shape.
 	if err := os.MkdirAll(filepath.Join(appDir, "textbooks"), 0o755); err != nil {

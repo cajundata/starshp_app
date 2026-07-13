@@ -3,6 +3,7 @@ package appapi
 import (
 	"context"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -42,9 +43,21 @@ func TestSendMessageRemapsLocalUnreachable(t *testing.T) {
 		Display: "Llama 3.2 (local)", ID: "llama3.2",
 		Provider: "openai_compat", BaseURL: baseURL,
 	}}}
+	// SendMessage's third argument is a persona ID, not a model ID (Task 6). A
+	// persona pointing at the local model must exist before NewAPI loads the
+	// registry.
+	pdir := filepath.Join(dir, "personas")
+	if err := os.MkdirAll(pdir, 0o755); err != nil {
+		t.Fatalf("mkdir personas: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pdir, "local.md"),
+		[]byte("---\nname: Local\nmodel: llama3.2\n---\nLocal assistant.\n"), 0o644); err != nil {
+		t.Fatalf("write persona: %v", err)
+	}
 	cfg := config.Config{
 		AppDBPath:    filepath.Join(dir, "app.db"),
 		LibraryDir:   filepath.Join(dir, "library"),
+		PersonaDir:   pdir,
 		ModelsConfig: filepath.Join(dir, "m.yaml"),
 	}
 	api := NewAPI(cfg, st, reg, nil)
@@ -65,7 +78,7 @@ func TestSendMessageRemapsLocalUnreachable(t *testing.T) {
 		}
 	}
 
-	if err = api.SendMessage(conv.ID, "hi", "llama3.2"); err != nil {
+	if err = api.SendMessage(conv.ID, "hi", "local"); err != nil {
 		t.Fatalf("SendMessage returned a non-nil error: %v", err)
 	}
 	if gotCode != "local_unreachable" {

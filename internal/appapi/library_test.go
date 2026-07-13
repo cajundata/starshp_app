@@ -8,6 +8,7 @@ import (
 
 	"github.com/cajundata/starshp_app/internal/config"
 	"github.com/cajundata/starshp_app/internal/library"
+	"github.com/cajundata/starshp_app/internal/persona"
 	"github.com/cajundata/starshp_app/internal/provider"
 	"github.com/cajundata/starshp_app/internal/store"
 )
@@ -62,7 +63,7 @@ func TestAssembleSystemPrompt(t *testing.T) {
 	}
 
 	api := NewAPI(config.Config{LibraryDir: libDir}, st, provider.Registry{}, nil)
-	prompt, skipped, err := api.assembleSystemPrompt(conv.ID)
+	prompt, skipped, err := api.assembleSystemPrompt(conv.ID, persona.Persona{})
 	if err != nil {
 		t.Fatalf("assembleSystemPrompt: %v", err)
 	}
@@ -100,7 +101,7 @@ func TestAssembleSkipsMissingFiles(t *testing.T) {
 	}
 
 	api := NewAPI(config.Config{LibraryDir: libDir}, st, provider.Registry{}, nil)
-	prompt, skipped, err := api.assembleSystemPrompt(conv.ID)
+	prompt, skipped, err := api.assembleSystemPrompt(conv.ID, persona.Persona{})
 	if err != nil {
 		t.Fatalf("assembleSystemPrompt: %v", err)
 	}
@@ -175,5 +176,43 @@ func TestReadDeleteRejectBadName(t *testing.T) {
 		t.Fatal("DeleteLibraryItem: expected error for traversal filename")
 	} else if ae, ok := err.(provider.AppError); !ok || ae.Code != "validation" {
 		t.Fatalf("DeleteLibraryItem: expected validation AppError, got %#v", err)
+	}
+}
+
+// Persona body first (identity), then the persona's own library items, then the
+// conversation's — and an item claimed by both appears once.
+func TestAssembleSystemPromptOrdersPersonaThenLibrary(t *testing.T) {
+	dir := t.TempDir()
+	writeLib := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeLib("alpha.md", "# Alpha\n\nALPHA BODY\n")
+	writeLib("zulu.md", "# Zulu\n\nZULU BODY\n")
+
+	a := &API{cfg: config.Config{LibraryDir: dir}, lib: library.New(dir), st: testStore(t)}
+	c, err := a.st.CreateConversation("t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.st.SetActiveItems(c.ID, []string{"zulu.md", "alpha.md"}); err != nil {
+		t.Fatal(err)
+	}
+
+	p := persona.Persona{ID: "scout", Name: "Scout", Model: "gpt-5",
+		Prompt:  "YOU ARE SCOUT",
+		Library: []string{"alpha"}, // no extension: normalized to alpha.md
+	}
+	got, skipped, err := a.assembleSystemPrompt(c.ID, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skipped) != 0 {
+		t.Fatalf("skipped = %v", skipped)
+	}
+	want := "YOU ARE SCOUT\n\nALPHA BODY\n\nZULU BODY"
+	if got != want {
+		t.Errorf("prompt =\n%q\nwant\n%q", got, want)
 	}
 }

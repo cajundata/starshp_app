@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/cajundata/starshp_app/internal/library"
+	"github.com/cajundata/starshp_app/internal/persona"
 	"github.com/cajundata/starshp_app/internal/provider"
 )
 
@@ -102,17 +103,61 @@ func libraryError(err error) provider.AppError {
 	}
 }
 
-// assembleSystemPrompt builds the system prompt for a conversation: it reads
-// each active item, strips the H1, and concatenates the bodies in display-name
-// order. Items whose files are missing on disk are skipped and returned in
-// `skipped` (a missing snippet is not fatal). It reads a.st directly — not the
-// pruning GetActiveItems above — to keep the send path lean.
-func (a *API) assembleSystemPrompt(convID string) (prompt string, skipped []string, err error) {
-	names, err := a.st.GetActiveItems(convID)
+// assembleSystemPrompt builds the system prompt for one turn: the persona's
+// body (identity), then the library items the persona always carries, then the
+// items attached to this conversation. An item claimed by both appears once, in
+// the persona's position — a conversation attachment reads as an addition to
+// the persona's standing context, not an interruption of it.
+//
+// Missing library files are skipped, not fatal, and returned in `skipped`.
+func (a *API) assembleSystemPrompt(convID string, p persona.Persona) (prompt string, skipped []string, err error) {
+	convNames, err := a.st.GetActiveItems(convID)
 	if err != nil {
 		return "", nil, err
 	}
-	return a.assembleLibraryPreamble(names)
+	personaNames := make([]string, 0, len(p.Library))
+	claimed := map[string]bool{}
+	for _, n := range p.Library {
+		n = normalizeLibraryName(n)
+		personaNames = append(personaNames, n)
+		claimed[n] = true
+	}
+	var rest []string
+	for _, n := range convNames {
+		if !claimed[n] {
+			rest = append(rest, n)
+		}
+	}
+
+	personaPre, skippedA, err := a.assembleLibraryPreamble(personaNames)
+	if err != nil {
+		return "", nil, err
+	}
+	convPre, skippedB, err := a.assembleLibraryPreamble(rest)
+	if err != nil {
+		return "", nil, err
+	}
+	return joinNonEmpty(p.Prompt, personaPre, convPre),
+		append(skippedA, skippedB...), nil
+}
+
+// normalizeLibraryName lets a persona write `library: [style-guide]` instead of
+// `[style-guide.md]`. Library IDs are filenames; this supplies the extension.
+func normalizeLibraryName(n string) string {
+	if strings.HasSuffix(strings.ToLower(n), ".md") {
+		return n
+	}
+	return n + ".md"
+}
+
+func joinNonEmpty(parts ...string) string {
+	var kept []string
+	for _, p := range parts {
+		if s := strings.TrimSpace(p); s != "" {
+			kept = append(kept, s)
+		}
+	}
+	return strings.Join(kept, "\n\n")
 }
 
 // assembleLibraryPreamble reads each named library item, strips its H1, sorts by

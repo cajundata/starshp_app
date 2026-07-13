@@ -5,6 +5,7 @@ package appapi
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/cajundata/starshp_app/internal/chat"
 	"github.com/cajundata/starshp_app/internal/config"
 	"github.com/cajundata/starshp_app/internal/library"
+	"github.com/cajundata/starshp_app/internal/persona"
 	"github.com/cajundata/starshp_app/internal/provider"
 	"github.com/cajundata/starshp_app/internal/rag"
 	"github.com/cajundata/starshp_app/internal/store"
@@ -27,6 +29,7 @@ type API struct {
 	cfg            config.Config
 	st             *store.Store
 	reg            provider.Registry
+	personas       persona.Registry
 	ragAdpt        *rag.Adapter
 	lib            *library.Library
 	chatSvc        *chat.Service
@@ -36,6 +39,13 @@ type API struct {
 
 	emit func(name string, payload any) // wruntime.EventsEmit wrapper; overridable in tests
 }
+
+// allToolNames is every tool the app can register. Persona `tools:` lists are
+// validated against this, not against the live registry: search_textbook is
+// only registered when RAG is available, and a RAG outage must not silently
+// disable every persona that names it. TestAllToolNamesMatchesTheRegisterableTools
+// keeps this in step with the tools actually constructed in NewAPI.
+var allToolNames = []string{"safe_math", "search_textbook"}
 
 func NewAPI(cfg config.Config, st *store.Store, reg provider.Registry, ragAdpt *rag.Adapter) *API {
 	a := &API{cfg: cfg, st: st, reg: reg, ragAdpt: ragAdpt,
@@ -52,7 +62,32 @@ func NewAPI(cfg config.Config, st *store.Store, reg provider.Registry, ragAdpt *
 	}
 	_ = a.toolReg.Register(safemath.New())
 	a.emit = func(name string, payload any) { wruntime.EventsEmit(a.ctx, name, payload) }
+
+	// Seed a starter persona only when the folder is absent, then load. Loading
+	// never writes and never fails: a bad persona file is disabled and reported
+	// through StartupIssues.
+	if err := persona.Seed(cfg.PersonaDir, defaultModelID(reg)); err != nil {
+		slog.Warn("persona: seed failed", "dir", cfg.PersonaDir, "err", err)
+	}
+	a.personas = persona.LoadRegistry(cfg.PersonaDir, modelIDs(reg), allToolNames)
 	return a
+}
+
+// defaultModelID is the model a seeded persona points at: the first entry in
+// models.yaml. Empty when no models are configured, which makes Seed a no-op.
+func defaultModelID(reg provider.Registry) string {
+	if len(reg.Models) > 0 {
+		return reg.Models[0].ID
+	}
+	return ""
+}
+
+func modelIDs(reg provider.Registry) []string {
+	out := make([]string, 0, len(reg.Models))
+	for _, m := range reg.Models {
+		out = append(out, m.ID)
+	}
+	return out
 }
 
 // sinkEventName maps a chat SinkEventKind to its Wails event name. Pure so the
@@ -128,7 +163,18 @@ func providerNameFromModelID(reg provider.Registry, modelID string) string {
 // Startup is called by Wails with the app context.
 func (a *API) Startup(ctx context.Context) { a.ctx = ctx }
 
-func (a *API) StartupIssues() []string { return ValidateStartup(a.cfg, a.reg) }
+func (a *API) StartupIssues() []string {
+	issues := ValidateStartup(a.cfg, a.reg)
+	for _, is := range a.personas.Issues {
+		issues = append(issues, "persona "+is.File+": "+is.Reason)
+	}
+	return issues
+}
+
+// Personas returns the loaded assistants for the picker. The system prompt is
+// not included (Persona.Prompt is json:"-") — the frontend renders names,
+// colors, and model chips, and has no use for it.
+func (a *API) Personas() []persona.Persona { return a.personas.Personas }
 
 func (a *API) ListConversations() ([]store.Conversation, error) { return a.st.ListConversations() }
 func (a *API) CreateConversation(title string) (store.Conversation, error) {
@@ -150,13 +196,6 @@ func (a *API) SetConversationScope(convID string, scopes []store.TextbookScope) 
 func (a *API) GetConversationScope(convID string) ([]store.TextbookScope, error) {
 	return a.st.GetConversationTextbooks(convID)
 }
-func (a *API) SetConversationMeta(convID, model string) error {
-	// Task 6 replaces this with a persona-aware SetConversationPersona binding;
-	// until then the persona is unknown here, so it is left empty rather than
-	// invented.
-	return a.st.SetConversationPinned(convID, model, "")
-}
-
 // titleFromText derives a conversation title from the first user message.
 // It collapses newlines, trims whitespace, and truncates to 60 runes.
 func titleFromText(s string) string {
@@ -195,15 +234,27 @@ func (r ragRetriever) Retrieve(ctx context.Context, q string) (string, string, [
 	return res.Context, srcJSON, sources, nil
 }
 
-// SendMessage runs the agentic loop for one user turn. Assistant output is
-// surfaced to the frontend through the chat:* Wails event taxonomy (the bubble
-// renders from events), so the method returns only a normalized error. The
-// system prompt is assembled from the conversation's active library items.
-func (a *API) SendMessage(convID, userText, modelID string) error {
-	prov, err := provider.New(a.reg, modelID, a.cfg.OpenAIAPIKey, a.cfg.AnthropicAPIKey)
+// SendMessage runs the agentic loop for one user turn as the named persona.
+// The persona supplies the model, the system prompt, and the tool subset.
+// Assistant output is surfaced through the chat:* event taxonomy (the bubble
+// renders from events), so this returns only a normalized error.
+func (a *API) SendMessage(convID, userText, personaID string) error {
+	p, ok := a.personas.ByID(personaID)
+	if !ok {
+		// No fallback to a default persona: a silent substitution would attribute
+		// output to an assistant the operator did not pick, which is the exact
+		// failure per-persona attribution exists to prevent.
+		return provider.AppError{
+			Code:        "config",
+			UserMessage: a.noPersonaMessage(personaID),
+			Retryable:   false,
+		}
+	}
+	prov, err := provider.New(a.reg, p.Model, a.cfg.OpenAIAPIKey, a.cfg.AnthropicAPIKey)
 	if err != nil {
 		return provider.NormalizeError(err)
 	}
+
 	// Auto-title from the first user message (best-effort; reads the canonical
 	// event log now that messages is retired).
 	existing, _ := a.st.GetConversationDisplayEvents(convID)
@@ -211,7 +262,7 @@ func (a *API) SendMessage(convID, userText, modelID string) error {
 		_ = a.st.SetConversationTitle(convID, titleFromText(userText))
 	}
 
-	systemPrompt, skipped, err := a.assembleSystemPrompt(convID)
+	systemPrompt, skipped, err := a.assembleSystemPrompt(convID, p)
 	if err != nil {
 		return provider.NormalizeError(err)
 	}
@@ -243,10 +294,11 @@ func (a *API) SendMessage(convID, userText, modelID string) error {
 		ConversationID: convID,
 		UserText:       userText,
 		SystemPrompt:   systemPrompt,
-		Model:          modelID,
+		Model:          p.Model,
+		PersonaID:      p.ID,
 		Provider:       prov,
-		ProviderName:   providerNameFromModelID(a.reg, modelID),
-		Registry:       a.toolReg,
+		ProviderName:   providerNameFromModelID(a.reg, p.Model),
+		Registry:       a.toolReg.Subset(p.Tools),
 		Resolver:       chatStoreResolver{st: a.st},
 		Retriever:      retr,
 		RetrievalMode:  a.retrievalMode(convID),
@@ -254,9 +306,47 @@ func (a *API) SendMessage(convID, userText, modelID string) error {
 		// Upgrade a local (openai_compat) network failure to local_unreachable in
 		// the run-errored event, where agentic errors are surfaced (the agentic
 		// Send returns nil and reports errors via the sink, not the return value).
-		RemapErr: a.localRemapErr(modelID),
+		RemapErr: a.localRemapErr(p.Model),
 	}, nil)
 	return err
+}
+
+// noPersonaMessage explains why a persona could not be resolved. When the
+// registry loaded nothing valid, the useful thing to say is *which files failed
+// and why* — not "unknown assistant", which describes a choice the operator was
+// never offered.
+func (a *API) noPersonaMessage(personaID string) string {
+	if len(a.personas.Personas) == 0 {
+		msg := "No assistants are available."
+		if len(a.personas.Issues) > 0 {
+			var parts []string
+			for _, is := range a.personas.Issues {
+				parts = append(parts, is.File+" ("+is.Reason+")")
+			}
+			msg += " These persona files failed to load: " + strings.Join(parts, "; ") + "."
+		} else {
+			msg += " Add a persona to your personas folder."
+		}
+		return msg
+	}
+	return "Unknown assistant \"" + personaID + "\". Check your personas folder."
+}
+
+// SetConversationPersona pins the persona the operator last used here. The
+// persona's model is written alongside it, so pinned_model stays meaningful.
+func (a *API) SetConversationPersona(convID, personaID string) error {
+	p, ok := a.personas.ByID(personaID)
+	if !ok {
+		return provider.AppError{
+			Code:        "config",
+			UserMessage: "Unknown assistant \"" + personaID + "\".",
+			Retryable:   false,
+		}
+	}
+	if err := a.st.SetConversationPinned(convID, p.Model, p.ID); err != nil {
+		return provider.NormalizeError(err)
+	}
+	return nil
 }
 
 // localRemapErr returns a chat.Send RemapErr closure that upgrades a provider
@@ -357,6 +447,8 @@ type EventDTO struct {
 	ID            string          `json:"id"`
 	TurnID        string          `json:"turnId"`
 	RunID         string          `json:"runId,omitempty"`
+	PersonaID     string          `json:"personaId,omitempty"`
+	ModelID       string          `json:"modelId,omitempty"`
 	Kind          string          `json:"kind"`
 	Text          string          `json:"text,omitempty"`
 	ToolCallID    string          `json:"toolCallId,omitempty"`
@@ -378,7 +470,9 @@ func (a *API) GetConversationDisplayEvents(convID string) ([]EventDTO, error) {
 	out := make([]EventDTO, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, EventDTO{
-			ID: r.ID, TurnID: r.TurnID, RunID: r.RunID, Kind: r.Kind,
+			ID: r.ID, TurnID: r.TurnID, RunID: r.RunID,
+			PersonaID: r.PersonaID, ModelID: r.Model,
+			Kind: r.Kind,
 			Text: r.Text, ToolCallID: r.ToolCallID, ToolName: r.ToolName,
 			ToolInput: r.ToolInput, ToolMetadata: r.ToolMetadata,
 			ToolLatencyMs: r.ToolLatencyMs, IsError: r.IsError,
