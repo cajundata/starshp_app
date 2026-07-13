@@ -873,6 +873,7 @@ package persona
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // seedAssistant is the out-of-the-box persona. It reproduces today's plain-chat
@@ -906,23 +907,8 @@ func Seed(dir, defaultModelID string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	body := replaceModel(seedAssistant, defaultModelID)
+	body := strings.ReplaceAll(seedAssistant, "%MODEL%", defaultModelID)
 	return os.WriteFile(filepath.Join(dir, "assistant.md"), []byte(body), 0o644)
-}
-
-func replaceModel(tmpl, model string) string {
-	out := make([]byte, 0, len(tmpl)+len(model))
-	const token = "%MODEL%"
-	for i := 0; i < len(tmpl); {
-		if i+len(token) <= len(tmpl) && tmpl[i:i+len(token)] == token {
-			out = append(out, model...)
-			i += len(token)
-			continue
-		}
-		out = append(out, tmpl[i])
-		i++
-	}
-	return string(out)
 }
 ```
 
@@ -1725,7 +1711,6 @@ import (
 	"testing"
 
 	"github.com/cajundata/starshp_app/internal/config"
-	"github.com/cajundata/starshp_app/internal/persona"
 	"github.com/cajundata/starshp_app/internal/provider"
 	"github.com/cajundata/starshp_app/internal/tools/safemath"
 	"github.com/cajundata/starshp_app/internal/tools/searchtextbook"
@@ -1868,7 +1853,6 @@ func TestSeedsAnAssistantWhenThePersonaDirIsAbsent(t *testing.T) {
 	if ps[0].Model != "gpt-5" {
 		t.Errorf("seeded model = %q, want the first model in the registry", ps[0].Model)
 	}
-	_ = persona.Persona{} // keep the import honest if the assertions above change
 }
 ```
 
