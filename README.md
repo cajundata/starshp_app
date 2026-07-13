@@ -1,23 +1,30 @@
 # Starshp
 
-A Grok-style desktop LLM chat client (Wails v2 + Go) for drafting accounting
-discussion posts. Per-message model choice across OpenAI and Anthropic,
-persistent conversation history, system-prompt presets, and textbook-grounded
-RAG retrieval reused verbatim from the acctutor project.
+A desktop LLM chat client (Wails v2 + Go) built around a roster of named
+personas instead of one generic assistant. Each persona is a markdown file
+that pins a model, a system prompt, an optional tool whitelist, and library
+items that attach automatically whenever it runs. One persona is assigned
+per conversation, and its messages are color-coded so who said what stays
+clear across a live session and after a restart.
 
 Single native binary, no browser, no server, no CGO — `modernc.org/sqlite`
 plus pure-Go provider SDKs.
 
 ## Features
 
-- **Per-message model picker.** Switch between OpenAI and Anthropic models
-  mid-conversation; the choice is recorded per assistant message and pinned
-  per conversation.
+- **A team of personas, not one assistant.** Each conversation is assigned a
+  single persona — a markdown file under `<app-dir>/personas/` that pins a
+  model, a system prompt, an optional tool whitelist, and library items that
+  attach automatically whenever it runs. Assistant bubbles carry the
+  persona's name, color, and model chip, live and on replay alike. See
+  [Personas](#personas).
 - **Streaming responses with Stop.** Tokens stream to the UI live via Wails
   runtime events; the Stop button cancels the in-flight stream and persists
   the partial reply.
-- **System-prompt presets.** Named, reusable system prompts; selectable per
-  conversation.
+- **Prompt library.** Reusable markdown snippets (an H1 title plus a body),
+  toggled active per conversation and folded into the system prompt after
+  the persona's own body. A persona's `library:` list attaches
+  automatically; the conversation's own selections are appended after.
 - **Textbook-grounded RAG.** Attach none / one / multiple books per
   conversation. Acctutor's `embedding`, `chunker`, and `ragindex` packages
   are reused verbatim behind a thin adapter (`internal/rag/adapter.go`),
@@ -26,7 +33,7 @@ plus pure-Go provider SDKs.
 - **Auto-titled conversations.** First user message becomes the title
   (truncated to 60 chars). Rename UI is post-MVP.
 - **Sticky per-conversation meta.** Reopening a conversation restores its
-  last-used model and preset.
+  pinned persona, and with it the model that persona uses.
 - **Prompt caching.** The stable system + textbook-context block is cached
   per provider — Anthropic via explicit `cache_control`, OpenAI via
   automatic prefix caching.
@@ -35,9 +42,10 @@ plus pure-Go provider SDKs.
 - **Normalized errors.** All errors surfaced to the UI as
   `{code, userMessage, retryable}` — auth / rate_limit / context_length /
   network / rag_unavailable / unknown.
-- **Startup validation.** Missing keys, unreadable DB paths, or absent
-  `models.yaml` produce a setup notice in the first message bubble rather
-  than a silent failure.
+- **Startup validation.** Missing keys, unreadable DB paths, an absent
+  `models.yaml`, or a persona file that fails validation produce a setup
+  notice — in the first message bubble, and in a startup banner for persona
+  issues — rather than a silent failure.
 
 ## Prerequisites
 
@@ -64,9 +72,13 @@ Starshp reads its configuration from a per-user **app directory**, created
 automatically on first launch. Copy the three committed templates
 (`.env.example`, `models.example.yaml`, `textbooks.example.yaml`) into that
 directory, drop the `.example` from each name, and fill in your API keys.
+First launch also seeds a single starter persona at `<app-dir>/personas/`;
+copy the files from `personas.example/` into that folder for a fuller
+starting roster.
 
 See [Config files and textbooks](#config-files-and-textbooks) for where the
-app directory is, the copy commands, and the YAML formats.
+app directory is, the copy commands, and the YAML formats, and
+[Personas](#personas) for the persona file format.
 
 ## Config files and textbooks
 
@@ -79,11 +91,12 @@ Starshp keeps every per-user file in one **app directory**:
 | macOS | `~/Library/Application Support/starshp_app` |
 
 It holds `.env`, `models.yaml`, `textbooks.yaml`, the `textbooks/` folder for
-your chapter directories, and the runtime data (`app.db`, `rag.db`,
-`library/`). The directory is created automatically on first launch, along
-with the `textbooks/` and `library/` subdirectories. Set the `STARSHP_HOME`
-environment variable (an absolute path) to override its location — handy for
-tests or a portable install.
+your chapter directories, the `personas/` folder for your persona roster, and
+the runtime data (`app.db`, `rag.db`, `library/`). The directory is created
+automatically on first launch, along with the `textbooks/`, `personas/`, and
+`library/` subdirectories. Set the `STARSHP_HOME` environment variable (an
+absolute path) to override its location — handy for tests or a portable
+install.
 
 Three templates ship in the repo. Copy each into the app directory and edit:
 
@@ -105,6 +118,10 @@ Typical app-directory layout:
 ├── app.db                        (created at runtime)
 ├── rag.db                        (created at runtime)
 ├── library/                      (created at runtime)
+├── personas/                     (created at runtime, seeded with assistant.md)
+│   ├── assistant.md
+│   ├── scout.md
+│   └── skeptic.md
 └── textbooks/                    (created at runtime)
     └── intermediate-accounting/  (your textbook chapter folders)
         ├── chapter-01.md
@@ -141,7 +158,7 @@ textbooks:
 
 ### `models.yaml`
 
-The list of models offered in the per-message picker:
+The list of models a persona's `model:` field may reference:
 
 ```yaml
 models:
@@ -156,6 +173,48 @@ models:
 Edit it freely as model IDs evolve — no recompile. A missing or unreadable
 `models.yaml` produces a setup notice at launch and an empty model dropdown.
 
+### Personas
+
+Starshp assigns one persona per conversation instead of picking a raw model.
+Each persona is a single markdown file in `<app-dir>/personas/`; the filename
+stem is its stable ID (`scout.md` → `scout`). Frontmatter is YAML, the body
+is the system prompt:
+
+```markdown
+---
+name: Scout
+model: claude-sonnet-4-6
+color: "#4fb3ff"
+tools: [safe_math]
+library: [style-guide]
+---
+You are Scout. You find the angle nobody else is looking at.
+...
+```
+
+- `name` — required, shown in the picker and on assistant bubbles.
+- `model` — required, must match an `id` in `models.yaml`.
+- `color` — optional 6-digit hex. Omit it and one is assigned deterministically
+  from a contrast-checked palette, keyed on the persona's filename — the same
+  persona always gets the same color, across restarts and machines.
+- `tools` — optional whitelist of tool names the persona may call
+  (`safe_math`, `search_textbook`). Omit it to allow every registered tool.
+- `library` — optional list of library item names this persona always
+  carries; the `.md` extension may be omitted. These attach to every turn
+  this persona runs, ahead of whatever the conversation has toggled on — an
+  item claimed by both appears once, in the persona's position.
+
+`personas.example/` in the repo ships three starter personas (Assistant,
+Scout, Skeptic) — copy them into `<app-dir>/personas/` as a starting point.
+
+A persona file that fails to parse or references an unknown model or tool is
+**disabled and reported in the startup banner**, naming the file and the
+reason — it never blocks the app from launching. An unknown persona ID at
+send time (for example, its file was deleted mid-session) is a hard
+`config` error naming the assistant; there is deliberately no fallback to
+another persona, since that would attribute output to an assistant the
+operator never chose.
+
 ## Running
 
 ```bash
@@ -165,10 +224,11 @@ wails build    # release binary: build/bin/starshp_app.exe (Windows),
                #                  build/bin/starshp_app    (Linux)
 ```
 
-`app.db` (conversations, messages, presets, scope) and `rag.db` (textbook
-chunks + embeddings) are created in the app directory on first launch. They
-are independent — rebuilding the RAG index never endangers chat history.
-Override either path via `APP_DB_PATH` / `RAG_DB_PATH` in `.env`.
+`app.db` (conversations, runs, the event log, textbook/library scope) and
+`rag.db` (textbook chunks + embeddings) are created in the app directory on
+first launch. They are independent — rebuilding the RAG index never
+endangers chat history. Override either path via `APP_DB_PATH` /
+`RAG_DB_PATH` in `.env`.
 
 ## Configuration reference
 
@@ -235,8 +295,8 @@ llama.cpp server). `base_url` is required. `api_key_env` (not shown) is
 an optional name of an env var holding a bearer token, for shims that
 require one.
 
-Restart Starshp. The model appears in the per-message picker. Pick it
-on the next turn — done.
+Restart Starshp. Point a persona's `model:` field at the new `id` (or add a
+new persona file that does) and pick that persona on your next turn — done.
 
 ### Hardware sizing
 
@@ -274,18 +334,22 @@ starshp_app/
 ├── main.go                     # Wails bootstrap (config → store → rag → api)
 ├── models.example.yaml         # template — copy into your app directory
 ├── textbooks.example.yaml      # template — copy into your app directory
+├── personas.example/           # starter personas — copy into <app-dir>/personas/
 ├── wails.json
 ├── docs/
 │   ├── SMOKE.md                # manual smoke checklist
 │   └── superpowers/
-│       ├── specs/              # frozen design doc
-│       └── plans/              # implementation plan (all tasks complete)
+│       ├── specs/              # frozen design docs
+│       └── plans/              # implementation plans
 ├── frontend/                   # vanilla-TS Wails frontend (Grok-style Variant B)
 │   └── src/{main.ts, style.css}
 └── internal/
     ├── appapi/                 # Wails-bound API; error-normalization boundary
     ├── chat/                   # orchestration: persist → retrieve → stream → persist
     ├── config/                 # .env + env loader
+    ├── library/                # prompt/context snippet storage (markdown, H1-named)
+    ├── persona/                # <app-dir>/personas/ registry: parsing, validation,
+    │                           # deterministic color assignment
     ├── provider/               # ChatProvider interface, OpenAI + Anthropic impls,
     │                           # factory, error normalization, model registry
     ├── rag/                    # adapter (scope filter, budget, content-hash index)
@@ -294,7 +358,7 @@ starshp_app/
     │   ├── chunker/            # ←  copied from acctutor — VERBATIM, DO NOT MODIFY
     │   ├── ragindex/           # ←  copied from acctutor — VERBATIM, DO NOT MODIFY
     │   └── REUSED.md           # boundary documentation
-    ├── store/                  # SQLite: conversations, messages (cascade), presets, scope
+    ├── store/                  # SQLite: conversations (persona pin), runs, scope
     └── textbooks/              # textbooks.yaml scan + chapter listing
 ```
 
@@ -322,6 +386,11 @@ The frozen design doc:
 The implementation plan (all 20 tasks complete):
 [`docs/superpowers/plans/2026-05-17-discussion-engine.md`](docs/superpowers/plans/2026-05-17-discussion-engine.md).
 
+The persona system (color-coded multi-model assistant team) has its own
+design doc and plan:
+[`docs/superpowers/specs/2026-07-13-persona-foundation-design.md`](docs/superpowers/specs/2026-07-13-persona-foundation-design.md),
+[`docs/superpowers/plans/2026-07-13-persona-foundation.md`](docs/superpowers/plans/2026-07-13-persona-foundation.md).
+
 ## Out of scope (deferred)
 
 Tracked here so reviewers know absences are intentional:
@@ -340,6 +409,10 @@ Tracked here so reviewers know absences are intentional:
 - **"Setup" message lists missing keys/files at launch.** Fix the items
   listed and relaunch — `appapi.ValidateStartup` emits one issue per
   missing/broken item.
+- **A persona is missing from the picker.** Its file failed validation (bad
+  `model`, bad `tools` entry, bad `color`, missing `name`, or a duplicate
+  ID). The reason is listed in the same startup banner, naming the file.
+  Fix the file and relaunch — a broken persona file never blocks the app.
 - **`rag_unavailable` errors when attaching a textbook.** RAG needs an
   `OPENAI_API_KEY` for embeddings even when chatting with Claude. Set it
   in `.env` and restart.

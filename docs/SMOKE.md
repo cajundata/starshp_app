@@ -56,53 +56,31 @@ For each step, observe the assistant bubble in addition to the listed expectatio
 32. [x] **`STARSHP_SKIP_AUTO_GROUNDING`.** Set the env var to `1` and relaunch. Ask a question with textbooks attached. No grounding header appears (the run reports `not_required`); the model must call `search_textbook` itself if it wants context.
 33. [x] **Max-iterations cap (forces a final answer, not an error).** Set `STARSHP_MAX_TOOL_ITERATIONS=2`, attach a textbook, ask a complex multi-hop question. After two tool-use cycles the loop withholds tools and the model synthesizes a final answer from the gathered results — the run completes (not an error bubble) with `terminal_reason=max_iterations` (visible in the structured logs).
 
-## Assignment solver
+## Personas
 
-34. [x] **Solve a folder.** Open the Assignments view, choose a companion `_json`
-        directory and start. A progress bar advances `done/total`; items flip from
-        solving → answered/no_answer/errored as the batch runs.
-        NOTE: point the picker at the `_json` dir itself (contains manifest.json),
-        not its parent. BUG FIXED: `#tbModal`/`#libModal` lacked a z-index, so the
-        textbook/library pickers opened _behind_ the `z-index:10` Assignments view
-        and the solve flow appeared dead (style.css: added `z-index: 20`).
-35. [x] **Review an item.** Click an answered item → its run opens with the
-        worked reasoning, tool calls (safe_math / search_textbook), and the
-        submit_answer payload (MC choice or worksheet cell map).
-        BUG FIXED: the detail pane never showed tool-call _input_ (only results)
-        because `bytesToText()` returned '' for `toolInput`, which crosses the wails
-        bridge as a parsed JSON object (json.RawMessage), not a string/byte array.
-        Replaced with `toolInputText()` + `argPreview(ev.toolInput)` (main.ts).
-36. [ ] **Confidence & flags.** Low-confidence and flagged items are
-        highlighted; a worksheet with uncaptured dropdown options shows an
-        `uncaptured_dropdown_options` flag; a question missing data shows
-        `missing_information`.
-37. [x] **Answer files written.** A sibling `_answers/NNN.json` exists for each
-        answered question, mirroring the input file names, with the answer payload
-        and runId. NOTE: `submit_answer` tool result is the constant
-        `{"status":"answer_recorded"}` ack by design — the real answer is recovered
-        from the tool-call input args (GetSubmittedAnswer), not the result.
-38. [ ] **Stop mid-batch.** Start a large folder, click Stop. In-flight items
-        finish or cancel; pending items become `cancelled`; answered items persist.
-        BUG FIXED: in-flight solves cut off by Stop were recorded as `no_answer`
-        instead of `cancelled`. solveItem's empty-answer branch (orchestrator.go)
-        only special-cased an `errored` run; a `cancelled` run (chat marks it
-        `user_cancelled`, Send returns nil) fell through to `no_answer`. Added a
-        `cancelled` case keyed on `ctx.Err()`/`run.Status=="cancelled"`. Regression
-        test: TestSolveItem_CancelledMidSolveMarksItemCancelled.
-        NOTE: items never scheduled before Stop have no rows yet (rows are created
-        lazily at schedule time), so they don't render as `cancelled` — they're
-        simply absent; the batch-level pill shows `cancelled`.
-39. [x] **Resume.** Re-run the same folder. Already-answered items are skipped
-        (no new runs); only pending/errored/no_answer/cancelled items re-solve.
-        NOTE: resume = re-trigger the same Solve action with the same dir; there is
-        no separate "Resume" control. Skip is keyed on item status == "answered"
-        (orchestrator.go:144). Verified on qz05: items 1–5 (answered) skipped, 6–20
-        re-solved. An item that hits `max_iterations` and answers in prose without
-        calling submit_answer is correctly `no_answer` (no answer was submitted).
-40. [ ] **Sidebar isolation.** Item conversations do not appear in the normal
-        conversation sidebar; they are reachable only via the assignment view.
-41. [ ] **Concurrency env.** Set `STARSHP_ASSIGNMENT_CONCURRENCY=2`, re-run, and
-        confirm no SQLITE_BUSY errors in logs (busy_timeout + WAL cover contention).
+34. [ ] **Picker.** The composer's dropdown lists every persona by name. A persona
+        file with a typo (unknown model, unknown tool, bad color) is *absent* from
+        the list, and its rejection appears in the startup banner naming the file
+        and the reason.
+35. [ ] **Attribution.** Send a message. The bubble carries a colored dot, the
+        persona name in that color, a muted model chip, and a colored left stripe
+        — all present before the first token arrives.
+36. [ ] **Two personas.** Send as persona A in one conversation and persona B in
+        another. Distinct colors, correct names, correct model chips.
+37. [ ] **Replay parity (the important one).** Close a conversation and reopen
+        it. Every bubble returns in the same color it was live, with the same name
+        and chip. Live/replay divergence is the failure this design exists to
+        prevent — if it happens, stop and fix it.
+38. [ ] **Deleted persona.** Delete a persona's markdown file, relaunch, open a
+        conversation it spoke in. Its bubbles render neutral gray with the literal
+        persona ID as the name. No error, no blank thread.
+39. [ ] **Recolor.** Change a persona's `color:` in its file and relaunch. That
+        persona's *history* recolors, not just new messages.
+40. [ ] **Legacy run.** Open a conversation from before personas existed. Its
+        bubbles are neutral gray and carry only a model chip — no persona name.
+41. [ ] **Unknown persona.** With the app running, delete the persona currently
+        selected in the picker and send. The send fails with a config error naming
+        the assistant — it does not silently fall back to another persona.
 
 ## Local models (Ollama)
 
