@@ -9,8 +9,6 @@ import {provider} from '../models';
 
 export function AddKillCriterion(arg1:string,arg2:string,arg3:string,arg4:number,arg5:string):Promise<store.KillCriterion>;
 
-export function CancelAssignment(arg1:string):Promise<void>;
-
 export function CancelMessage():Promise<void>;
 
 export function CreateConversation(arg1:string):Promise<store.Conversation>;
@@ -29,19 +27,7 @@ export function DeleteLibraryItem(arg1:string):Promise<void>;
 
 export function EnsureIndexed(arg1:string):Promise<void>;
 
-export function EnsureIndexedScope(arg1:Array<store.TextbookScope>):Promise<void>;
-
 export function GetActiveItems(arg1:string):Promise<Array<string>>;
-
-export function GetAssignment(arg1:string):Promise<store.Assignment>;
-
-export function GetAssignmentLibraryItems(arg1:string):Promise<Array<string>>;
-
-export function GetAssignmentLibraryItemsForDir(arg1:string):Promise<Array<string>>;
-
-export function GetAssignmentScope(arg1:string):Promise<Array<store.TextbookScope>>;
-
-export function GetAssignmentScopeForDir(arg1:string):Promise<Array<store.TextbookScope>>;
 
 export function GetConversationDisplayEvents(arg1:string):Promise<Array<appapi.EventDTO>>;
 
@@ -50,10 +36,6 @@ export function GetConversationScope(arg1:string):Promise<Array<store.TextbookSc
 export function GetIdea(arg1:string):Promise<store.Idea>;
 
 export function GetRetrievalMode(arg1:string):Promise<string>;
-
-export function ListAssignmentItems(arg1:string):Promise<Array<store.AssignmentItem>>;
-
-export function ListAssignments():Promise<Array<store.Assignment>>;
 
 export function ListBooks():Promise<Array<textbooks.Book>>;
 
@@ -75,17 +57,11 @@ export function Models():Promise<Array<provider.ModelInfo>>;
 
 export function ReadLibraryItem(arg1:string):Promise<string>;
 
-export function RerunAssignmentItem(arg1:string,arg2:number):Promise<string>;
-
 export function SaveLibraryItem(arg1:string,arg2:string):Promise<void>;
 
 export function SendMessage(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function SetActiveItems(arg1:string,arg2:Array<string>):Promise<void>;
-
-export function SetAssignmentLibraryItems(arg1:string,arg2:Array<string>):Promise<void>;
-
-export function SetAssignmentScope(arg1:string,arg2:Array<store.TextbookScope>):Promise<void>;
 
 export function SetConversationMeta(arg1:string,arg2:string):Promise<void>;
 
@@ -94,8 +70,6 @@ export function SetConversationScope(arg1:string,arg2:Array<store.TextbookScope>
 export function SetIdeaStatus(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function SetRetrievalMode(arg1:string,arg2:string):Promise<void>;
-
-export function SolveAssignment(arg1:string,arg2:Array<store.TextbookScope>,arg3:Array<string>):Promise<string>;
 
 export function StartupIssues():Promise<Array<string>>;
 

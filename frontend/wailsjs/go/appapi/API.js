@@ -6,10 +6,6 @@ export function AddKillCriterion(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['appapi']['API']['AddKillCriterion'](arg1, arg2, arg3, arg4, arg5);
 }
 
-export function CancelAssignment(arg1) {
-  return window['go']['appapi']['API']['CancelAssignment'](arg1);
-}
-
 export function CancelMessage() {
   return window['go']['appapi']['API']['CancelMessage']();
 }
@@ -46,32 +42,8 @@ export function EnsureIndexed(arg1) {
   return window['go']['appapi']['API']['EnsureIndexed'](arg1);
 }
 
-export function EnsureIndexedScope(arg1) {
-  return window['go']['appapi']['API']['EnsureIndexedScope'](arg1);
-}
-
 export function GetActiveItems(arg1) {
   return window['go']['appapi']['API']['GetActiveItems'](arg1);
-}
-
-export function GetAssignment(arg1) {
-  return window['go']['appapi']['API']['GetAssignment'](arg1);
-}
-
-export function GetAssignmentLibraryItems(arg1) {
-  return window['go']['appapi']['API']['GetAssignmentLibraryItems'](arg1);
-}
-
-export function GetAssignmentLibraryItemsForDir(arg1) {
-  return window['go']['appapi']['API']['GetAssignmentLibraryItemsForDir'](arg1);
-}
-
-export function GetAssignmentScope(arg1) {
-  return window['go']['appapi']['API']['GetAssignmentScope'](arg1);
-}
-
-export function GetAssignmentScopeForDir(arg1) {
-  return window['go']['appapi']['API']['GetAssignmentScopeForDir'](arg1);
 }
 
 export function GetConversationDisplayEvents(arg1) {
@@ -88,14 +60,6 @@ export function GetIdea(arg1) {
 
 export function GetRetrievalMode(arg1) {
   return window['go']['appapi']['API']['GetRetrievalMode'](arg1);
-}
-
-export function ListAssignmentItems(arg1) {
-  return window['go']['appapi']['API']['ListAssignmentItems'](arg1);
-}
-
-export function ListAssignments() {
-  return window['go']['appapi']['API']['ListAssignments']();
 }
 
 export function ListBooks() {
@@ -138,10 +102,6 @@ export function ReadLibraryItem(arg1) {
   return window['go']['appapi']['API']['ReadLibraryItem'](arg1);
 }
 
-export function RerunAssignmentItem(arg1, arg2) {
-  return window['go']['appapi']['API']['RerunAssignmentItem'](arg1, arg2);
-}
-
 export function SaveLibraryItem(arg1, arg2) {
   return window['go']['appapi']['API']['SaveLibraryItem'](arg1, arg2);
 }
@@ -152,14 +112,6 @@ export function SendMessage(arg1, arg2, arg3) {
 
 export function SetActiveItems(arg1, arg2) {
   return window['go']['appapi']['API']['SetActiveItems'](arg1, arg2);
-}
-
-export function SetAssignmentLibraryItems(arg1, arg2) {
-  return window['go']['appapi']['API']['SetAssignmentLibraryItems'](arg1, arg2);
-}
-
-export function SetAssignmentScope(arg1, arg2) {
-  return window['go']['appapi']['API']['SetAssignmentScope'](arg1, arg2);
 }
 
 export function SetConversationMeta(arg1, arg2) {
@@ -176,10 +128,6 @@ export function SetIdeaStatus(arg1, arg2, arg3) {
 
 export function SetRetrievalMode(arg1, arg2) {
   return window['go']['appapi']['API']['SetRetrievalMode'](arg1, arg2);
-}
-
-export function SolveAssignment(arg1, arg2, arg3) {
-  return window['go']['appapi']['API']['SolveAssignment'](arg1, arg2, arg3);
 }
 
 export function StartupIssues() {
