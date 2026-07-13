@@ -69,6 +69,7 @@ type SendParams struct {
 	UserText       string
 	SystemPrompt   string
 	Model          string
+	PersonaID      string // recorded on runs; "" for a run with no persona
 	Provider       provider.ChatProvider
 	ProviderName   string // "openai" | "anthropic" — recorded on runs
 	Registry       *tools.Registry
@@ -112,12 +113,21 @@ func (s *Service) Send(ctx context.Context, p SendParams, onToken func(string)) 
 	}
 	runID := uuid.NewString()
 	if err := s.st.CreateRun(p.ConversationID, user.TurnID, runID,
-		providerName, p.Model, string(mode), ""); err != nil {
+		providerName, p.Model, string(mode), p.PersonaID); err != nil {
 		return RunResult{}, fmt.Errorf("create run: %w", err)
 	}
+	// Attribution rides on run_started so the bubble is colored the instant it
+	// appears — no uncolored flash, no post-hoc recolor.
 	emit(p.Sink, SinkRunStarted, p.ConversationID, runID, user.TurnID,
-		map[string]any{"retrievalMode": string(mode),
-			"grounding": map[string]any{"status": initialGroundingStatus(mode, p.Retriever)}})
+		map[string]any{
+			"retrievalMode": string(mode),
+			"personaID":     p.PersonaID,
+			"modelID":       p.Model,
+			"provider":      providerName,
+			"grounding": map[string]any{
+				"status": initialGroundingStatus(mode, p.Retriever),
+			},
+		})
 
 	grounding, gErr := s.runPreTurnRetrieval(ctx, p, mode, runID, user.TurnID)
 	if gErr != nil {
