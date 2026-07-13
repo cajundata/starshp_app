@@ -1,6 +1,7 @@
 package persona
 
 import (
+	"hash/fnv"
 	"math"
 	"testing"
 )
@@ -60,6 +61,44 @@ func TestAssignColorIsDeterministicAndInPalette(t *testing.T) {
 		}
 		if !inPalette[a] {
 			t.Errorf("assignColor(%q) = %q, not a palette color", id, a)
+		}
+	}
+}
+
+// TestAssignColorIndexIsNeverNegative verifies that the index computation never
+// yields a negative value. On 32-bit platforms where int is 32 bits, converting
+// a uint32 with the high bit set to int produces a negative value, and Go's %
+// operator preserves the sign of the dividend, causing negative slice indices
+// and panics. This test uses persona IDs whose FNV-1a hash has the high bit set
+// (>= 0x80000000) to ensure the index is always in [0, len(palette)) and the
+// color assignment is stable. While this machine is 64-bit and cannot reproduce
+// the panic, we assert the property directly.
+func TestAssignColorIndexIsNeverNegative(t *testing.T) {
+	inPalette := map[string]bool{}
+	for _, c := range palette {
+		inPalette[c] = true
+	}
+	// These IDs have FNV-1a hashes with the high bit set (>= 0x80000000).
+	// On 32-bit int platforms, int(hash) would be negative, causing a panic
+	// with the old implementation.
+	highBitIDs := []string{"scout", "analyst", "writer", "mentor", "guide", "expert", "oracle", "sage", "herald", "voyager", "pioneer"}
+	for _, id := range highBitIDs {
+		h := fnv.New32a()
+		h.Write([]byte(id))
+		hash := h.Sum32()
+		// Verify the ID's hash actually has the high bit set (test sanity check).
+		if hash < 0x80000000 {
+			t.Errorf("test setup error: %q hash 0x%08x does not have high bit set", id, hash)
+		}
+		// Verify the index computation is in valid range.
+		index := hash % uint32(len(palette))
+		if int(index) < 0 || int(index) >= len(palette) {
+			t.Errorf("assignColor(%q): computed index %d out of range [0, %d)", id, index, len(palette))
+		}
+		// Verify assignColor returns a valid palette member.
+		color := assignColor(id)
+		if !inPalette[color] {
+			t.Errorf("assignColor(%q) = %q, not a palette color", id, color)
 		}
 	}
 }

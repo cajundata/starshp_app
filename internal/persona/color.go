@@ -41,7 +41,7 @@ func ValidColor(s string) bool { return hexRe.MatchString(s) }
 func assignColor(id string) string {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(id))
-	return palette[int(h.Sum32())%len(palette)]
+	return palette[h.Sum32()%uint32(len(palette))]
 }
 
 // ContrastRatio returns the WCAG 2.x contrast ratio between two hex colors,
