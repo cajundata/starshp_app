@@ -346,7 +346,7 @@ async function openConversation(id: string) {
     if (!ev.runId) continue
     // Create the bubble with its attribution before any content lands in it, so
     // a replayed run is colored exactly as the live one was.
-    ensureRunBubble(ev.runId, (ev as any).personaId || '', (ev as any).modelId || '')
+    ensureRunBubble(ev.runId, ev.personaId || '', ev.modelId || '')
     if (ev.kind === 'assistant_text') {
       appendRunText(ev.runId, ev.text || '')
     } else if (ev.kind === 'assistant_tool_call') {
@@ -411,15 +411,27 @@ async function send() {
   const text = input.value.trim()
   input.value = ''
   addMsg('user', text)
+  // Capture the target conversation and persona now, before any further
+  // awaits. An agentic run can take a minute, and nothing disables the
+  // sidebar or the persona picker while it streams — a post-await read of
+  // activeConv/personaSel.value could pick up whatever the operator clicked
+  // to next, and pin/send against the wrong conversation.
+  const conv = activeConv!
+  const pid = personaSel.value
   // The assistant bubble is created by the chat:run_started event; the loop's
   // output flows in through the chat:* taxonomy below.
   streaming = true
-  usagePendingForConv = activeConv
+  usagePendingForConv = conv
   sendBtn.textContent = 'Stop ◼'
   sendBtn.classList.add('streaming')
   try {
-    await App.SendMessage(activeConv!, text, personaSel.value)
-    await App.SetConversationPersona(activeConv!, personaSel.value)
+    // Pin before sending: SetConversationPersona validates the persona
+    // server-side and errors without writing if it can't resolve it, so
+    // pinning first is safe. It also makes the pin survive a failed send,
+    // which is correct — the pin records what the operator selected here,
+    // not what succeeded.
+    await App.SetConversationPersona(conv, pid)
+    await App.SendMessage(conv, text, pid)
   } catch (e: any) {
     // A thrown error before any run started (e.g. bad model / missing key)
     // has no run bubble to attach to — surface it inline. Errors raised mid-run
@@ -430,11 +442,14 @@ async function send() {
     sendBtn.textContent = 'Send ▸'
     sendBtn.classList.remove('streaming')
     // If the chat:usage event never arrived (cancel, SDK gap, error), mark
-    // the last-known footer entry stale so the user sees a ~ marker.
+    // the last-known footer entry stale so the user sees a ~ marker. Only
+    // do this if the operator is still looking at the conversation this
+    // send targeted — usagePendingForConv is that conversation, so this
+    // check also implies activeConv === conv here.
     if (usagePendingForConv === activeConv) {
-      const u = latestUsage.get(activeConv!)
+      const u = latestUsage.get(conv)
       if (u) {
-        latestUsage.set(activeConv!, { ...u, stale: true })
+        latestUsage.set(conv, { ...u, stale: true })
         updateFooter()
       }
     }

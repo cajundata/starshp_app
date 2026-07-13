@@ -78,7 +78,7 @@ func (s *Store) SetConversationTitle(id, title string) error {
 func (s *Store) SetConversationPinned(id, pinnedModel, pinnedPersona string) error {
 	_, err := s.db.Exec(
 		`UPDATE conversations SET pinned_model=?, pinned_persona=?, updated_at=? WHERE id=?`,
-		pinnedModel, pinnedPersona, time.Now().Unix(), id)
+		nullIfEmpty(pinnedModel), nullIfEmpty(pinnedPersona), time.Now().Unix(), id)
 	return err
 }
 
