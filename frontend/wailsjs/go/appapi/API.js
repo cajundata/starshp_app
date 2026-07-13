@@ -98,6 +98,10 @@ export function Models() {
   return window['go']['appapi']['API']['Models']();
 }
 
+export function Personas() {
+  return window['go']['appapi']['API']['Personas']();
+}
+
 export function ReadLibraryItem(arg1) {
   return window['go']['appapi']['API']['ReadLibraryItem'](arg1);
 }
@@ -114,8 +118,8 @@ export function SetActiveItems(arg1, arg2) {
   return window['go']['appapi']['API']['SetActiveItems'](arg1, arg2);
 }
 
-export function SetConversationMeta(arg1, arg2) {
-  return window['go']['appapi']['API']['SetConversationMeta'](arg1, arg2);
+export function SetConversationPersona(arg1, arg2) {
+  return window['go']['appapi']['API']['SetConversationPersona'](arg1, arg2);
 }
 
 export function SetConversationScope(arg1, arg2) {

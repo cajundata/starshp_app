@@ -6,6 +6,7 @@ import {appapi} from '../models';
 import {textbooks} from '../models';
 import {pipeline} from '../models';
 import {provider} from '../models';
+import {persona} from '../models';
 
 export function AddKillCriterion(arg1:string,arg2:string,arg3:string,arg4:number,arg5:string):Promise<store.KillCriterion>;
 
@@ -55,6 +56,8 @@ export function ListStatusHistory(arg1:string):Promise<Array<store.StatusChange>
 
 export function Models():Promise<Array<provider.ModelInfo>>;
 
+export function Personas():Promise<Array<persona.Persona>>;
+
 export function ReadLibraryItem(arg1:string):Promise<string>;
 
 export function SaveLibraryItem(arg1:string,arg2:string):Promise<void>;
@@ -63,7 +66,7 @@ export function SendMessage(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function SetActiveItems(arg1:string,arg2:Array<string>):Promise<void>;
 
-export function SetConversationMeta(arg1:string,arg2:string):Promise<void>;
+export function SetConversationPersona(arg1:string,arg2:string):Promise<void>;
 
 export function SetConversationScope(arg1:string,arg2:Array<store.TextbookScope>):Promise<void>;
 

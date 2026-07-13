@@ -4,6 +4,8 @@ export namespace appapi {
 	    id: string;
 	    turnId: string;
 	    runId?: string;
+	    personaId?: string;
+	    modelId?: string;
 	    kind: string;
 	    text?: string;
 	    toolCallId?: string;
@@ -22,6 +24,8 @@ export namespace appapi {
 	        this.id = source["id"];
 	        this.turnId = source["turnId"];
 	        this.runId = source["runId"];
+	        this.personaId = source["personaId"];
+	        this.modelId = source["modelId"];
 	        this.kind = source["kind"];
 	        this.text = source["text"];
 	        this.toolCallId = source["toolCallId"];
@@ -51,6 +55,33 @@ export namespace library {
 	        this.filename = source["filename"];
 	        this.name = source["name"];
 	        this.error = source["error"];
+	    }
+	}
+
+}
+
+export namespace persona {
+	
+	export class Persona {
+	    id: string;
+	    name: string;
+	    model: string;
+	    color: string;
+	    tools?: string[];
+	    library?: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Persona(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.model = source["model"];
+	        this.color = source["color"];
+	        this.tools = source["tools"];
+	        this.library = source["library"];
 	    }
 	}
 
@@ -124,6 +155,7 @@ export namespace store {
 	    createdAt: number;
 	    updatedAt: number;
 	    pinnedModel: string;
+	    pinnedPersona: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Conversation(source);
@@ -136,6 +168,7 @@ export namespace store {
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
 	        this.pinnedModel = source["pinnedModel"];
+	        this.pinnedPersona = source["pinnedPersona"];
 	    }
 	}
 	export class Idea {

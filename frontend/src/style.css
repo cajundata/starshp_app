@@ -74,6 +74,16 @@ body { font-family: system-ui, sans-serif; }
 .tool-summary { margin-top: 6px; padding-top: 6px; border-top: 1px solid #2b2b30; white-space: pre-wrap; color: #b8b8be; cursor: text; }
 .cancelled-tag { margin-top: 5px; font-size: 11px; color: #a5704a; font-style: italic; }
 
+/* Persona attribution. --persona-color is set inline per bubble from the
+   persona registry; one rule set, parameterized — no generated stylesheet. */
+.msg.assistant { --persona-color: #8a8a90; border-left: 3px solid var(--persona-color); padding-left: 9px; }
+.msg-attrib { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; font-size: 11px; }
+.persona-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--persona-color); }
+.persona-name { color: var(--persona-color); font-weight: 600; }
+.model-chip { color: #6f6f76; background: #16161a; border: 1px solid #2b2b30; border-radius: 999px;
+  padding: 1px 7px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 10px;
+  max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* ---- Pipeline view ---- */
 /* Sidebar button matches #newChat exactly. */
 #pipelineBtn { background: #2b2b30; border: 0; color: #fff; border-radius: 7px;

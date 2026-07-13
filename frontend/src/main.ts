@@ -17,7 +17,23 @@ function modelMaxContext(modelID: string, models: { id: string; maxContext?: num
   return m?.maxContext ?? 0
 }
 
-let cachedModels: { id: string; maxContext?: number }[] = []
+let cachedModels: { id: string; display?: string; maxContext?: number }[] = []
+
+type PersonaInfo = { id: string; name: string; model: string; color: string }
+let cachedPersonas: PersonaInfo[] = []
+
+const NEUTRAL_COLOR = '#8a8a90'
+
+function personaById(id: string): PersonaInfo | undefined {
+  return cachedPersonas.find(p => p.id === id)
+}
+
+// modelLabel is what the bubble's model chip shows: the display name the
+// operator gave the model in models.yaml, falling back to the raw ID.
+function modelLabel(modelID: string): string {
+  const m = cachedModels.find(x => x.id === modelID)
+  return m?.display || modelID
+}
 
 function updateFooter() {
   const el = $('ctxFooter')
@@ -30,14 +46,16 @@ function updateFooter() {
   const occ = (Number.isFinite(u.lastInput) && Number.isFinite(u.lastOutput))
     ? u.lastInput + u.lastOutput
     : u.input
-  el.textContent = `context ${prefix}${fmt(occ)}${denom} · this turn ${fmt(u.input)}→${fmt(u.output)} · cache ${fmt(u.cached)}`
+  const persona = personaSel.selectedOptions[0]?.text || ''
+  const who = persona ? ` · ${persona}` : ''
+  el.textContent = `context ${prefix}${fmt(occ)}${denom} · this turn ${fmt(u.input)}→${fmt(u.output)} · cache ${fmt(u.cached)}${who}`
   el.classList.remove('hidden')
 }
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement
 const thread = $('thread')
 const input = $('input') as HTMLTextAreaElement
-const modelSel = $('modelSel') as HTMLSelectElement
+const personaSel = $('personaSel') as HTMLSelectElement
 const sendBtn = $('sendBtn') as HTMLButtonElement
 
 let ragStatusEl: HTMLElement | null = null
@@ -91,7 +109,7 @@ function errCodeFromMeta(meta: any): string {
   return meta && typeof meta === 'object' && typeof meta.error_code === 'string' ? meta.error_code : ''
 }
 
-function ensureRunBubble(runId: string): RunBubble {
+function ensureRunBubble(runId: string, personaId = '', modelId = ''): RunBubble {
   let b = runBubbles.get(runId)
   if (!b) {
     const el = document.createElement('div')
@@ -101,7 +119,45 @@ function ensureRunBubble(runId: string): RunBubble {
     b = { el, curText: null, tools: new Map() }
     runBubbles.set(runId, b)
   }
+  applyAttribution(b, personaId, modelId)
   return b
+}
+
+// applyAttribution stamps the bubble with who spoke and on which model. Both
+// the live path (chat:run_started) and the replay path (event.personaId /
+// event.modelId) call it with the same two IDs, so a reopened conversation is
+// colored identically to what the operator watched stream in.
+//
+// A run with no persona (recorded before personas existed) shows the model chip
+// alone in a neutral color — honest about what is known, rather than inventing
+// an assistant. A persona ID with no matching file (the operator deleted it)
+// shows the literal ID, also neutral. Neither is an error.
+function applyAttribution(b: RunBubble, personaId: string, modelId: string) {
+  if (!personaId && !modelId) return
+  if (b.el.querySelector('.msg-attrib')) return
+
+  const p = personaId ? personaById(personaId) : undefined
+  b.el.style.setProperty('--persona-color', p?.color || NEUTRAL_COLOR)
+  if (personaId) b.el.dataset.persona = personaId
+
+  const row = document.createElement('div')
+  row.className = 'msg-attrib'
+
+  if (personaId) {
+    const dot = document.createElement('span')
+    dot.className = 'persona-dot'
+    const name = document.createElement('span')
+    name.className = 'persona-name'
+    name.textContent = p?.name || personaId
+    row.append(dot, name)
+  }
+  if (modelId) {
+    const chip = document.createElement('span')
+    chip.className = 'model-chip'
+    chip.textContent = modelLabel(modelId)
+    row.appendChild(chip)
+  }
+  b.el.insertBefore(row, b.el.firstChild)
 }
 
 function appendRunText(runId: string, text: string) {
@@ -168,7 +224,9 @@ function setRunGrounding(runId: string, status: string, sourceCount: number) {
   const h = document.createElement('div')
   h.className = 'grounding-header'
   h.textContent = `↳ grounded · ${sourceCount || 0} sources`
-  b.el.insertBefore(h, b.el.firstChild)
+  const attrib = b.el.querySelector('.msg-attrib')
+  if (attrib) b.el.insertBefore(h, attrib.nextSibling)
+  else b.el.insertBefore(h, b.el.firstChild)
 }
 
 function setRunStatus(runId: string, status: 'completed' | 'errored' | 'cancelled') {
@@ -275,7 +333,9 @@ async function openConversation(id: string) {
   runBubbles.clear()
   // History is the canonical display timeline: the active completed run per
   // turn (or the latest terminal run, so cancelled/errored partial output the
-  // user saw is preserved). Token usage is not carried on events, so the footer
+  // user saw is preserved). Each assistant event carries the persona and model
+  // that produced it (joined from runs), so replayed bubbles are colored the
+  // same as live ones. Token usage is not carried on events, so the footer
   // stays empty until the next live turn emits chat:usage.
   const events = (await App.GetConversationDisplayEvents(id)) || []
   for (const ev of events) {
@@ -284,6 +344,9 @@ async function openConversation(id: string) {
       continue
     }
     if (!ev.runId) continue
+    // Create the bubble with its attribution before any content lands in it, so
+    // a replayed run is colored exactly as the live one was.
+    ensureRunBubble(ev.runId, (ev as any).personaId || '', (ev as any).modelId || '')
     if (ev.kind === 'assistant_text') {
       appendRunText(ev.runId, ev.text || '')
     } else if (ev.kind === 'assistant_tool_call') {
@@ -309,9 +372,9 @@ async function openConversation(id: string) {
   for (const b of runBubbles.values()) attachRunCopy(b)
   const convs = (await App.ListConversations()) || []
   const c = convs.find(x => x.id === id)
-  if (c && c.pinnedModel) {
-    if (Array.from(modelSel.options).some(o => o.value === c.pinnedModel)) {
-      modelSel.value = c.pinnedModel
+  if (c && c.pinnedPersona) {
+    if (Array.from(personaSel.options).some(o => o.value === c.pinnedPersona)) {
+      personaSel.value = c.pinnedPersona
     }
   }
   updateFooter()
@@ -324,9 +387,11 @@ async function newChat() {
 }
 
 async function loadMeta() {
-  const models = (await App.Models()) || []
-  cachedModels = models
-  modelSel.innerHTML = models.map(m => `<option value="${m.id}">${m.display}</option>`).join('')
+  cachedModels = (await App.Models()) || []
+  cachedPersonas = (await App.Personas()) || []
+  personaSel.innerHTML = cachedPersonas
+    .map(p => `<option value="${p.id}">${p.name}</option>`)
+    .join('')
 }
 
 async function send() {
@@ -353,8 +418,8 @@ async function send() {
   sendBtn.textContent = 'Stop ◼'
   sendBtn.classList.add('streaming')
   try {
-    await App.SendMessage(activeConv!, text, modelSel.value)
-    await App.SetConversationMeta(activeConv!, modelSel.value)
+    await App.SendMessage(activeConv!, text, personaSel.value)
+    await App.SetConversationPersona(activeConv!, personaSel.value)
   } catch (e: any) {
     // A thrown error before any run started (e.g. bad model / missing key)
     // has no run bubble to attach to — surface it inline. Errors raised mid-run
@@ -384,7 +449,7 @@ async function send() {
 
 EventsOn('chat:run_started', (p: any) => {
   if (p.convID !== activeConv) return
-  ensureRunBubble(p.runID)
+  ensureRunBubble(p.runID, p.personaID || '', p.modelID || '')
 })
 
 EventsOn('chat:grounding_ready', (p: any) => {
