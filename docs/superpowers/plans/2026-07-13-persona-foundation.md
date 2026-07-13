@@ -635,10 +635,14 @@ func ValidColor(s string) bool { return hexRe.MatchString(s) }
 
 // assignColor picks a stable palette entry for a persona ID. Same ID, same
 // color, across restarts and machines — so history does not recolor itself.
+//
+// The modulo is done in unsigned arithmetic: int(uint32) is negative on a
+// 32-bit-int platform whenever the hash's high bit is set, and Go's % keeps the
+// sign of the dividend, which would panic on a negative slice index.
 func assignColor(id string) string {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(id))
-	return palette[int(h.Sum32())%len(palette)]
+	return palette[h.Sum32()%uint32(len(palette))]
 }
 
 // ContrastRatio returns the WCAG 2.x contrast ratio between two hex colors,
