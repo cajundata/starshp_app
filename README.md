@@ -177,8 +177,9 @@ Edit it freely as model IDs evolve — no recompile. A missing or unreadable
 
 Starshp assigns one persona per conversation instead of picking a raw model.
 Each persona is a single markdown file in `<app-dir>/personas/`; the filename
-stem is its stable ID (`scout.md` → `scout`). Frontmatter is YAML, the body
-is the system prompt:
+stem is its stable ID (`scout.md` → `scout`). Override the directory with the
+`PERSONA_DIR` environment variable (an absolute path). Frontmatter is YAML,
+the body is the system prompt:
 
 ```markdown
 ---
@@ -195,8 +196,9 @@ You are Scout. You find the angle nobody else is looking at.
 - `name` — required, shown in the picker and on assistant bubbles.
 - `model` — required, must match an `id` in `models.yaml`.
 - `color` — optional 6-digit hex. Omit it and one is assigned deterministically
-  from a contrast-checked palette, keyed on the persona's filename — the same
-  persona always gets the same color, across restarts and machines.
+  from a contrast-checked palette, keyed on the persona's ID (the filename
+  stem) — the same persona always gets the same color, across restarts and
+  machines.
 - `tools` — optional whitelist of tool names the persona may call
   (`safe_math`, `search_textbook`). Omit it to allow every registered tool.
 - `library` — optional list of library item names this persona always
@@ -245,6 +247,7 @@ environment variable, since it determines where `.env` itself is found.
 | `APP_DB_PATH` | `<app-dir>/app.db` | Chat history DB. |
 | `RAG_DB_PATH` | `<app-dir>/rag.db` | RAG index DB. |
 | `LIBRARY_DIR` | `<app-dir>/library` | Prompt library storage directory. |
+| `PERSONA_DIR` | `<app-dir>/personas` | Persona roster directory. |
 | `TEXTBOOKS_CONFIG` | `textbooks.yaml` | Textbook manifest; a relative value resolves inside the app directory. |
 | `MODELS_CONFIG` | `models.yaml` | Model registry; a relative value resolves inside the app directory. |
 | `CONTEXT_TOKEN_BUDGET` | `2500` | Max textbook context tokens injected per turn. |

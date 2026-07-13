@@ -10,7 +10,9 @@ Run: `wails dev`
 1. [x] App launches; if keys/configs missing, a setup notice lists the issues.
 2. [x] "+ New chat" creates a conversation; it appears in the sidebar.
 3. [x] Type a message, Send → assistant reply streams token-by-token.
-4. [x] Switch the model dropdown mid-conversation; next reply uses the new model.
+4. [x] Switch the persona dropdown mid-conversation; the next reply's bubble is
+        attributed to the newly selected persona (new color, new name, new
+        model chip) while earlier bubbles keep their original attribution.
 5. [x] Click 📚 Textbooks, attach a book, Save → "Indexing… N/total" then "ready".
 6. [x] Ask a question answerable from the textbook → reply is grounded.
 7. [x] Click Stop during streaming → stream is cancelled; the partial reply is persisted.
@@ -36,7 +38,7 @@ Run: `wails dev`
 ## Context tracking footer
 
 20. [x] **Footer renders after first reply on a fresh conversation.** Create a new conversation, send a short message, wait for the reply. The strip below the thread shows `context N / M · this turn I→O · cache K` (with denominator if the active model has `max_context` set in `models.yaml`).
-21. [x] **Footer updates across model switches mid-conversation.** Switch the model picker mid-conversation, send a follow-up. The denominator shifts to the new model's `max_context`; values keep growing turn over turn.
+21. [x] **Footer updates across persona switches mid-conversation.** Switch the persona dropdown mid-conversation to a persona pinned to a different model, send a follow-up. The denominator shifts to the new model's `max_context`; values keep growing turn over turn.
 22. [x] **`~` marker after Stop.** Start a long reply, click Stop. The footer keeps the previous turn's values, prefixed with `~`.
 23. [x] **No denominator when `max_context` is omitted.** Remove `max_context` from one model in `models.yaml`, restart, send a message with that model. Footer shows `context N · this turn I→O · cache K` (no `/ M` segment).
 24. [x] **Footer survives conversation switches.** Open a conversation with prior history; the footer seeds from the last assistant message's recorded tokens. Switch to another conversation, then back.
