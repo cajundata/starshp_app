@@ -5,14 +5,10 @@ package appapi
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"log/slog"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/cajundata/starshp_app/internal/assignment"
 	"github.com/cajundata/starshp_app/internal/chat"
 	"github.com/cajundata/starshp_app/internal/config"
 	"github.com/cajundata/starshp_app/internal/library"
@@ -38,10 +34,7 @@ type API struct {
 	mu             sync.Mutex
 	cancelInFlight context.CancelFunc
 
-	assignmentFactory assignment.ProviderFactory     // overridable in tests
-	emit              func(name string, payload any) // wruntime.EventsEmit wrapper; overridable in tests
-	asgCancel         context.CancelFunc
-	rerunning         bool // guards against concurrent single-item reruns (a.mu)
+	emit func(name string, payload any) // wruntime.EventsEmit wrapper; overridable in tests
 }
 
 func NewAPI(cfg config.Config, st *store.Store, reg provider.Registry, ragAdpt *rag.Adapter) *API {
@@ -58,13 +51,6 @@ func NewAPI(cfg config.Config, st *store.Store, reg provider.Registry, ragAdpt *
 		))
 	}
 	_ = a.toolReg.Register(safemath.New())
-	a.assignmentFactory = func(modelID string) (provider.ChatProvider, string, error) {
-		p, err := provider.New(a.reg, modelID, a.cfg.OpenAIAPIKey, a.cfg.AnthropicAPIKey)
-		if err != nil {
-			return nil, "", err
-		}
-		return p, providerNameFromModelID(a.reg, modelID), nil
-	}
 	a.emit = func(name string, payload any) { wruntime.EventsEmit(a.ctx, name, payload) }
 	return a
 }
@@ -164,13 +150,6 @@ func (a *API) SetConversationScope(convID string, scopes []store.TextbookScope) 
 func (a *API) GetConversationScope(convID string) ([]store.TextbookScope, error) {
 	return a.st.GetConversationTextbooks(convID)
 }
-func (a *API) SetAssignmentScope(asgID string, scopes []store.TextbookScope) error {
-	return a.st.SetAssignmentScope(asgID, scopes)
-}
-func (a *API) GetAssignmentScope(asgID string) ([]store.TextbookScope, error) {
-	return a.st.GetAssignmentScope(asgID)
-}
-
 func (a *API) SetConversationMeta(convID, model string) error {
 	return a.st.SetConversationMeta(convID, model)
 }
@@ -299,164 +278,6 @@ func (a *API) CancelMessage() {
 	}
 }
 
-// SolveAssignment loads a companion _json directory and solves every question
-// concurrently in the background. Returns the assignment id immediately.
-func (a *API) SolveAssignment(dir string, scopes []store.TextbookScope, libraryItems []string) (string, error) {
-	model := a.defaultModelID()
-	if model == "" {
-		return "", provider.AppError{Code: "config", UserMessage: "No model configured.", Retryable: false}
-	}
-	var search tools.Tool
-	if a.ragAdpt != nil {
-		search = searchtextbook.New(ragRetrieverShim{a: a}, chatStoreResolver{st: a.st}, 4000)
-	}
-	libPreamble, _, _ := a.assembleLibraryPreamble(libraryItems)
-	opts := assignment.Options{
-		Model:           model,
-		Concurrency:     assignmentConcurrency(),
-		Grounding:       assignment.NoGrounding{}, // v1: textbooks via the search_textbook tool, no pre-turn grounding
-		SafeMath:        safemath.New(),
-		SearchTool:      search,
-		Resolver:        chatStoreResolver{st: a.st},
-		LibraryPreamble: libPreamble,
-		RemapErr:        a.localRemapErr(model),
-		Emit:            a.emit,
-	}
-	orc := assignment.New(a.st, a.chatSvc, a.assignmentFactory, opts)
-
-	cctx, cancel := context.WithCancel(a.ctx)
-	a.mu.Lock()
-	a.asgCancel = cancel
-	a.mu.Unlock()
-
-	id, err := orc.Start(cctx, dir, scopes, libraryItems, cancel)
-	if err != nil {
-		cancel()
-		return "", provider.NormalizeError(err)
-	}
-	return id, nil
-}
-
-// RerunAssignmentItem re-solves a single item in place and returns the new
-// conversation id. Idle-only: errors if another rerun is already in flight or a
-// batch is running. The prior answer (and its _answers/NNN.json file) is
-// overwritten. Runs synchronously: it returns when the item has been re-solved.
-func (a *API) RerunAssignmentItem(asgID string, seq int) (string, error) {
-	a.mu.Lock()
-	if a.rerunning {
-		a.mu.Unlock()
-		return "", provider.AppError{Code: "busy", UserMessage: "Another rerun is already running.", Retryable: false}
-	}
-	a.rerunning = true
-	a.mu.Unlock()
-	defer func() {
-		a.mu.Lock()
-		a.rerunning = false
-		a.mu.Unlock()
-	}()
-
-	model := a.defaultModelID()
-	if model == "" {
-		return "", provider.AppError{Code: "config", UserMessage: "No model configured.", Retryable: false}
-	}
-	var search tools.Tool
-	if a.ragAdpt != nil {
-		search = searchtextbook.New(ragRetrieverShim{a: a}, chatStoreResolver{st: a.st}, 4000)
-	}
-	libItems, lerr := a.st.GetAssignmentLibraryItems(asgID)
-	if lerr != nil {
-		slog.Warn("assignment: rerun read library items failed; solving without library preamble", "assignmentId", asgID, "err", lerr)
-	}
-	libPreamble, _, _ := a.assembleLibraryPreamble(libItems)
-	opts := assignment.Options{
-		Model:           model,
-		Concurrency:     1,
-		Grounding:       assignment.NoGrounding{},
-		SafeMath:        safemath.New(),
-		SearchTool:      search,
-		Resolver:        chatStoreResolver{st: a.st},
-		LibraryPreamble: libPreamble,
-		RemapErr:        a.localRemapErr(model),
-		Emit:            func(_ string, _ any) {}, // decoupled from batch progress events
-	}
-	orc := assignment.New(a.st, a.chatSvc, a.assignmentFactory, opts)
-
-	// Synchronous, no per-call cancel in v1: uses the app-lifetime context.
-	// (Optional rerun cancel is a documented follow-up.)
-	updated, err := orc.RerunItem(a.ctx, asgID, seq)
-	if err != nil {
-		if ae, ok := err.(provider.AppError); ok {
-			return "", ae // preserve typed code; NormalizeError would mask it as "unknown"
-		}
-		return "", provider.NormalizeError(err)
-	}
-	return updated.ConversationID, nil
-}
-
-// latestAssignmentIDForDir returns the id of the most recent assignment for dir.
-// Best-effort: any lookup error is swallowed into found=false, so solve-time
-// pre-fill never blocks solving.
-func (a *API) latestAssignmentIDForDir(dir string) (string, bool) {
-	asg, ok, err := a.st.FindLatestAssignmentBySourceDir(dir)
-	if err != nil || !ok {
-		return "", false
-	}
-	return asg.ID, true
-}
-
-// GetAssignmentScopeForDir returns the textbook scope of the most recent
-// assignment for dir (nil if none) — used to pre-fill the solve-time picker.
-func (a *API) GetAssignmentScopeForDir(dir string) ([]store.TextbookScope, error) {
-	id, ok := a.latestAssignmentIDForDir(dir)
-	if !ok {
-		return nil, nil
-	}
-	return a.st.GetAssignmentScope(id)
-}
-
-// GetAssignmentLibraryItemsForDir returns the library item selection of the most
-// recent assignment for dir (nil if none) — used to pre-fill the solve-time picker.
-func (a *API) GetAssignmentLibraryItemsForDir(dir string) ([]string, error) {
-	id, ok := a.latestAssignmentIDForDir(dir)
-	if !ok {
-		return nil, nil
-	}
-	return a.st.GetAssignmentLibraryItems(id)
-}
-
-// CancelAssignment aborts the in-flight assignment batch, if any.
-func (a *API) CancelAssignment(_ string) {
-	a.mu.Lock()
-	c := a.asgCancel
-	a.mu.Unlock()
-	if c != nil {
-		c()
-	}
-}
-
-func (a *API) ListAssignments() ([]store.Assignment, error)      { return a.st.ListAssignments() }
-func (a *API) GetAssignment(id string) (store.Assignment, error) { return a.st.GetAssignment(id) }
-func (a *API) ListAssignmentItems(id string) ([]store.AssignmentItem, error) {
-	return a.st.ListAssignmentItems(id)
-}
-
-func (a *API) defaultModelID() string {
-	if len(a.reg.Models) > 0 {
-		return a.reg.Models[0].ID
-	}
-	return ""
-}
-
-func assignmentConcurrency() int {
-	if v := os.Getenv("STARSHP_ASSIGNMENT_CONCURRENCY"); v != "" {
-		var n int
-		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 {
-			return n
-		}
-	}
-	return 4
-}
-
 // booksToIndex returns configured book names that are in the requested set,
 // preserving configured order.
 func booksToIndex(configured, requested []string) []string {
@@ -480,12 +301,6 @@ func (a *API) EnsureIndexed(convID string) error {
 	if err != nil {
 		return provider.NormalizeError(err)
 	}
-	return a.ensureBooksIndexed(scopes)
-}
-
-// EnsureIndexedScope indexes the given textbook scope directly (no conversation).
-// Used by the assignment flow, which has no single conversation. Idempotent.
-func (a *API) EnsureIndexedScope(scopes []store.TextbookScope) error {
 	return a.ensureBooksIndexed(scopes)
 }
 

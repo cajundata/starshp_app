@@ -28,3 +28,12 @@ func Open(dbPath string) (*Store, error) {
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// nullIfEmpty maps "" to a SQL NULL so optional TEXT columns stay null rather
+// than storing empty strings.
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}

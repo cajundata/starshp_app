@@ -43,7 +43,7 @@ func (s *Store) CreateConversation(title string) (Conversation, error) {
 }
 
 func (s *Store) ListConversations() ([]Conversation, error) {
-	rows, err := s.db.Query(`SELECT id,title,created_at,updated_at,COALESCE(pinned_model,'') FROM conversations WHERE assignment_id IS NULL ORDER BY updated_at DESC`)
+	rows, err := s.db.Query(`SELECT id,title,created_at,updated_at,COALESCE(pinned_model,'') FROM conversations ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, err
 	}

@@ -219,46 +219,58 @@ func indexExists(t *testing.T, db *sql.DB, name string) bool {
 	return got == name
 }
 
-func TestMigrate_CreatesAssignments(t *testing.T) {
-	db := openTestDB(t)
-	if err := migrate(db); err != nil {
+// TestMigrateDropsLegacyAssignments simulates a dev DB created before the
+// accounting removal — it has `assignments` / `assignment_items` tables and a
+// `conversations.assignment_id` column — and verifies store.Open migrates it:
+// both tables and the column are gone.
+func TestMigrateDropsLegacyAssignments(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy_assignments.db")
+	legacy := `
+CREATE TABLE conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL,
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, pinned_model TEXT,
+  assignment_id TEXT);
+CREATE TABLE assignments (id TEXT PRIMARY KEY, source_dir TEXT NOT NULL,
+  title TEXT NOT NULL, manifest_hash TEXT NOT NULL, model TEXT NOT NULL,
+  grounding_scope TEXT, library_items TEXT, status TEXT NOT NULL,
+  total_items INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL);
+CREATE TABLE assignment_items (id TEXT PRIMARY KEY,
+  assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL, source_path TEXT NOT NULL, type TEXT NOT NULL,
+  title TEXT, run_id TEXT, conversation_id TEXT, status TEXT NOT NULL,
+  confidence TEXT, answer_json TEXT, flags_json TEXT, answer_path TEXT,
+  error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+`
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	cols := readTableColumns(t, db, "assignments")
-	for _, want := range []string{
-		"id", "source_dir", "title", "manifest_hash", "model",
-		"grounding_scope", "status", "total_items", "created_at", "updated_at",
-	} {
-		if _, ok := cols[want]; !ok {
-			t.Errorf("assignments missing column %q", want)
+	if _, err := db.Exec(legacy); err != nil {
+		t.Fatalf("seed legacy schema: %v", err)
+	}
+	db.Close()
+
+	// Open through the real store — this must run the migration.
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+
+	for _, table := range []string{"assignments", "assignment_items"} {
+		var n int
+		if err := s.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Fatalf("%s table should have been dropped", table)
 		}
 	}
-}
-
-func TestMigrate_CreatesAssignmentItems(t *testing.T) {
-	db := openTestDB(t)
-	if err := migrate(db); err != nil {
+	has, err := columnExists(s.db, "conversations", "assignment_id")
+	if err != nil {
 		t.Fatal(err)
 	}
-	cols := readTableColumns(t, db, "assignment_items")
-	for _, want := range []string{
-		"id", "assignment_id", "seq", "source_path", "type", "title",
-		"run_id", "conversation_id", "status", "confidence", "answer_json",
-		"flags_json", "answer_path", "error", "created_at", "updated_at",
-	} {
-		if _, ok := cols[want]; !ok {
-			t.Errorf("assignment_items missing column %q", want)
-		}
-	}
-}
-
-func TestMigrate_AddsAssignmentIDToConversations(t *testing.T) {
-	db := openTestDB(t)
-	if err := migrate(db); err != nil {
-		t.Fatal(err)
-	}
-	cols := readTableColumns(t, db, "conversations")
-	if _, ok := cols["assignment_id"]; !ok {
-		t.Fatal("conversations missing assignment_id column")
+	if has {
+		t.Fatal("conversations.assignment_id should have been dropped")
 	}
 }

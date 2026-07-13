@@ -1,10 +1,10 @@
 name: no-textbooks-attached
 prompt: |
-  Search the attached textbooks for the realization principle and
-  cite the passage. (No textbooks are attached, so the tool will
+  Search the attached reference books for the definition of opportunity
+  cost and cite the passage. (No books are attached, so the tool will
   return no_textbooks_attached — answer from background knowledge.)
 expected_substrings:
-  - "realization"
+  - "opportunity cost"
 expected_min_tool_calls: 0
 expected_tools_called_at_least_once: []
 max_iterations: 3

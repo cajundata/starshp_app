@@ -89,19 +89,6 @@ func (a *API) SetActiveItems(convID string, names []string) error {
 	return nil
 }
 
-// SetAssignmentLibraryItems persists the library item selection for an
-// assignment. Called from appapi internals that normalize errors upstream, so it
-// does not wrap the store error itself.
-func (a *API) SetAssignmentLibraryItems(asgID string, items []string) error {
-	return a.st.SetAssignmentLibraryItems(asgID, items)
-}
-
-// GetAssignmentLibraryItems returns an assignment's selected library item
-// filenames (nil if none). See SetAssignmentLibraryItems re: error normalization.
-func (a *API) GetAssignmentLibraryItems(asgID string) ([]string, error) {
-	return a.st.GetAssignmentLibraryItems(asgID)
-}
-
 // libraryError maps a library validation error to a friendly AppError and
 // falls back to the generic normalizer for everything else.
 func libraryError(err error) provider.AppError {

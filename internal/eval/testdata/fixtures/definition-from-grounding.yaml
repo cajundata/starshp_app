@@ -1,10 +1,9 @@
 name: definition-from-grounding
 prompt: |
-  Define the realization principle in one sentence using only
-  textbook language. Do not call any tools; the definition should
-  come from your training knowledge.
+  Define opportunity cost in one sentence. Do not call any tools; the
+  definition should come from your training knowledge.
 expected_substrings:
-  - "revenue"
+  - "alternative"
 expected_min_tool_calls: 0
 expected_tools_called_at_least_once: []
 max_iterations: 2

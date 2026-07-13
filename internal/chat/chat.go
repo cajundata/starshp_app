@@ -20,10 +20,10 @@ import (
 )
 
 // MaxIterationsDefault caps the number of tool-dispatch rounds in the agentic
-// loop. STARSHP_MAX_TOOL_ITERATIONS overrides it. A single coursework tax
-// problem was observed making 9 distinct, productive tool calls, so the cap
-// must comfortably exceed that. When the cap is reached the loop does not error
-// — it forces one final tool-free answer (see finalizeWithoutTools).
+// loop. STARSHP_MAX_TOOL_ITERATIONS overrides it. Runs have been observed making
+// 9 distinct, productive tool calls, so the cap must comfortably exceed that.
+// When the cap is reached the loop does not error — it forces one final
+// tool-free answer (see finalizeWithoutTools).
 const MaxIterationsDefault = 16
 
 // Retriever is the pre-turn RAG seam. nil means no pre-turn retrieval.

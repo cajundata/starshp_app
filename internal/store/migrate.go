@@ -46,21 +46,21 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	// Accounting removal: the assignment surface is gone. Drop its tables and the
+	// conversations column that pointed at them. Idempotent — a fresh database
+	// never had them.
+	if _, err := db.Exec(`DROP TABLE IF EXISTS assignment_items`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`DROP TABLE IF EXISTS assignments`); err != nil {
+		return err
+	}
 	has, err = columnExists(db, "conversations", "assignment_id")
 	if err != nil {
 		return err
 	}
-	if !has {
-		if _, err := db.Exec(`ALTER TABLE conversations ADD COLUMN assignment_id TEXT`); err != nil {
-			return err
-		}
-	}
-	has, err = columnExists(db, "assignments", "library_items")
-	if err != nil {
-		return err
-	}
-	if !has {
-		if _, err := db.Exec(`ALTER TABLE assignments ADD COLUMN library_items TEXT`); err != nil {
+	if has {
+		if _, err := db.Exec(`ALTER TABLE conversations DROP COLUMN assignment_id`); err != nil {
 			return err
 		}
 	}
