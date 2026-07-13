@@ -64,6 +64,27 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	// Persona foundation: additive, nullable. Pre-persona runs keep persona_id
+	// NULL and render as a neutral bubble carrying only the model chip.
+	has, err = columnExists(db, "runs", "persona_id")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err := db.Exec(`ALTER TABLE runs ADD COLUMN persona_id TEXT`); err != nil {
+			return err
+		}
+	}
+	has, err = columnExists(db, "conversations", "pinned_persona")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err := db.Exec(`ALTER TABLE conversations ADD COLUMN pinned_persona TEXT`); err != nil {
+			return err
+		}
+	}
+
 	// conversation_events, runs, and their indexes are created by schemaSQL
 	// running before migrate(). Convert any legacy messages rows into the
 	// canonical event log + synthesized runs, then drop the messages table.

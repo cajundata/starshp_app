@@ -22,6 +22,8 @@ type ConversationEvent struct {
 	ConversationID string          `json:"conversationId"`
 	TurnID         string          `json:"turnId"`
 	RunID          string          `json:"runId,omitempty"`
+	PersonaID      string          `json:"personaId,omitempty"`
+	Model          string          `json:"model,omitempty"`
 	SequenceIndex  int64           `json:"sequenceIndex"`
 	Kind           string          `json:"kind"`
 	Text           string          `json:"text,omitempty"`

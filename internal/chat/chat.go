@@ -112,7 +112,7 @@ func (s *Service) Send(ctx context.Context, p SendParams, onToken func(string)) 
 	}
 	runID := uuid.NewString()
 	if err := s.st.CreateRun(p.ConversationID, user.TurnID, runID,
-		providerName, p.Model, string(mode)); err != nil {
+		providerName, p.Model, string(mode), ""); err != nil {
 		return RunResult{}, fmt.Errorf("create run: %w", err)
 	}
 	emit(p.Sink, SinkRunStarted, p.ConversationID, runID, user.TurnID,

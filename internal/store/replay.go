@@ -96,6 +96,8 @@ func (s *Store) GetConversationDisplayEvents(convID string) ([]ConversationEvent
 			ConversationID: convID,
 			TurnID:         run.TurnID,
 			RunID:          runID,
+			PersonaID:      run.PersonaID,
+			Model:          run.Model,
 			Kind:           "run_error",
 			Text:           runErrorDisplayText(run),
 		})
@@ -122,15 +124,17 @@ func (s *Store) eventsForRunsPlusUserMessages(convID string, runIDs []string, cu
 		runSet[currentRunID] = struct{}{}
 	}
 	rows, err := s.db.Query(
-		`SELECT id, conversation_id, turn_id, COALESCE(run_id,''),
-                sequence_index, kind, COALESCE(text,''),
-                COALESCE(tool_call_id,''), COALESCE(tool_name,''),
-                COALESCE(tool_input,''), COALESCE(tool_metadata,''),
-                COALESCE(tool_result_hash,''),
-                COALESCE(tool_latency_ms,0), is_error, created_at
-           FROM conversation_events
-          WHERE conversation_id = ?
-          ORDER BY sequence_index`, convID)
+		`SELECT e.id, e.conversation_id, e.turn_id, COALESCE(e.run_id,''),
+                e.sequence_index, e.kind, COALESCE(e.text,''),
+                COALESCE(e.tool_call_id,''), COALESCE(e.tool_name,''),
+                COALESCE(e.tool_input,''), COALESCE(e.tool_metadata,''),
+                COALESCE(e.tool_result_hash,''),
+                COALESCE(e.tool_latency_ms,0), e.is_error, e.created_at,
+                COALESCE(r.persona_id,''), COALESCE(r.model,'')
+           FROM conversation_events e
+           LEFT JOIN runs r ON r.id = e.run_id
+          WHERE e.conversation_id = ?
+          ORDER BY e.sequence_index`, convID)
 	if err != nil {
 		return nil, err
 	}
@@ -145,6 +149,7 @@ func (s *Store) eventsForRunsPlusUserMessages(convID string, runIDs []string, cu
 			&ev.SequenceIndex, &ev.Kind, &ev.Text,
 			&ev.ToolCallID, &ev.ToolName, &input, &meta,
 			&ev.ToolResultHash, &ev.ToolLatencyMs, &isErrInt, &ev.CreatedAt,
+			&ev.PersonaID, &ev.Model,
 		); err != nil {
 			return nil, err
 		}

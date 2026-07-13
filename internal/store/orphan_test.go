@@ -9,7 +9,7 @@ func TestOrphanRun_ExcludedFromProviderReplay(t *testing.T) {
 	st := openTestStore(t)
 	conv, _ := st.CreateConversation("c")
 	u, _ := st.AppendUserMessage(conv.ID, "q")
-	_ = st.CreateRun(conv.ID, u.TurnID, "rOrphan", "openai", "gpt", "auto_grounded_default")
+	_ = st.CreateRun(conv.ID, u.TurnID, "rOrphan", "openai", "gpt", "auto_grounded_default", "")
 	_, _ = st.AppendAssistantToolCall(conv.ID, u.TurnID, "rOrphan", "callX",
 		"search_textbook", json.RawMessage(`{"query":"x"}`))
 	events, err := st.GetProviderReplayEvents(conv.ID, "")
@@ -27,7 +27,7 @@ func TestSweepOrphans_ReconcilesStatus(t *testing.T) {
 	st := openTestStore(t)
 	conv, _ := st.CreateConversation("c")
 	u, _ := st.AppendUserMessage(conv.ID, "q")
-	_ = st.CreateRun(conv.ID, u.TurnID, "rOrphan", "openai", "gpt", "auto_grounded_default")
+	_ = st.CreateRun(conv.ID, u.TurnID, "rOrphan", "openai", "gpt", "auto_grounded_default", "")
 	_, _ = st.AppendAssistantToolCall(conv.ID, u.TurnID, "rOrphan", "callX",
 		"search_textbook", json.RawMessage(`{"query":"x"}`))
 	if err := st.SweepOrphanedRuns(); err != nil {
@@ -46,7 +46,7 @@ func TestSweepOrphans_TreatsAllInProgressAsOrphan(t *testing.T) {
 	st := openTestStore(t)
 	conv, _ := st.CreateConversation("c")
 	u, _ := st.AppendUserMessage(conv.ID, "q")
-	_ = st.CreateRun(conv.ID, u.TurnID, "rPartialText", "openai", "gpt", "auto_grounded_default")
+	_ = st.CreateRun(conv.ID, u.TurnID, "rPartialText", "openai", "gpt", "auto_grounded_default", "")
 	_, _ = st.AppendAssistantText(conv.ID, u.TurnID, "rPartialText", "partial")
 	if err := st.SweepOrphanedRuns(); err != nil {
 		t.Fatal(err)

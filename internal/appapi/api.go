@@ -151,7 +151,10 @@ func (a *API) GetConversationScope(convID string) ([]store.TextbookScope, error)
 	return a.st.GetConversationTextbooks(convID)
 }
 func (a *API) SetConversationMeta(convID, model string) error {
-	return a.st.SetConversationMeta(convID, model)
+	// Task 6 replaces this with a persona-aware SetConversationPersona binding;
+	// until then the persona is unknown here, so it is left empty rather than
+	// invented.
+	return a.st.SetConversationPinned(convID, model, "")
 }
 
 // titleFromText derives a conversation title from the first user message.

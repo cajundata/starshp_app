@@ -147,7 +147,7 @@ func TestLoop_OneActiveRunPerTurnUnderRegenerate(t *testing.T) {
 	// so we drive the store directly the way that command will.)
 	const r2ID = "regen-run-2"
 	if err := st.CreateRun(conv.ID, r1.TurnID, r2ID, "openai", "m",
-		string(chat.RetrievalAutoGroundedDefault)); err != nil {
+		string(chat.RetrievalAutoGroundedDefault), ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.AppendAssistantText(conv.ID, r1.TurnID, r2ID, "second answer"); err != nil {

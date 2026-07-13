@@ -48,7 +48,7 @@ func TestAppendAssistantText_PreservesOrder(t *testing.T) {
 	user, _ := st.AppendUserMessage(conv.ID, "q")
 	runID := "r1"
 	if err := st.CreateRun(conv.ID, user.TurnID, runID, "openai", "gpt-x",
-		"auto_grounded_default"); err != nil {
+		"auto_grounded_default", ""); err != nil {
 		t.Fatal(err)
 	}
 	a1, err := st.AppendAssistantText(conv.ID, user.TurnID, runID, "first")
@@ -69,7 +69,7 @@ func TestAppendAssistantToolCall_PersistsInputJSON(t *testing.T) {
 	conv, _ := st.CreateConversation("c")
 	user, _ := st.AppendUserMessage(conv.ID, "q")
 	runID := "r1"
-	_ = st.CreateRun(conv.ID, user.TurnID, runID, "openai", "gpt-x", "auto_grounded_default")
+	_ = st.CreateRun(conv.ID, user.TurnID, runID, "openai", "gpt-x", "auto_grounded_default", "")
 	input := json.RawMessage(`{"query":"realization principle"}`)
 	ev, err := st.AppendAssistantToolCall(conv.ID, user.TurnID, runID, "call_1",
 		"search_textbook", input)
@@ -89,7 +89,7 @@ func TestAppendToolResult_PersistsMetadataAndHash(t *testing.T) {
 	conv, _ := st.CreateConversation("c")
 	user, _ := st.AppendUserMessage(conv.ID, "q")
 	runID := "r1"
-	_ = st.CreateRun(conv.ID, user.TurnID, runID, "openai", "gpt-x", "auto_grounded_default")
+	_ = st.CreateRun(conv.ID, user.TurnID, runID, "openai", "gpt-x", "auto_grounded_default", "")
 	_, _ = st.AppendAssistantToolCall(conv.ID, user.TurnID, runID, "call_1",
 		"safe_math", json.RawMessage(`{"expression":"1+1"}`))
 	meta := json.RawMessage(`{"normalized_expression":"1+1"}`)

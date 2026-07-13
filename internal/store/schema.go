@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY, title TEXT NOT NULL,
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
   pinned_model TEXT,
+  pinned_persona TEXT,
   retrieval_mode TEXT NOT NULL DEFAULT 'auto_grounded_default'
 );
 CREATE TABLE IF NOT EXISTS conversation_textbooks (
@@ -45,6 +46,7 @@ CREATE TABLE IF NOT EXISTS runs (
   active_for_replay         INTEGER NOT NULL DEFAULT 0,
   provider                  TEXT NOT NULL,
   model                     TEXT NOT NULL,
+  persona_id                TEXT,
   retrieval_mode            TEXT NOT NULL,
   grounding_meta            TEXT,
   started_at                INTEGER NOT NULL,

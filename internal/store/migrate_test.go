@@ -274,3 +274,61 @@ CREATE TABLE assignment_items (id TEXT PRIMARY KEY,
 		t.Fatal("conversations.assignment_id should have been dropped")
 	}
 }
+
+// TestMigrateLegacyDatabaseGainsPersonaColumns simulates a dev DB created
+// before personas existed — and still carrying the retired assignment surface
+// dropped by TestMigrateDropsLegacyAssignments above — and verifies store.Open
+// migrates it cleanly and additively: both new persona columns appear, and the
+// pre-existing conversation row survives untouched. The assignment-drop
+// behavior itself is already covered by TestMigrateDropsLegacyAssignments;
+// this test only asserts the persona columns.
+func TestMigrateLegacyDatabaseGainsPersonaColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+CREATE TABLE conversations (
+  id TEXT PRIMARY KEY, title TEXT NOT NULL,
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  pinned_model TEXT, assignment_id TEXT
+);
+CREATE TABLE assignments (id TEXT PRIMARY KEY, title TEXT NOT NULL);
+CREATE TABLE assignment_items (id TEXT PRIMARY KEY, assignment_id TEXT NOT NULL);
+INSERT INTO conversations(id,title,created_at,updated_at) VALUES('c1','old',1,1);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open (which runs schema+migrate): %v", err)
+	}
+	defer s.Close()
+
+	for _, tc := range []struct{ table, col string }{
+		{"runs", "persona_id"},
+		{"conversations", "pinned_persona"},
+	} {
+		has, err := columnExists(s.db, tc.table, tc.col)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !has {
+			t.Errorf("%s.%s was not added by migrate", tc.table, tc.col)
+		}
+	}
+
+	// The pre-existing conversation survives and is listable.
+	convs, err := s.ListConversations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(convs) != 1 || convs[0].ID != "c1" {
+		t.Errorf("ListConversations = %+v, want the legacy row", convs)
+	}
+}
