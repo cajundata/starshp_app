@@ -216,3 +216,51 @@ func TestAssembleSystemPromptOrdersPersonaThenLibrary(t *testing.T) {
 		t.Errorf("prompt =\n%q\nwant\n%q", got, want)
 	}
 }
+
+// TestAssembleSystemPromptPutsPersonaItemsBeforeConversationItems verifies
+// that the system prompt is assembled in the correct groups: persona body,
+// then persona's library items, then conversation's items. This test inverts
+// the alphabetical order against the grouping logic, so a naive
+// merge-then-sort-then-dedup implementation would fail (alpha would come
+// before zulu alphabetically, violating the expected grouping). Only a
+// correctly-grouped implementation can pass.
+func TestAssembleSystemPromptPutsPersonaItemsBeforeConversationItems(t *testing.T) {
+	dir := t.TempDir()
+	writeLib := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeLib("alpha.md", "# Alpha\n\nALPHA BODY\n")
+	writeLib("zulu.md", "# Zulu\n\nZULU BODY\n")
+
+	a := &API{cfg: config.Config{LibraryDir: dir}, lib: library.New(dir), st: testStore(t)}
+	c, err := a.st.CreateConversation("t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Conversation attaches both alpha and zulu.
+	if err := a.st.SetActiveItems(c.ID, []string{"alpha.md", "zulu.md"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Persona claims only zulu in its library.
+	p := persona.Persona{ID: "scout", Name: "Scout", Model: "gpt-5",
+		Prompt:  "YOU ARE SCOUT",
+		Library: []string{"zulu"}, // no extension: normalized to zulu.md
+	}
+	got, skipped, err := a.assembleSystemPrompt(c.ID, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skipped) != 0 {
+		t.Fatalf("skipped = %v", skipped)
+	}
+	// Correct output: persona body, then persona's claimed item (zulu),
+	// then conversation-only item (alpha). This inverts alphabetical order,
+	// so a naive sort would fail.
+	want := "YOU ARE SCOUT\n\nZULU BODY\n\nALPHA BODY"
+	if got != want {
+		t.Errorf("prompt =\n%q\nwant\n%q", got, want)
+	}
+}
