@@ -39,8 +39,8 @@ Run: `wails dev`
 21. [x] **`~` marker after Stop.** Start a long reply, click Stop. The footer keeps the previous turn's values, prefixed with `~`.
 22. [x] **No denominator when `max_context` is omitted.** Remove `max_context` from one model in `models.yaml`, restart, send a message with that model. Footer shows `context N · this turn I→O · cache K` (no `/ M` segment).
 23. [x] **Footer survives conversation switches.** Open a conversation with prior history; the footer seeds from the last assistant message's recorded tokens. Switch to another conversation, then back.
-24. [ ] **Occupancy diverges from this-turn on tool turns.** Attach a textbook, ask a question that triggers a search (multi-iteration). The `context` occupancy number is visibly smaller than the `this turn` input (which sums every iteration). On a no-tool turn the occupancy ≈ this-turn input+output.
-25. [ ] **Footer shows the active persona name.** Send a message and check the strip's tail: `... · cache K · <PersonaName>` matches the persona currently selected in the picker. Switch personas and send again — the suffix updates to the new persona's name.
+24. [x] **Occupancy diverges from this-turn on tool turns.** Attach a textbook, ask a question that triggers a search (multi-iteration). The `context` occupancy number is visibly smaller than the `this turn` input (which sums every iteration). On a no-tool turn the occupancy ≈ this-turn input+output.
+25. [x] **Footer shows the active persona name.** Send a message and check the strip's tail: `... · cache K · <PersonaName>` matches the persona currently selected in the picker. Switch personas and send again — the suffix updates to the new persona's name.
 
 ## Tool calling
 
@@ -58,63 +58,19 @@ For each step, observe the assistant bubble in addition to the listed expectatio
 
 ## Personas
 
-35. [ ] **Picker.** The composer's dropdown lists every persona by name. A persona
-        file with a typo (unknown model, unknown tool, bad color) is *absent* from
-        the list, and its rejection appears in the startup banner naming the file
-        and the reason.
-36. [ ] **Attribution.** Send a message. The bubble carries a colored dot, the
-        persona name in that color, a muted model chip, and a colored left stripe
-        — all present before the first token arrives.
-37. [ ] **Two personas.** Send as persona A in one conversation and persona B in
-        another. Distinct colors, correct names, correct model chips.
-38. [ ] **Persona switch + replay parity (the important one).** In one
-        conversation, send turn 1 as persona A, then switch the dropdown and send
-        turn 2 as persona B — turn 2's bubble picks up the new color/name/model
-        chip while turn 1's bubble keeps its original attribution. Close the
-        conversation and reopen it: each bubble must come back with **its own**
-        run's persona, not the conversation's `pinned_persona` (whichever persona
-        sent last). This is the regression the replay `LEFT JOIN` on
-        `runs.persona_id` exists to prevent — a version that colors every bubble
-        from the pinned persona instead of each run's own attribution can slip
-        past a single-persona conversation, so this step requires at least two
-        distinct assistants across the two turns. Live/replay divergence here is
-        the failure this design exists to prevent — if it happens, stop and fix it.
-39. [ ] **`tools:` subsetting.** Attach a textbook, then send as an assistant
-        scoped to `tools: [safe_math]` (e.g. Skeptic) and ask something that would
-        need a textbook search. It cannot call `search_textbook` — no such tool
-        block appears, and the model either says it cannot search or answers from
-        background knowledge. Switch to an assistant with no `tools:` restriction
-        and ask the same question — `search_textbook` is available again.
-40. [ ] **`library:` frontmatter auto-attachment.** Add a library item with a
-        distinctive fact (e.g. a made-up rule), leave it **unchecked** in the
-        conversation's active-items panel, then give a persona
-        `library: [that-item]` in its frontmatter and send a message as that
-        persona asking about the fact. The model answers correctly — the persona
-        pulled the item in on its own; the panel checkbox was never involved. Now
-        also check that same item active in the panel and send again: no
-        duplicate-content error, no crash (the persona's claim and the
-        conversation's active set dedup to one copy).
-41. [ ] **Deleted persona.** Delete a persona's markdown file, relaunch, open a
-        conversation it spoke in. Its bubbles render neutral gray with the literal
-        persona ID as the name. No error, no blank thread.
-42. [ ] **Recolor.** Change a persona's `color:` in its file and relaunch. That
-        persona's *history* recolors, not just new messages.
-43. [ ] **Legacy run.** Open a conversation from before personas existed. Its
-        bubbles are neutral gray and carry only a model chip — no persona name.
-44. [ ] **Errored run on reopen.** Temporarily corrupt the API key for the active
-        persona's provider in `.env` (change a character — don't blank it, a
-        blank key is rejected before any run starts) and relaunch. Send as that
-        persona: the run starts (bubble appears, attributed to the persona), then
-        errors when the provider rejects the bad key. Close and reopen the
-        conversation — the synthetic `run_error` bubble reappears with the same
-        persona attribution (color, name, chip) the failed run had live. This is
-        the error-path counterpart to the tool-calling section's cancel-and-reopen
-        check, now exercising `PersonaID`/`Model` carried on `run_error` events.
-        Restore the correct key afterward.
-45. [ ] **Unknown persona.** Introduce a typo in the `model:` of every persona
-        file (or move the valid ones out of the folder) so none load, relaunch,
-        and send. The send fails with a config error listing each file and its
-        validation failure — it does not silently fall back to another assistant.
+35. [x] **Picker.** The composer's dropdown lists every persona by name. A persona file with a typo (unknown model, unknown tool, bad color) is _absent_ from the list, and its rejection appears in the startup banner naming the file and the reason.
+36. [x] **Attribution.** Send a message. The bubble carries a colored dot, the persona name in that color, a muted model chip, and a colored left stripe — all present before the first token arrives.
+37. [x] **Two personas.** Send as persona A in one conversation and persona B in another. Distinct colors, correct names, correct model chips.
+38. [x] **Persona switch + replay parity (the important one).** In one conversation, send turn 1 as persona A, then switch the dropdown and send turn 2 as persona B — turn 2's bubble picks up the new color/name/model chip while turn 1's bubble keeps its original attribution. Close the conversation and reopen it: each bubble must come back with **its own** run's persona, not the conversation's `pinned_persona` (whichever persona sent last). This is the regression the replay `LEFT JOIN` on `runs.persona_id` exists to prevent — a version that colors every bubble from the pinned persona instead of each run's own attribution can slip past a single-persona conversation, so this step requires at least two distinct assistants across the two turns. Live/replay divergence here is the failure this design exists to prevent — if it happens, stop and fix it.
+39. [x] **`tools:` subsetting.** **Set `STARSHP_SKIP_AUTO_GROUNDING=1` and relaunch first — without it this step cannot test what it claims.** A textbook-attached conversation injects retrieved chunks pre-turn regardless of the persona's `tools:` list (see "Tools vs. grounding" below), so the model is handed the content and never needs to search; a passing-looking result would prove nothing. With grounding off and a textbook attached, send as an assistant scoped to `tools: [safe_math]` (e.g. Skeptic) and ask something that needs the book: no `🔍 search_textbook` block appears, no `↳ grounded` header appears, and it says plainly that it has no access to the textbook. Then ask the **same question in the same conversation** as an assistant with no `tools:` restriction — `search_textbook` *is* called and the answer is sourced from the book. **The contrast between the two is the test.** The restricted persona's refusal on its own proves nothing: a globally broken `search_textbook` would produce exactly the same output. Unset the env var afterward.
+
+    **Tools vs. grounding — two channels, only one is persona-gated.** `tools:` controls what an assistant can *invoke* (`internal/appapi/api.go`, `Subset(p.Tools)`). Pre-turn RAG grounding injects retrieved chunks into the request whenever the conversation has a textbook attached and `retrieval_mode` is `auto_grounded_default` — and it consults no persona at all. So a persona restricted to `tools: [safe_math]` **cannot search the textbook but can still be handed passages from it**. That is deliberate: attaching a textbook scopes the *conversation*, not the assistant's capabilities. Expect it, and don't read a grounded answer from a toolless persona as a whitelist failure.
+40. [x] **`library:` frontmatter auto-attachment.** Add a library item with a distinctive fact (e.g. a made-up rule), leave it **unchecked** in the conversation's active-items panel, then give a persona `library: [that-item]` in its frontmatter and send a message as that persona asking about the fact. The model answers correctly — the persona pulled the item in on its own; the panel checkbox was never involved. Now also check that same item active in the panel and send again: no duplicate-content error, no crash (the persona's claim and the conversation's active set dedup to one copy).
+41. [x] **Deleted persona.** Delete a persona's markdown file, relaunch, open a conversation it spoke in. Its bubbles render neutral gray with the literal persona ID as the name. No error, no blank thread.
+42. [x] **Recolor.** Change a persona's `color:` in its file and relaunch. That persona's _history_ recolors, not just new messages.
+43. [x] **Legacy run.** Open a conversation from before personas existed. Its bubbles are neutral gray and carry only a model chip — no persona name.
+44. [x] **Errored run on reopen.** Temporarily corrupt the API key for the active persona's provider in `.env` (change a character — don't blank it, a blank key is rejected before any run starts) and relaunch. Send as that persona: the run starts (bubble appears, attributed to the persona), then errors when the provider rejects the bad key. Close and reopen the conversation — the synthetic `run_error` bubble reappears with the same persona attribution (color, name, chip) the failed run had live. This is the error-path counterpart to the tool-calling section's cancel-and-reopen check, now exercising `PersonaID`/`Model` carried on `run_error` events. Restore the correct key afterward.
+45. [x] **Unknown persona.** Introduce a typo in the `model:` of every persona file (or move the valid ones out of the folder) so none load, relaunch, and send. The send fails with a config error listing each file and its validation failure — it does not silently fall back to another assistant.
 
 ## Local models (Ollama)
 

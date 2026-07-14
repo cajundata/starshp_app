@@ -201,6 +201,16 @@ You are Scout. You find the angle nobody else is looking at.
   machines.
 - `tools` — optional whitelist of tool names the persona may call
   (`safe_math`, `search_textbook`). Omit it to allow every registered tool.
+
+  **`tools` gates what an assistant can *do*, not what it can *see*.** Attaching
+  a textbook to a conversation injects relevant passages into every turn, before
+  the model runs, and that path does not consult the persona at all. So an
+  assistant restricted to `tools: [safe_math]` cannot go searching the textbook —
+  but it can still be handed passages from it. That is deliberate: a textbook
+  scopes the *conversation*, not the assistant's capabilities. If you want an
+  assistant with no textbook access whatsoever, don't attach a textbook to the
+  conversation (or set `STARSHP_SKIP_AUTO_GROUNDING=1` to disable pre-turn
+  injection globally).
 - `library` — optional list of library item names this persona always
   carries; the `.md` extension may be omitted. These attach to every turn
   this persona runs, ahead of whatever the conversation has toggled on — an
