@@ -4,6 +4,8 @@ export namespace appapi {
 	    id: string;
 	    turnId: string;
 	    runId?: string;
+	    personaId?: string;
+	    modelId?: string;
 	    kind: string;
 	    text?: string;
 	    toolCallId?: string;
@@ -22,6 +24,8 @@ export namespace appapi {
 	        this.id = source["id"];
 	        this.turnId = source["turnId"];
 	        this.runId = source["runId"];
+	        this.personaId = source["personaId"];
+	        this.modelId = source["modelId"];
 	        this.kind = source["kind"];
 	        this.text = source["text"];
 	        this.toolCallId = source["toolCallId"];
@@ -51,6 +55,33 @@ export namespace library {
 	        this.filename = source["filename"];
 	        this.name = source["name"];
 	        this.error = source["error"];
+	    }
+	}
+
+}
+
+export namespace persona {
+	
+	export class Persona {
+	    id: string;
+	    name: string;
+	    model: string;
+	    color: string;
+	    tools?: string[];
+	    library?: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Persona(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.model = source["model"];
+	        this.color = source["color"];
+	        this.tools = source["tools"];
+	        this.library = source["library"];
 	    }
 	}
 
@@ -118,84 +149,13 @@ export namespace provider {
 
 export namespace store {
 	
-	export class Assignment {
-	    ID: string;
-	    SourceDir: string;
-	    Title: string;
-	    ManifestHash: string;
-	    Model: string;
-	    GroundingScope: string;
-	    Status: string;
-	    TotalItems: number;
-	    CreatedAt: number;
-	    UpdatedAt: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new Assignment(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.ID = source["ID"];
-	        this.SourceDir = source["SourceDir"];
-	        this.Title = source["Title"];
-	        this.ManifestHash = source["ManifestHash"];
-	        this.Model = source["Model"];
-	        this.GroundingScope = source["GroundingScope"];
-	        this.Status = source["Status"];
-	        this.TotalItems = source["TotalItems"];
-	        this.CreatedAt = source["CreatedAt"];
-	        this.UpdatedAt = source["UpdatedAt"];
-	    }
-	}
-	export class AssignmentItem {
-	    ID: string;
-	    AssignmentID: string;
-	    Seq: number;
-	    SourcePath: string;
-	    Type: string;
-	    Title: string;
-	    RunID: string;
-	    ConversationID: string;
-	    Status: string;
-	    Confidence: string;
-	    AnswerJSON: string;
-	    FlagsJSON: string;
-	    AnswerPath: string;
-	    Error: string;
-	    CreatedAt: number;
-	    UpdatedAt: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new AssignmentItem(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.ID = source["ID"];
-	        this.AssignmentID = source["AssignmentID"];
-	        this.Seq = source["Seq"];
-	        this.SourcePath = source["SourcePath"];
-	        this.Type = source["Type"];
-	        this.Title = source["Title"];
-	        this.RunID = source["RunID"];
-	        this.ConversationID = source["ConversationID"];
-	        this.Status = source["Status"];
-	        this.Confidence = source["Confidence"];
-	        this.AnswerJSON = source["AnswerJSON"];
-	        this.FlagsJSON = source["FlagsJSON"];
-	        this.AnswerPath = source["AnswerPath"];
-	        this.Error = source["Error"];
-	        this.CreatedAt = source["CreatedAt"];
-	        this.UpdatedAt = source["UpdatedAt"];
-	    }
-	}
 	export class Conversation {
 	    id: string;
 	    title: string;
 	    createdAt: number;
 	    updatedAt: number;
 	    pinnedModel: string;
+	    pinnedPersona: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Conversation(source);
@@ -208,6 +168,7 @@ export namespace store {
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
 	        this.pinnedModel = source["pinnedModel"];
+	        this.pinnedPersona = source["pinnedPersona"];
 	    }
 	}
 	export class Idea {

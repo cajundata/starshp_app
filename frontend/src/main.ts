@@ -1,6 +1,5 @@
 import './style.css'
 import * as App from '../wailsjs/go/appapi/API'
-import { store } from '../wailsjs/go/models'
 import { EventsOn } from '../wailsjs/runtime/runtime'
 import { initPipeline, refreshReviewsDue } from './pipeline'
 
@@ -18,7 +17,23 @@ function modelMaxContext(modelID: string, models: { id: string; maxContext?: num
   return m?.maxContext ?? 0
 }
 
-let cachedModels: { id: string; maxContext?: number }[] = []
+let cachedModels: { id: string; display?: string; maxContext?: number }[] = []
+
+type PersonaInfo = { id: string; name: string; model: string; color: string }
+let cachedPersonas: PersonaInfo[] = []
+
+const NEUTRAL_COLOR = '#8a8a90'
+
+function personaById(id: string): PersonaInfo | undefined {
+  return cachedPersonas.find(p => p.id === id)
+}
+
+// modelLabel is what the bubble's model chip shows: the display name the
+// operator gave the model in models.yaml, falling back to the raw ID.
+function modelLabel(modelID: string): string {
+  const m = cachedModels.find(x => x.id === modelID)
+  return m?.display || modelID
+}
 
 function updateFooter() {
   const el = $('ctxFooter')
@@ -31,14 +46,16 @@ function updateFooter() {
   const occ = (Number.isFinite(u.lastInput) && Number.isFinite(u.lastOutput))
     ? u.lastInput + u.lastOutput
     : u.input
-  el.textContent = `context ${prefix}${fmt(occ)}${denom} · this turn ${fmt(u.input)}→${fmt(u.output)} · cache ${fmt(u.cached)}`
+  const persona = personaSel.selectedOptions[0]?.text || ''
+  const who = persona ? ` · ${persona}` : ''
+  el.textContent = `context ${prefix}${fmt(occ)}${denom} · this turn ${fmt(u.input)}→${fmt(u.output)} · cache ${fmt(u.cached)}${who}`
   el.classList.remove('hidden')
 }
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement
 const thread = $('thread')
 const input = $('input') as HTMLTextAreaElement
-const modelSel = $('modelSel') as HTMLSelectElement
+const personaSel = $('personaSel') as HTMLSelectElement
 const sendBtn = $('sendBtn') as HTMLButtonElement
 
 let ragStatusEl: HTMLElement | null = null
@@ -92,7 +109,7 @@ function errCodeFromMeta(meta: any): string {
   return meta && typeof meta === 'object' && typeof meta.error_code === 'string' ? meta.error_code : ''
 }
 
-function ensureRunBubble(runId: string): RunBubble {
+function ensureRunBubble(runId: string, personaId = '', modelId = ''): RunBubble {
   let b = runBubbles.get(runId)
   if (!b) {
     const el = document.createElement('div')
@@ -102,7 +119,45 @@ function ensureRunBubble(runId: string): RunBubble {
     b = { el, curText: null, tools: new Map() }
     runBubbles.set(runId, b)
   }
+  applyAttribution(b, personaId, modelId)
   return b
+}
+
+// applyAttribution stamps the bubble with who spoke and on which model. Both
+// the live path (chat:run_started) and the replay path (event.personaId /
+// event.modelId) call it with the same two IDs, so a reopened conversation is
+// colored identically to what the operator watched stream in.
+//
+// A run with no persona (recorded before personas existed) shows the model chip
+// alone in a neutral color — honest about what is known, rather than inventing
+// an assistant. A persona ID with no matching file (the operator deleted it)
+// shows the literal ID, also neutral. Neither is an error.
+function applyAttribution(b: RunBubble, personaId: string, modelId: string) {
+  if (!personaId && !modelId) return
+  if (b.el.querySelector('.msg-attrib')) return
+
+  const p = personaId ? personaById(personaId) : undefined
+  b.el.style.setProperty('--persona-color', p?.color || NEUTRAL_COLOR)
+  if (personaId) b.el.dataset.persona = personaId
+
+  const row = document.createElement('div')
+  row.className = 'msg-attrib'
+
+  if (personaId) {
+    const dot = document.createElement('span')
+    dot.className = 'persona-dot'
+    const name = document.createElement('span')
+    name.className = 'persona-name'
+    name.textContent = p?.name || personaId
+    row.append(dot, name)
+  }
+  if (modelId) {
+    const chip = document.createElement('span')
+    chip.className = 'model-chip'
+    chip.textContent = modelLabel(modelId)
+    row.appendChild(chip)
+  }
+  b.el.insertBefore(row, b.el.firstChild)
 }
 
 function appendRunText(runId: string, text: string) {
@@ -169,7 +224,9 @@ function setRunGrounding(runId: string, status: string, sourceCount: number) {
   const h = document.createElement('div')
   h.className = 'grounding-header'
   h.textContent = `↳ grounded · ${sourceCount || 0} sources`
-  b.el.insertBefore(h, b.el.firstChild)
+  const attrib = b.el.querySelector('.msg-attrib')
+  if (attrib) b.el.insertBefore(h, attrib.nextSibling)
+  else b.el.insertBefore(h, b.el.firstChild)
 }
 
 function setRunStatus(runId: string, status: 'completed' | 'errored' | 'cancelled') {
@@ -276,7 +333,9 @@ async function openConversation(id: string) {
   runBubbles.clear()
   // History is the canonical display timeline: the active completed run per
   // turn (or the latest terminal run, so cancelled/errored partial output the
-  // user saw is preserved). Token usage is not carried on events, so the footer
+  // user saw is preserved). Each assistant event carries the persona and model
+  // that produced it (joined from runs), so replayed bubbles are colored the
+  // same as live ones. Token usage is not carried on events, so the footer
   // stays empty until the next live turn emits chat:usage.
   const events = (await App.GetConversationDisplayEvents(id)) || []
   for (const ev of events) {
@@ -285,6 +344,9 @@ async function openConversation(id: string) {
       continue
     }
     if (!ev.runId) continue
+    // Create the bubble with its attribution before any content lands in it, so
+    // a replayed run is colored exactly as the live one was.
+    ensureRunBubble(ev.runId, ev.personaId || '', ev.modelId || '')
     if (ev.kind === 'assistant_text') {
       appendRunText(ev.runId, ev.text || '')
     } else if (ev.kind === 'assistant_tool_call') {
@@ -310,9 +372,9 @@ async function openConversation(id: string) {
   for (const b of runBubbles.values()) attachRunCopy(b)
   const convs = (await App.ListConversations()) || []
   const c = convs.find(x => x.id === id)
-  if (c && c.pinnedModel) {
-    if (Array.from(modelSel.options).some(o => o.value === c.pinnedModel)) {
-      modelSel.value = c.pinnedModel
+  if (c && c.pinnedPersona) {
+    if (Array.from(personaSel.options).some(o => o.value === c.pinnedPersona)) {
+      personaSel.value = c.pinnedPersona
     }
   }
   updateFooter()
@@ -325,18 +387,27 @@ async function newChat() {
 }
 
 async function loadMeta() {
-  const models = (await App.Models()) || []
-  cachedModels = models
-  modelSel.innerHTML = models.map(m => `<option value="${m.id}">${m.display}</option>`).join('')
+  cachedModels = (await App.Models()) || []
+  cachedPersonas = (await App.Personas()) || []
+  personaSel.innerHTML = cachedPersonas
+    .map(p => `<option value="${p.id}">${p.name}</option>`)
+    .join('')
 }
 
 async function send() {
   if (streaming || !input.value.trim()) return
   if (!activeConv) await newChat()
+  // Capture the target conversation and persona before the first await. Neither
+  // indexing nor the agentic run disables the sidebar or the persona picker, and
+  // a run can take a minute — so any later read of activeConv/personaSel.value
+  // could pick up whatever the operator clicked to next, and we would pin and
+  // send against the wrong conversation.
+  const conv = activeConv!
+  const pid = personaSel.value
   const idxStatus = addMsg('assistant', 'Preparing textbook context…')
   ragStatusEl = idxStatus
   try {
-    await App.EnsureIndexed(activeConv!)
+    await App.EnsureIndexed(conv)
     idxStatus.remove()
   } catch (e: any) {
     msgText(idxStatus).textContent = `Cannot send: textbook indexing failed — ${e?.userMessage || e}`
@@ -350,12 +421,17 @@ async function send() {
   // The assistant bubble is created by the chat:run_started event; the loop's
   // output flows in through the chat:* taxonomy below.
   streaming = true
-  usagePendingForConv = activeConv
+  usagePendingForConv = conv
   sendBtn.textContent = 'Stop ◼'
   sendBtn.classList.add('streaming')
   try {
-    await App.SendMessage(activeConv!, text, modelSel.value)
-    await App.SetConversationMeta(activeConv!, modelSel.value)
+    // Pin before sending: SetConversationPersona validates the persona
+    // server-side and errors without writing if it can't resolve it, so
+    // pinning first is safe. It also makes the pin survive a failed send,
+    // which is correct — the pin records what the operator selected here,
+    // not what succeeded.
+    await App.SetConversationPersona(conv, pid)
+    await App.SendMessage(conv, text, pid)
   } catch (e: any) {
     // A thrown error before any run started (e.g. bad model / missing key)
     // has no run bubble to attach to — surface it inline. Errors raised mid-run
@@ -366,11 +442,14 @@ async function send() {
     sendBtn.textContent = 'Send ▸'
     sendBtn.classList.remove('streaming')
     // If the chat:usage event never arrived (cancel, SDK gap, error), mark
-    // the last-known footer entry stale so the user sees a ~ marker.
+    // the last-known footer entry stale so the user sees a ~ marker. Only
+    // do this if the operator is still looking at the conversation this
+    // send targeted — usagePendingForConv is that conversation, so this
+    // check also implies activeConv === conv here.
     if (usagePendingForConv === activeConv) {
-      const u = latestUsage.get(activeConv!)
+      const u = latestUsage.get(conv)
       if (u) {
-        latestUsage.set(activeConv!, { ...u, stale: true })
+        latestUsage.set(conv, { ...u, stale: true })
         updateFooter()
       }
     }
@@ -385,7 +464,7 @@ async function send() {
 
 EventsOn('chat:run_started', (p: any) => {
   if (p.convID !== activeConv) return
-  ensureRunBubble(p.runID)
+  ensureRunBubble(p.runID, p.personaID || '', p.modelID || '')
 })
 
 EventsOn('chat:grounding_ready', (p: any) => {
@@ -513,192 +592,6 @@ async function showTextbooks() {
   inner.appendChild(save)
 }
 
-// pickTextbooks opens the textbook modal as a reusable picker. It lists books,
-// pre-checks `current`, and on confirm calls onConfirm(selected) — closing the
-// modal on success, or showing the error inline on failure.
-async function pickTextbooks(
-  current: any[],
-  confirmLabel: string,
-  onConfirm: (scopes: any[]) => Promise<void>,
-) {
-  const inner = $('tbModalInner')
-  inner.innerHTML = '<h3>Attach textbooks</h3>'
-  $('tbModal').classList.remove('hidden')
-
-  let books: Awaited<ReturnType<typeof App.ListBooks>>
-  try {
-    books = (await App.ListBooks()) || []
-  } catch (e: any) {
-    const err = document.createElement('p')
-    err.className = 'tb-error'
-    err.textContent = `Could not load textbooks: ${e?.userMessage || e}`
-    inner.appendChild(err)
-    return
-  }
-
-  if (books.length === 0) {
-    const empty = document.createElement('p')
-    empty.className = 'tb-empty'
-    empty.textContent = 'No textbooks configured. Add entries to textbooks.yaml in your app directory.'
-    inner.appendChild(empty)
-  }
-
-  for (const b of books) {
-    const label = document.createElement('label')
-    const cb = document.createElement('input')
-    cb.type = 'checkbox'
-    cb.dataset.book = b.name
-    cb.checked = current.some((s: any) => s.name === b.name)
-    cb.disabled = !!b.error
-    label.appendChild(cb)
-    const span = document.createElement('span')
-    span.textContent = b.error
-      ? ` ${b.name} (unavailable: ${b.error})`
-      : ` ${b.name} (${b.chapters.length} ch)`
-    label.appendChild(span)
-    inner.appendChild(label)
-  }
-
-  const status = document.createElement('p')
-  status.className = 'tb-empty'
-  inner.appendChild(status)
-
-  const confirm = document.createElement('button')
-  confirm.textContent = confirmLabel
-  confirm.onclick = async () => {
-    const boxes = inner.querySelectorAll('input[type=checkbox]')
-    const available = new Set(books.map(b => b.name))
-    const scopes: any[] = []
-    boxes.forEach((b: any) => { if (b.checked) scopes.push({ name: b.dataset.book, chapters: null }) })
-    // Preserve already-attached books that aren't in the current catalog, so a
-    // transient ListBooks gap can't silently wipe a stored scope.
-    for (const s of current) {
-      if (!available.has(s.name)) scopes.push({ name: s.name, chapters: null })
-    }
-    confirm.disabled = true
-    status.className = 'tb-empty'
-    status.textContent = scopes.length ? 'Indexing textbooks…' : 'Working…'
-    try {
-      await onConfirm(scopes)
-      $('tbModal').classList.add('hidden')
-    } catch (e: any) {
-      status.className = 'tb-error'
-      status.textContent = `Failed: ${e?.userMessage || e}`
-      confirm.disabled = false
-    }
-  }
-  inner.appendChild(confirm)
-}
-
-// openAssignmentTextbookEditor edits the current assignment's textbook scope.
-// cf. pickTextbooks / showTextbooks (shared #tbModal, different confirm semantics).
-async function openAssignmentTextbookEditor() {
-  const id = currentAssignmentId
-  if (!id) return
-  let current: any[]
-  try {
-    current = (await App.GetAssignmentScope(id)) || []
-  } catch (e) {
-    // Don't open with empty state — a Save would wipe the real (unloaded) scope.
-    console.warn('GetAssignmentScope failed; not opening textbook editor', e)
-    return
-  }
-  await pickTextbooks(current, 'Save', async (scopes) => {
-    await App.EnsureIndexedScope(scopes)
-    await App.SetAssignmentScope(id, scopes)
-  })
-}
-
-// pickLibraryItems opens the library modal as a reusable picker. It lists items,
-// pre-checks `current` (by filename), and on confirm calls onConfirm(selected
-// filenames) — closing the modal on success, or showing the error inline.
-async function pickLibraryItems(
-  current: string[],
-  confirmLabel: string,
-  onConfirm: (items: string[]) => Promise<void>,
-) {
-  const inner = $('libModalInner')
-  inner.innerHTML = '<h3>Prompt / context library</h3>'
-  $('libModal').classList.remove('hidden')
-
-  let items: Awaited<ReturnType<typeof App.ListLibraryItems>>
-  try {
-    items = (await App.ListLibraryItems()) || []
-  } catch (e: any) {
-    const err = document.createElement('p')
-    err.className = 'lib-error'
-    err.textContent = `Could not load library: ${e?.userMessage || e}`
-    inner.appendChild(err)
-    return
-  }
-
-  if (items.length === 0) {
-    const empty = document.createElement('p')
-    empty.className = 'lib-empty'
-    empty.textContent = 'No library items yet. Create one in the Library panel.'
-    inner.appendChild(empty)
-  }
-
-  for (const it of items) {
-    const row = document.createElement('div')
-    row.className = 'lib-row'
-    const label = document.createElement('label')
-    const cb = document.createElement('input')
-    cb.type = 'checkbox'
-    cb.dataset.file = it.filename
-    cb.checked = current.includes(it.filename)
-    cb.disabled = !!it.error
-    label.appendChild(cb)
-    const span = document.createElement('span')
-    span.textContent = it.error ? ` ${it.name} (unavailable)` : ` ${it.name}`
-    label.appendChild(span)
-    row.appendChild(label)
-    inner.appendChild(row)
-  }
-
-  const status = document.createElement('p')
-  status.className = 'lib-empty'
-  inner.appendChild(status)
-
-  const confirm = document.createElement('button')
-  confirm.className = 'lib-new'
-  confirm.textContent = confirmLabel
-  confirm.onclick = async () => {
-    const boxes = inner.querySelectorAll('input[type=checkbox]')
-    const sel: string[] = []
-    boxes.forEach((b: any) => { if (b.checked && b.dataset.file) sel.push(b.dataset.file) })
-    confirm.disabled = true
-    status.className = 'lib-empty'
-    status.textContent = 'Working…'
-    try {
-      await onConfirm(sel)
-      $('libModal').classList.add('hidden')
-    } catch (e: any) {
-      status.className = 'lib-error'
-      status.textContent = `Failed: ${e?.userMessage || e}`
-      confirm.disabled = false
-    }
-  }
-  inner.appendChild(confirm)
-}
-
-// openAssignmentLibraryEditor edits the current assignment's library selection.
-async function openAssignmentLibraryEditor() {
-  const id = currentAssignmentId
-  if (!id) return
-  let current: string[]
-  try {
-    current = (await App.GetAssignmentLibraryItems(id)) || []
-  } catch (e) {
-    // Don't open with empty state — a Save would wipe the real (unloaded) selection.
-    console.warn('GetAssignmentLibraryItems failed; not opening prompt editor', e)
-    return
-  }
-  await pickLibraryItems(current, 'Save', async (items) => {
-    await App.SetAssignmentLibraryItems(id, items)
-  })
-}
-
 // ---- Prompt / context library ----------------------------------------------
 
 const libModal = $('libModal')
@@ -811,479 +704,6 @@ async function deleteEditorItem() {
   }
   closeEditor()
   await openLibraryPanel()
-}
-
-// ---- Assignments review view -----------------------------------------------
-// A batch "assignment" solves a folder of questions. The view lists items with
-// status/confidence/flag indicators; live progress arrives via assignment:*
-// events. Drilling into an item renders its persisted run (display events) with
-// the same bubble/tool-block structure the chat thread uses.
-
-const asgView = $('asgView')
-const asgHeader = $('asgHeader')
-const asgItems = $('asgItems')
-const asgDetail = $('asgDetail')
-const asgStopBtn = $('asgStopBtn') as HTMLButtonElement
-
-let currentAssignmentId: string | null = null
-let selectedItem: store.AssignmentItem | null = null
-let currentAssignmentStatus = ''
-const RERUNNABLE_STATUSES = ['answered', 'no_answer', 'errored', 'cancelled']
-// Index item rows by seq so progress events can update them in place.
-const asgItemRows = new Map<number, HTMLElement>()
-let asgProgressDone = 0
-let asgProgressTotal = 0
-
-function openAssignments() {
-  asgView.classList.remove('hidden')
-  void loadAssignmentsHome()
-}
-
-function closeAssignments() {
-  asgView.classList.add('hidden')
-}
-
-// loadAssignmentsHome shows the most recent assignment (if any) so the view is
-// not blank on open; the explicit "Solve a folder…" action starts a new batch.
-async function loadAssignmentsHome() {
-  let list: Awaited<ReturnType<typeof App.ListAssignments>>
-  try {
-    list = (await App.ListAssignments()) || []
-  } catch (e: any) {
-    asgHeader.innerHTML = ''
-    const err = document.createElement('p')
-    err.className = 'asg-error'
-    err.textContent = `Could not load assignments: ${e?.userMessage || e}`
-    asgHeader.appendChild(err)
-    return
-  }
-  if (currentAssignmentId) return // a batch is already loaded/in-flight
-  if (list.length === 0) {
-    asgHeader.innerHTML = '<p class="asg-empty">No assignments yet. Solve a folder to get started.</p>'
-    asgItems.innerHTML = ''
-    asgDetail.innerHTML = ''
-    return
-  }
-  await selectAssignment(list[0].ID)
-}
-
-async function solveFolder() {
-  const dir = prompt('Folder to solve (absolute path):')
-  if (!dir || !dir.trim()) return
-  const d = dir.trim()
-  // Pre-fill the pickers from the most recent assignment for this folder so a
-  // re-solve doesn't default to empty (and wipe a stored selection). Best-effort.
-  let preScopes: any[] = []
-  let preItems: string[] = []
-  try {
-    [preScopes, preItems] = await Promise.all([
-      App.GetAssignmentScopeForDir(d).then(r => r || []),
-      App.GetAssignmentLibraryItemsForDir(d).then(r => r || []),
-    ])
-  } catch (e) {
-    // Best-effort pre-fill: default to empty, but surface unexpected failures.
-    console.debug('solve pre-fill fetch failed; defaulting to empty', e)
-  }
-  await pickTextbooks(preScopes, 'Next: Prompts →', async (scopes) => {
-    await pickLibraryItems(preItems, 'Solve', async (items) => {
-      asgDetail.innerHTML = ''
-      asgHeader.innerHTML = '<p class="asg-empty">Preparing…</p>'
-      try {
-        await App.EnsureIndexedScope(scopes)
-        const id = await App.SolveAssignment(d, scopes, items)
-        currentAssignmentId = id
-        asgItemRows.clear()
-        asgStopBtn.classList.remove('hidden')
-        await selectAssignment(id)
-      } catch (e) {
-        asgHeader.innerHTML = ''
-        throw e
-      }
-    })
-  })
-}
-
-// selectAssignment loads an assignment's header + items from the store. Used on
-// open, after solve start, and on completed/cancelled refresh.
-async function selectAssignment(id: string): Promise<store.AssignmentItem[]> {
-  currentAssignmentId = id
-  asgItemRows.clear()
-  selectedItem = null
-  asgDetail.innerHTML = ''
-  let asg: Awaited<ReturnType<typeof App.GetAssignment>>
-  let items: Awaited<ReturnType<typeof App.ListAssignmentItems>>
-  try {
-    asg = await App.GetAssignment(id)
-    items = (await App.ListAssignmentItems(id)) || []
-    currentAssignmentStatus = asg.Status || ''
-  } catch (e: any) {
-    asgHeader.innerHTML = ''
-    const err = document.createElement('p')
-    err.className = 'asg-error'
-    err.textContent = `Could not load assignment: ${e?.userMessage || e}`
-    asgHeader.appendChild(err)
-    return []
-  }
-  const done = items.filter(it => it.Status !== 'pending' && it.Status !== 'solving').length
-  renderAssignmentHeader(asg.Title || asg.SourceDir, done, asg.TotalItems || items.length, asg.Status)
-  asgItems.innerHTML = ''
-  for (const it of items) renderItemRow(it)
-  // A still-running batch keeps the Stop button visible.
-  if (asg.Status === 'in_progress') asgStopBtn.classList.remove('hidden')
-  else asgStopBtn.classList.add('hidden')
-  return items
-}
-
-function renderAssignmentHeader(title: string, done: number, total: number, status: string) {
-  asgProgressDone = done
-  asgProgressTotal = total
-  asgHeader.innerHTML = ''
-  const h = document.createElement('div')
-  h.className = 'asg-title'
-  h.textContent = title
-  asgHeader.appendChild(h)
-
-  const sub = document.createElement('div')
-  sub.className = 'asg-sub'
-  const pill = document.createElement('span')
-  pill.className = 'status-pill status-' + (status || 'unknown')
-  pill.textContent = status || 'unknown'
-  sub.appendChild(pill)
-  const tbBtn = document.createElement('button')
-  tbBtn.className = 'asg-tb-btn'
-  tbBtn.textContent = '📚 Textbooks'
-  tbBtn.onclick = () => void openAssignmentTextbookEditor()
-  sub.appendChild(tbBtn)
-  const libBtn = document.createElement('button')
-  libBtn.className = 'asg-tb-btn'
-  libBtn.textContent = '📝 Prompts'
-  libBtn.onclick = () => void openAssignmentLibraryEditor()
-  sub.appendChild(libBtn)
-  asgHeader.appendChild(sub)
-
-  const bar = document.createElement('div')
-  bar.className = 'assignment-progress'
-  const fill = document.createElement('div')
-  fill.className = 'assignment-progress-fill'
-  fill.style.width = total > 0 ? `${Math.round((done / total) * 100)}%` : '0%'
-  bar.appendChild(fill)
-  asgHeader.appendChild(bar)
-
-  const count = document.createElement('div')
-  count.className = 'assignment-progress-count'
-  count.textContent = `${done} / ${total}`
-  asgHeader.appendChild(count)
-}
-
-function updateProgress(doneDelta: number) {
-  asgProgressDone += doneDelta
-  const fill = asgHeader.querySelector('.assignment-progress-fill') as HTMLElement | null
-  if (fill) fill.style.width = asgProgressTotal > 0 ? `${Math.round((asgProgressDone / asgProgressTotal) * 100)}%` : '0%'
-  const count = asgHeader.querySelector('.assignment-progress-count') as HTMLElement | null
-  if (count) count.textContent = `${asgProgressDone} / ${asgProgressTotal}`
-}
-
-function confidenceClass(c: string): string {
-  if (c === 'high' || c === 'medium' || c === 'low') return 'confidence-' + c
-  return 'confidence-unknown'
-}
-
-function renderItemRow(it: store.AssignmentItem) {
-  const flagCount = flagCountFromJSON(it.FlagsJSON)
-  const row = document.createElement('div')
-  row.className = 'assignment-item'
-  row.dataset.seq = String(it.Seq)
-  applyItemDecorations(row, it.Confidence, flagCount)
-
-  const seq = document.createElement('span')
-  seq.className = 'item-seq'
-  seq.textContent = String(it.Seq)
-  row.appendChild(seq)
-
-  const title = document.createElement('span')
-  title.className = 'item-title'
-  title.textContent = it.Title || it.SourcePath || '(untitled)'
-  row.appendChild(title)
-
-  const type = document.createElement('span')
-  type.className = 'item-type'
-  type.textContent = it.Type || ''
-  row.appendChild(type)
-
-  const conf = document.createElement('span')
-  conf.className = 'item-conf ' + confidenceClass(it.Confidence)
-  conf.textContent = it.Confidence || '—'
-  row.appendChild(conf)
-
-  const flag = document.createElement('span')
-  flag.className = 'item-flag'
-  flag.textContent = flagCount > 0 ? `⚑ ${flagCount}` : ''
-  row.appendChild(flag)
-
-  const pill = document.createElement('span')
-  pill.className = 'status-pill status-' + (it.Status || 'pending')
-  pill.textContent = it.Status || 'pending'
-  row.appendChild(pill)
-
-  // Only items with a persisted conversation can be drilled into.
-  if (it.ConversationID) {
-    row.classList.add('drillable')
-    row.onclick = () => {
-      selectedItem = it
-      void openItemDetail(it.ConversationID, it.Seq)
-    }
-  }
-
-  asgItems.appendChild(row)
-  asgItemRows.set(it.Seq, row)
-}
-
-function applyItemDecorations(row: HTMLElement, confidence: string, flagCount: number) {
-  row.classList.toggle('item-flagged', flagCount > 0)
-  row.classList.toggle('item-low', confidence === 'low')
-}
-
-function flagCountFromJSON(s: string): number {
-  if (!s) return 0
-  try {
-    const arr = JSON.parse(s)
-    return Array.isArray(arr) ? arr.length : 0
-  } catch {
-    return 0
-  }
-}
-
-// ---- Item detail: render a persisted run from display events ---------------
-// Mirrors the chat thread's bubble/tool-block structure (same CSS) but targets
-// the assignment detail container instead of the global thread.
-
-// toolInput crosses the wails bridge as a parsed JSON value (Go json.RawMessage
-// marshals as raw JSON), so it's normally an object — not a string or byte array.
-// Older rows / other shapes may still be a string or byte array; handle all three.
-function toolInputText(v: any): string {
-  if (v == null) return ''
-  if (typeof v === 'string') return v
-  if (v instanceof Uint8Array) {
-    try { return new TextDecoder().decode(v) } catch { return '' }
-  }
-  try { return JSON.stringify(v, null, 2) } catch { return '' }
-}
-
-async function openItemDetail(conversationId: string, seq: number) {
-  asgItems.querySelectorAll('.assignment-item.selected').forEach(n => n.classList.remove('selected'))
-  asgItemRows.get(seq)?.classList.add('selected')
-  asgDetail.innerHTML = ''
-  renderDetailHeader()
-  let events: Awaited<ReturnType<typeof App.GetConversationDisplayEvents>>
-  try {
-    events = (await App.GetConversationDisplayEvents(conversationId)) || []
-  } catch (e: any) {
-    const err = document.createElement('p')
-    err.className = 'asg-error'
-    err.textContent = `Could not load run: ${e?.userMessage || e}`
-    asgDetail.appendChild(err)
-    return
-  }
-  // Build run bubbles keyed by runId inside the detail container.
-  const bubbles = new Map<string, { el: HTMLElement; curText: HTMLElement | null; tools: Map<string, HTMLElement> }>()
-  const ensure = (runId: string) => {
-    let b = bubbles.get(runId)
-    if (!b) {
-      const el = document.createElement('div')
-      el.className = 'msg assistant'
-      asgDetail.appendChild(el)
-      b = { el, curText: null, tools: new Map() }
-      bubbles.set(runId, b)
-    }
-    return b
-  }
-  for (const ev of events) {
-    if (ev.kind === 'user_message') {
-      const um = document.createElement('div')
-      um.className = 'msg user'
-      const t = document.createElement('div')
-      t.className = 'msg-text'
-      t.textContent = ev.text || ''
-      um.appendChild(t)
-      asgDetail.appendChild(um)
-      continue
-    }
-    if (!ev.runId) continue
-    const b = ensure(ev.runId)
-    if (ev.kind === 'assistant_text') {
-      if (!b.curText) {
-        b.curText = document.createElement('div')
-        b.curText.className = 'msg-text'
-        b.el.appendChild(b.curText)
-      }
-      b.curText.textContent += ev.text || ''
-    } else if (ev.kind === 'assistant_tool_call') {
-      b.curText = null
-      const div = document.createElement('div')
-      div.className = 'tool-call'
-      const icon = document.createElement('span')
-      icon.className = 'tool-icon'
-      icon.textContent = toolIcon(ev.toolName || '')
-      const nm = document.createElement('span')
-      nm.className = 'tool-name'
-      nm.textContent = ev.toolName || ''
-      const arg = document.createElement('span')
-      arg.className = 'tool-arg'
-      arg.textContent = argPreview(ev.toolInput)
-      div.append(icon, nm, arg)
-      const full = toolInputText(ev.toolInput)
-      if (full) {
-        const detail = document.createElement('div')
-        detail.className = 'tool-summary'
-        detail.textContent = full
-        div.appendChild(detail)
-      }
-      b.el.appendChild(div)
-      b.tools.set(ev.toolCallId || '', div)
-    } else if (ev.kind === 'tool_result') {
-      const el = b.tools.get(ev.toolCallId || '')
-      const txt = ev.text || ''
-      if (el && txt) {
-        const detail = document.createElement('div')
-        detail.className = 'tool-summary'
-        detail.textContent = txt
-        if (ev.isError) el.classList.add('errored')
-        el.appendChild(detail)
-      }
-    }
-  }
-  if (bubbles.size === 0) {
-    const empty = document.createElement('p')
-    empty.className = 'asg-empty'
-    empty.textContent = 'No worked run recorded for this item.'
-    asgDetail.appendChild(empty)
-  }
-}
-
-function itemRerunnable(it: store.AssignmentItem | null): boolean {
-  return !!it
-    && it.Type !== 'unsupported'
-    && RERUNNABLE_STATUSES.includes(it.Status)
-    && currentAssignmentStatus !== 'in_progress'
-}
-
-function renderDetailHeader() {
-  const header = document.createElement('div')
-  header.className = 'asg-detail-header'
-  if (itemRerunnable(selectedItem)) {
-    const btn = document.createElement('button')
-    btn.className = 'asg-rerun-btn'
-    btn.textContent = '↻ Rerun'
-    btn.onclick = () => void rerunSelectedItem(btn)
-    header.appendChild(btn)
-  }
-  const msg = document.createElement('span')
-  msg.className = 'asg-rerun-msg'
-  header.appendChild(msg)
-  asgDetail.appendChild(header)
-}
-
-async function rerunSelectedItem(btn: HTMLButtonElement) {
-  if (!selectedItem || !currentAssignmentId) return
-  const seq = selectedItem.Seq
-  const prior = selectedItem
-  const msg = asgDetail.querySelector('.asg-rerun-msg') as HTMLElement | null
-  const prevLabel = btn.textContent
-  btn.disabled = true
-  btn.textContent = '↻ Rerunning…'
-  if (msg) msg.textContent = ''
-  const pill = asgItemRows.get(seq)?.querySelector('.status-pill') as HTMLElement | null
-  if (pill) {
-    pill.className = 'status-pill status-solving'
-    pill.textContent = 'solving'
-  }
-  try {
-    await App.RerunAssignmentItem(currentAssignmentId, seq)
-    // selectAssignment refetches + rebuilds the rows; reuse its items (no 2nd round-trip).
-    const items = await selectAssignment(currentAssignmentId)
-    const fresh = items.find(i => i.Seq === seq) || null
-    selectedItem = fresh
-    // On success we intentionally leave this button disabled: openItemDetail below
-    // rebuilds the detail header from scratch (re-evaluating itemRerunnable).
-    if (fresh && fresh.ConversationID) {
-      await openItemDetail(fresh.ConversationID, seq)
-    }
-  } catch (e: any) {
-    if (pill) {
-      pill.className = 'status-pill status-' + prior.Status
-      pill.textContent = prior.Status
-    }
-    btn.disabled = false
-    btn.textContent = prevLabel || '↻ Rerun'
-    if (msg) msg.textContent = e?.userMessage || String(e)
-  }
-}
-
-// ---- Live progress events --------------------------------------------------
-
-EventsOn('assignment:started', (p: any) => {
-  if (p.assignmentId !== currentAssignmentId) return
-  asgItemRows.clear()
-  asgItems.innerHTML = ''
-  renderAssignmentHeader(p.title || '', 0, p.total || 0, 'running')
-  asgStopBtn.classList.remove('hidden')
-})
-
-EventsOn('assignment:item_started', (p: any) => {
-  if (p.assignmentId !== currentAssignmentId) return
-  let row = asgItemRows.get(p.seq)
-  if (!row) {
-    // Row not yet rendered (fresh batch) — create a placeholder.
-    row = document.createElement('div')
-    row.className = 'assignment-item'
-    row.dataset.seq = String(p.seq)
-    const seq = document.createElement('span'); seq.className = 'item-seq'; seq.textContent = String(p.seq)
-    const title = document.createElement('span'); title.className = 'item-title'; title.textContent = p.title || ''
-    const type = document.createElement('span'); type.className = 'item-type'; type.textContent = p.type || ''
-    const conf = document.createElement('span'); conf.className = 'item-conf confidence-unknown'; conf.textContent = '—'
-    const flag = document.createElement('span'); flag.className = 'item-flag'
-    const pill = document.createElement('span'); pill.className = 'status-pill status-solving'; pill.textContent = 'solving'
-    row.append(seq, title, type, conf, flag, pill)
-    asgItems.appendChild(row)
-    asgItemRows.set(p.seq, row)
-  } else {
-    const pill = row.querySelector('.status-pill') as HTMLElement
-    if (pill) { pill.className = 'status-pill status-solving'; pill.textContent = 'solving' }
-  }
-})
-
-EventsOn('assignment:item_done', (p: any) => {
-  if (p.assignmentId !== currentAssignmentId) return
-  const row = asgItemRows.get(p.seq)
-  if (row) {
-    const pill = row.querySelector('.status-pill') as HTMLElement
-    if (pill) { pill.className = 'status-pill status-' + (p.status || 'done'); pill.textContent = p.status || 'done' }
-    const conf = row.querySelector('.item-conf') as HTMLElement
-    if (conf) { conf.className = 'item-conf ' + confidenceClass(p.confidence); conf.textContent = p.confidence || '—' }
-    const flag = row.querySelector('.item-flag') as HTMLElement
-    if (flag) flag.textContent = p.flagCount > 0 ? `⚑ ${p.flagCount}` : ''
-    applyItemDecorations(row, p.confidence, p.flagCount || 0)
-  }
-  updateProgress(1)
-})
-
-EventsOn('assignment:completed', (p: any) => {
-  if (p.assignmentId !== currentAssignmentId) return
-  asgStopBtn.classList.add('hidden')
-  if (currentAssignmentId) void selectAssignment(currentAssignmentId)
-})
-
-EventsOn('assignment:cancelled', (p: any) => {
-  if (p.assignmentId !== currentAssignmentId) return
-  asgStopBtn.classList.add('hidden')
-  if (currentAssignmentId) void selectAssignment(currentAssignmentId)
-})
-
-$('asgBtn').onclick = () => openAssignments()
-$('asgBack').onclick = () => closeAssignments()
-$('asgSolveBtn').onclick = () => void solveFolder()
-asgStopBtn.onclick = () => {
-  if (currentAssignmentId) void App.CancelAssignment(currentAssignmentId)
 }
 
 initPipeline()

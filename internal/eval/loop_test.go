@@ -88,15 +88,23 @@ func TestLoop_WriteBeforeDispatch(t *testing.T) {
 	}}
 	sink := &CaptureSink{}
 
-	if _, err := svc.Send(context.Background(), chat.SendParams{
+	res, err := svc.Send(context.Background(), chat.SendParams{
 		ConversationID: conv.ID, UserText: "q", Model: "m",
 		Provider: prov, Registry: reg, Resolver: emptyResolver{},
 		RetrievalMode: chat.RetrievalAutoGroundedDefault, Sink: sink,
-	}, nil); err != nil {
+	}, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if !wc.sawCall {
 		t.Fatal("assistant_tool_call row was not persisted before the tool ran (write-before-dispatch violated)")
+	}
+	// A run with no persona set (SendParams.PersonaID left as "") must persist
+	// that way, not silently default to something else.
+	if r, err := st.GetRun(res.RunID); err != nil {
+		t.Fatal(err)
+	} else if r.PersonaID != "" {
+		t.Errorf("PersonaID = %q, want empty for a run with no persona set", r.PersonaID)
 	}
 	// The harness sink should have observed the full happy-path lifecycle.
 	for _, want := range []chat.SinkEventKind{
@@ -147,7 +155,7 @@ func TestLoop_OneActiveRunPerTurnUnderRegenerate(t *testing.T) {
 	// so we drive the store directly the way that command will.)
 	const r2ID = "regen-run-2"
 	if err := st.CreateRun(conv.ID, r1.TurnID, r2ID, "openai", "m",
-		string(chat.RetrievalAutoGroundedDefault)); err != nil {
+		string(chat.RetrievalAutoGroundedDefault), ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.AppendAssistantText(conv.ID, r1.TurnID, r2ID, "second answer"); err != nil {

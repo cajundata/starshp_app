@@ -46,24 +46,45 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	// Accounting removal: the assignment surface is gone. Drop its tables and the
+	// conversations column that pointed at them. Idempotent — a fresh database
+	// never had them.
+	if _, err := db.Exec(`DROP TABLE IF EXISTS assignment_items`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`DROP TABLE IF EXISTS assignments`); err != nil {
+		return err
+	}
 	has, err = columnExists(db, "conversations", "assignment_id")
 	if err != nil {
 		return err
 	}
-	if !has {
-		if _, err := db.Exec(`ALTER TABLE conversations ADD COLUMN assignment_id TEXT`); err != nil {
+	if has {
+		if _, err := db.Exec(`ALTER TABLE conversations DROP COLUMN assignment_id`); err != nil {
 			return err
 		}
 	}
-	has, err = columnExists(db, "assignments", "library_items")
+	// Persona foundation: additive, nullable. Pre-persona runs keep persona_id
+	// NULL and render as a neutral bubble carrying only the model chip.
+	has, err = columnExists(db, "runs", "persona_id")
 	if err != nil {
 		return err
 	}
 	if !has {
-		if _, err := db.Exec(`ALTER TABLE assignments ADD COLUMN library_items TEXT`); err != nil {
+		if _, err := db.Exec(`ALTER TABLE runs ADD COLUMN persona_id TEXT`); err != nil {
 			return err
 		}
 	}
+	has, err = columnExists(db, "conversations", "pinned_persona")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err := db.Exec(`ALTER TABLE conversations ADD COLUMN pinned_persona TEXT`); err != nil {
+			return err
+		}
+	}
+
 	// conversation_events, runs, and their indexes are created by schemaSQL
 	// running before migrate(). Convert any legacy messages rows into the
 	// canonical event log + synthesized runs, then drop the messages table.

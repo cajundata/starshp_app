@@ -16,6 +16,7 @@ type Run struct {
 	ActiveForReplay        bool
 	Provider               string
 	Model                  string
+	PersonaID              string
 	RetrievalMode          string
 	GroundingMeta          json.RawMessage
 	StartedAt              int64
@@ -40,13 +41,14 @@ type RunTotals struct {
 
 var ErrRunNotInProgress = errors.New("run is not in_progress (likely cancelled or errored concurrently)")
 
-func (s *Store) CreateRun(convID, turnID, runID, providerName, model, mode string) error {
+func (s *Store) CreateRun(convID, turnID, runID, providerName, model, mode, personaID string) error {
 	_, err := s.db.Exec(
 		`INSERT INTO runs
             (id, conversation_id, turn_id, status, active_for_replay,
-             provider, model, retrieval_mode, started_at)
-         VALUES (?,?,?,'in_progress',0,?,?,?,?)`,
-		runID, convID, turnID, providerName, model, mode, time.Now().UnixMilli())
+             provider, model, persona_id, retrieval_mode, started_at)
+         VALUES (?,?,?,'in_progress',0,?,?,?,?,?)`,
+		runID, convID, turnID, providerName, model, nullIfEmpty(personaID), mode,
+		time.Now().UnixMilli())
 	return err
 }
 
@@ -133,14 +135,14 @@ func (s *Store) GetRun(runID string) (Run, error) {
 	var meta sql.NullString
 	err := s.db.QueryRow(
 		`SELECT id, conversation_id, turn_id, status, active_for_replay,
-                provider, model, retrieval_mode, grounding_meta,
+                provider, model, COALESCE(persona_id,''), retrieval_mode, grounding_meta,
                 started_at, ended_at, terminal_reason, error_code, error_message,
                 total_input_tokens, total_output_tokens, total_cached_input_tokens,
                 total_tool_calls, total_iterations
            FROM runs WHERE id = ?`, runID,
 	).Scan(
 		&r.ID, &r.ConversationID, &r.TurnID, &r.Status, &r.ActiveForReplay,
-		&r.Provider, &r.Model, &r.RetrievalMode, &meta,
+		&r.Provider, &r.Model, &r.PersonaID, &r.RetrievalMode, &meta,
 		&r.StartedAt, &r.EndedAt, &r.TerminalReason, &r.ErrorCode, &r.ErrorMessage,
 		&r.TotalInputTokens, &r.TotalOutputTokens, &r.TotalCachedInputTokens,
 		&r.TotalToolCalls, &r.TotalIterations)

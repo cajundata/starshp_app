@@ -17,14 +17,18 @@ func TestConversationLifecycle(t *testing.T) {
 		t.Fatalf("scope mismatch: %+v", scope)
 	}
 
-	if err := s.SetConversationMeta(c.ID, "claude-opus-4-7"); err != nil {
-		t.Fatalf("SetConversationMeta: %v", err)
+	if err := s.SetConversationPinned(c.ID, "claude-opus-4-7", "scout"); err != nil {
+		t.Fatalf("SetConversationPinned: %v", err)
+	}
+	list, _ := s.ListConversations()
+	if len(list) != 1 || list[0].PinnedModel != "claude-opus-4-7" || list[0].PinnedPersona != "scout" {
+		t.Fatalf("pinned model/persona not persisted: %+v", list)
 	}
 
 	if err := s.DeleteConversation(c.ID); err != nil {
 		t.Fatalf("DeleteConversation: %v", err)
 	}
-	list, _ := s.ListConversations()
+	list, _ = s.ListConversations()
 	if len(list) != 0 {
 		t.Fatalf("conversation not deleted: %d remain", len(list))
 	}

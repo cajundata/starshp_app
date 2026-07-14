@@ -1,13 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8" /><title>Starshp</title>  <script type="module" crossorigin src="/assets/index.df84a717.js"></script>
-  <link rel="stylesheet" href="/assets/index.ed93fe87.css">
+<head><meta charset="UTF-8" /><title>Starshp</title>  <script type="module" crossorigin src="/assets/index.5d182a3e.js"></script>
+  <link rel="stylesheet" href="/assets/index.45aa8875.css">
 </head>
 <body>
   <div id="app">
     <aside id="sidebar">
       <button id="newChat">+ New chat</button>
-      <button id="asgBtn">📂 Assignments</button>
       <button id="pipelineBtn">🎯 Pipeline <span id="reviewsDueBadge" class="badge hidden">0</span></button>
       <div class="cap">History</div>
       <div id="convList"></div>
@@ -19,7 +18,7 @@
         <textarea id="input" placeholder="Message…" rows="3"></textarea>
         <div id="toolbar">
           <div class="left">
-            <select id="modelSel"></select>
+            <select id="personaSel"></select>
             <button id="libBtn">≡ Library</button>
             <button id="tbBtn">📚 Textbooks</button>
           </div>
@@ -27,22 +26,6 @@
         </div>
       </div>
     </main>
-  </div>
-  <div id="asgView" class="hidden">
-    <div id="asgBar">
-      <button id="asgBack">← Chat</button>
-      <span id="asgBarTitle">Assignments</span>
-      <span class="spacer"></span>
-      <button id="asgSolveBtn">+ Solve a folder…</button>
-      <button id="asgStopBtn" class="hidden">Stop ◼</button>
-    </div>
-    <div id="asgBody">
-      <div id="asgListPane">
-        <div id="asgHeader"></div>
-        <div id="asgItems" class="assignment-list"></div>
-      </div>
-      <div id="asgDetail"></div>
-    </div>
   </div>
   <div id="pipelineView" class="hidden">
     <div id="pipelineBar">

@@ -17,6 +17,7 @@ type Config struct {
 	AppDBPath          string
 	RAGDBPath          string
 	LibraryDir         string
+	PersonaDir         string
 	TextbooksConfig    string
 	ModelsConfig       string
 	ContextTokenBudget int
@@ -60,6 +61,7 @@ func Load(envPath string) (Config, error) {
 		AppDBPath:          os.Getenv("APP_DB_PATH"),
 		RAGDBPath:          os.Getenv("RAG_DB_PATH"),
 		LibraryDir:         os.Getenv("LIBRARY_DIR"),
+		PersonaDir:         os.Getenv("PERSONA_DIR"),
 		TextbooksConfig:    envOr("TEXTBOOKS_CONFIG", "textbooks.yaml"),
 		ModelsConfig:       envOr("MODELS_CONFIG", "models.yaml"),
 		ContextTokenBudget: envInt("CONTEXT_TOKEN_BUDGET", 2500),
