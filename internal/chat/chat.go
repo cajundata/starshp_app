@@ -64,12 +64,20 @@ type EventSink interface {
 	Emit(e SinkEvent)
 }
 
+// PersonaNamer resolves a persona ID to its display name, so a handoff can
+// be attributed without chat importing the persona registry. Nil is legal:
+// the literal persona ID is used instead.
+type PersonaNamer interface {
+	Name(personaID string) (string, bool)
+}
+
 type SendParams struct {
 	ConversationID string
 	UserText       string
 	SystemPrompt   string
 	Model          string
-	PersonaID      string // recorded on runs; "" for a run with no persona
+	PersonaID      string       // recorded on runs; "" for a run with no persona
+	Namer          PersonaNamer // resolves persona IDs for handoff attribution; nil → literal IDs
 	Provider       provider.ChatProvider
 	ProviderName   string // "openai" | "anthropic" — recorded on runs
 	Registry       *tools.Registry
@@ -227,7 +235,7 @@ func (s *Service) runLoop(ctx context.Context, p SendParams, runID, turnID, grou
 			System:    p.SystemPrompt,
 			Grounding: grounding,
 			Tools:     catalog,
-			Events:    canonicalEvents(events),
+			Events:    canonicalEvents(events, turnID, p.PersonaID, p.Namer),
 		}
 		ch, err := p.Provider.Stream(ctx, req)
 		if err != nil {
@@ -342,7 +350,7 @@ func (s *Service) finalizeWithoutTools(ctx context.Context, p SendParams, runID,
 		System:    system,
 		Grounding: grounding,
 		Tools:     nil, // withheld: force a tool-free answer
-		Events:    canonicalEvents(events),
+		Events:    canonicalEvents(events, turnID, p.PersonaID, p.Namer),
 	}
 	ch, err := p.Provider.Stream(ctx, req)
 	if err != nil {
@@ -444,7 +452,7 @@ func (s *Service) errorOut(p SendParams, runID, turnID, reason, code, msg string
 	return RunResult{RunID: runID, TerminalReason: reason}
 }
 
-func canonicalEvents(rows []store.ConversationEvent) []provider.Event {
+func canonicalEvents(rows []store.ConversationEvent, currentTurnID, currentPersonaID string, namer PersonaNamer) []provider.Event {
 	out := make([]provider.Event, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, provider.Event{

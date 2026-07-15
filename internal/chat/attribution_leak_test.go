@@ -60,7 +60,7 @@ func TestCanonicalEvents_NoPersonaOrModelLeak(t *testing.T) {
 		t.Fatalf("test setup broken: no row carries persona/model attribution: %+v", rows)
 	}
 
-	events := canonicalEvents(rows)
+	events := canonicalEvents(rows, rows[0].TurnID, sentinelPersona, nil)
 
 	// Structural guard: provider.Event must not have grown a field that looks
 	// like it could carry persona/model attribution.
