@@ -43,7 +43,11 @@ The decisions were settled during brainstorming and are not re-opened here:
 
 ## Semantics
 
-Each turn carries one of three states, keyed by `(conversation_id, turn_id)`:
+Each turn carries one of three states, keyed by `turn_id`. Turn IDs are
+globally unique — a turn's ID *is* its `user_message` event's ID, the primary
+key of `conversation_events` — so `turn_id` alone identifies the turn;
+`conversation_id` rides along for per-conversation lookup and cascade deletion,
+not for uniqueness.
 
 | State | Meaning |
 |---|---|
@@ -87,7 +91,7 @@ internal/chat   ── canonicalEvents honors ContextOverride per event
 
 ```sql
 CREATE TABLE IF NOT EXISTS turn_context_overrides (
-    conversation_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     turn_id         TEXT NOT NULL PRIMARY KEY,
     state           TEXT NOT NULL CHECK (state IN ('always','never'))
 );
@@ -95,7 +99,9 @@ CREATE TABLE IF NOT EXISTS turn_context_overrides (
 
 Created idempotently in the existing migration pattern. The table holds only
 exceptions and stays tiny. Conversation deletion removes its override rows
-alongside its events.
+alongside its events via the `ON DELETE CASCADE` — the same convention every
+other conversation-scoped table in `schema.go` follows; no hand-written
+cleanup code.
 
 ### `internal/store`
 
@@ -103,7 +109,14 @@ alongside its events.
   row.
 - `GetTurnContextOverrides(convID) (map[string]string, error)` — turn → state,
   for UI seeding on conversation open.
-- **Replay path:** `turnSelection` skips turns marked `never`;
+- **Replay path:** the `never` filter applies **only on the
+  `GetProviderReplayEvents` path**. `turnSelection` and
+  `eventsForRunsPlusUserMessages` are shared helpers — they also serve
+  `GetConversationDisplayEvents` — so the filter must arrive as a
+  provider-path-only parameter (or live in a provider-path wrapper), never
+  unconditionally inside the shared helpers, which would hide the turn from
+  the displayed thread and violate rule 1. On the provider path,
+  `turnSelection` skips turns marked `never` and
   `eventsForRunsPlusUserMessages` drops those turns' `user_message` events
   (today user messages are included unconditionally — this is the one behavior
   change in the store). The current run's turn is exempt per rule 2.
