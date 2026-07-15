@@ -83,3 +83,43 @@ func (s *Store) GetTurnContextOverrides(convID string) (map[string]string, error
 	}
 	return out, rows.Err()
 }
+
+// neverTurnsForReplay returns the turns excluded from the provider payload:
+// every turn marked never, except the current run's own turn — an override
+// governs the turn as history for later turns, never the turn being answered
+// (rule 2: a rerun of a never turn still gets its own user message as its
+// prompt). Only GetProviderReplayEvents calls this; the display path never
+// consults overrides (rule 1).
+func (s *Store) neverTurnsForReplay(convID, currentRunID string) (map[string]struct{}, error) {
+	rows, err := s.db.Query(
+		`SELECT turn_id FROM turn_context_overrides
+          WHERE conversation_id = ? AND state = 'never'`, convID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	exclude := map[string]struct{}{}
+	for rows.Next() {
+		var turn string
+		if err := rows.Scan(&turn); err != nil {
+			return nil, err
+		}
+		exclude[turn] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(exclude) == 0 || currentRunID == "" {
+		return exclude, nil
+	}
+	var current string
+	err = s.db.QueryRow(`SELECT turn_id FROM runs WHERE id = ?`, currentRunID).Scan(&current)
+	if err == sql.ErrNoRows {
+		return exclude, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	delete(exclude, current)
+	return exclude, nil
+}

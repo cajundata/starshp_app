@@ -166,3 +166,148 @@ func TestOverridesSurviveReopen(t *testing.T) {
 		t.Errorf("after reopen, map = %v, want {%s: always}", m, turn)
 	}
 }
+
+// The never filter applies only on the provider replay path: the turn's
+// user_message and its run events vanish from the payload while the
+// displayed thread keeps the full history (rule 1: payload only).
+func TestNeverTurnAbsentFromProviderReplayButPresentInDisplay(t *testing.T) {
+	st := openTestStore(t)
+	c, _ := st.CreateConversation("t")
+	completedStoreTurn(t, st, c.ID, "run-1", "q1", "a1")
+	turn2 := completedStoreTurn(t, st, c.ID, "run-2", "q2-heavy", "a2-heavy")
+	completedStoreTurn(t, st, c.ID, "run-3", "q3", "a3")
+	if err := st.SetTurnContextOverride(c.ID, turn2, OverrideNever); err != nil {
+		t.Fatal(err)
+	}
+
+	replay, err := st.GetProviderReplayEvents(c.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range replay {
+		if e.TurnID == turn2 {
+			t.Errorf("never turn leaked into provider replay: kind=%s text=%q", e.Kind, e.Text)
+		}
+	}
+	var texts []string
+	for _, e := range replay {
+		texts = append(texts, e.Text)
+	}
+	// Everything else survives, in order.
+	wantPresent := []string{"q1", "a1", "q3", "a3"}
+	for _, w := range wantPresent {
+		found := false
+		for _, txt := range texts {
+			if txt == w {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("replay lost %q; got %v", w, texts)
+		}
+	}
+
+	display, err := st.GetConversationDisplayEvents(c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawUser, sawAssistant bool
+	for _, e := range display {
+		if e.TurnID != turn2 {
+			continue
+		}
+		if e.Kind == EventKindUserMessage {
+			sawUser = true
+		}
+		if e.Kind == EventKindAssistantText {
+			sawAssistant = true
+		}
+	}
+	if !sawUser || !sawAssistant {
+		t.Errorf("display lost the never turn (user=%v assistant=%v) — overrides must be payload-only", sawUser, sawAssistant)
+	}
+}
+
+// Rule 2: a turn currently being run is exempt from its own never. A rerun
+// of a never turn still includes that turn's own user message as its prompt —
+// the override governs the turn as history, never the turn being answered.
+func TestRerunOfANeverTurnStillSeesItsOwnUserMessage(t *testing.T) {
+	st := openTestStore(t)
+	c, _ := st.CreateConversation("t")
+	completedStoreTurn(t, st, c.ID, "run-1", "q1", "a1")
+	turn2 := completedStoreTurn(t, st, c.ID, "run-2", "q2", "a2")
+	if err := st.SetTurnContextOverride(c.ID, turn2, OverrideNever); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateRun(c.ID, turn2, "rerun-1", "openai", "m1", "auto_grounded_default", "scout"); err != nil {
+		t.Fatal(err)
+	}
+
+	replay, err := st.GetProviderReplayEvents(c.ID, "rerun-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sawOwnPrompt := false
+	for _, e := range replay {
+		if e.TurnID == turn2 && e.Kind == EventKindUserMessage && e.Text == "q2" {
+			sawOwnPrompt = true
+		}
+	}
+	if !sawOwnPrompt {
+		t.Errorf("rerun of a never turn lost its own prompt; replay = %+v", replay)
+	}
+}
+
+// Spec error table: every turn marked never → the payload is the new user
+// message alone. Legal, not an error.
+func TestEveryTurnNeverLeavesOnlyTheCurrentUserMessage(t *testing.T) {
+	st := openTestStore(t)
+	c, _ := st.CreateConversation("t")
+	t1 := completedStoreTurn(t, st, c.ID, "run-1", "q1", "a1")
+	t2 := completedStoreTurn(t, st, c.ID, "run-2", "q2", "a2")
+	for _, turn := range []string{t1, t2} {
+		if err := st.SetTurnContextOverride(c.ID, turn, OverrideNever); err != nil {
+			t.Fatal(err)
+		}
+	}
+	u, err := st.AppendUserMessage(c.ID, "q3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateRun(c.ID, u.TurnID, "run-3", "openai", "m1", "auto_grounded_default", "scout"); err != nil {
+		t.Fatal(err)
+	}
+
+	replay, err := st.GetProviderReplayEvents(c.ID, "run-3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(replay) != 1 || replay[0].Kind != EventKindUserMessage || replay[0].Text != "q3" {
+		t.Errorf("replay = %+v, want exactly the new user message", replay)
+	}
+}
+
+// ContextOverride rides along on events the way PersonaID and Model do:
+// "always" and "never" from the joined row, "" when no row exists.
+func TestContextOverrideRidesAlongOnEvents(t *testing.T) {
+	st := openTestStore(t)
+	c, _ := st.CreateConversation("t")
+	t1 := completedStoreTurn(t, st, c.ID, "run-1", "q1", "a1")
+	completedStoreTurn(t, st, c.ID, "run-2", "q2", "a2")
+	if err := st.SetTurnContextOverride(c.ID, t1, OverrideAlways); err != nil {
+		t.Fatal(err)
+	}
+
+	replay, err := st.GetProviderReplayEvents(c.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range replay {
+		if e.TurnID == t1 && e.ContextOverride != OverrideAlways {
+			t.Errorf("turn1 %s event ContextOverride = %q, want always", e.Kind, e.ContextOverride)
+		}
+		if e.TurnID != t1 && e.ContextOverride != "" {
+			t.Errorf("unmarked turn event ContextOverride = %q, want empty", e.ContextOverride)
+		}
+	}
+}
