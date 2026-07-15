@@ -418,6 +418,7 @@ async function send() {
   }
   const text = input.value.trim()
   input.value = ''
+  mentionDismissed = false
   const userEl = addMsg('user', text)
   // The assistant bubble is created by the chat:run_started event; the loop's
   // output flows in through the chat:* taxonomy below.
@@ -444,6 +445,7 @@ async function send() {
     if (e?.code === 'config') {
       userEl.remove()
       input.value = text
+      updateMentionPopup()
     }
   } finally {
     streaming = false

@@ -31,3 +31,5 @@ Tags: `[feat]` new feature · `[chg]` change to existing behavior · `[fix]` kno
   deciding how a mid-thread persona switch interacts with the `active_for_replay`
   run model. Spec 1 (one persona per conversation) shipped first deliberately, so
   personas could be lived with before this design risk is taken.
+- Mention polish (from multi-persona final review): Ctrl/Cmd+Enter with the @-popup open should send, not insert; click-away should dismiss the popup; auto-title could strip a leading @mention.
+- Mention test hardening: parser rows for `@scout!` / `@scout,`; a dedicated first-turn/no-predecessor canonicalEvents test; `found` flag in TestSendMessageWithMentionDoesNotRepin.
