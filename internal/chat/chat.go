@@ -456,38 +456,65 @@ func (s *Service) errorOut(p SendParams, runID, turnID, reason, code, msg string
 // (currentPersonaID, answering currentTurnID). Own-persona and pre-persona
 // rows pass through the six-field whitelist verbatim — a persona keeps its
 // own voice, tool blocks included. The immediately preceding foreign turn's
-// final text folds into one attributed user-role block; its tool blocks are
-// dropped because their provider-specific IDs would dangle in another
-// persona's transcript and the receiving persona may not even have the tool
-// in its registry. Older foreign turns are omitted entirely. The operator's
+// final text folds into one attributed user-role block; a foreign turn the
+// operator pinned `always` gets the same treatment at any distance, folded
+// in place. Tool blocks of foreign turns are always dropped — their
+// provider-specific IDs would dangle in another persona's transcript and the
+// receiving persona may not even have the tool in its registry. Other
+// foreign turns are omitted entirely. A turn marked `never` contributes
+// nothing — the store already filters it from replay; it is skipped here
+// defensively too, except the current turn, which an override never governs
+// (a rerun of a never turn still gets its own prompt). The operator's other
 // user_message rows are always included, in order. rows arrive ordered by
 // sequence_index.
 func canonicalEvents(rows []store.ConversationEvent, currentTurnID, currentPersonaID string, namer PersonaNamer) []provider.Event {
 	predecessor := predecessorTurnID(rows, currentTurnID)
 	out := make([]provider.Event, 0, len(rows))
+	attributed := func(personaID, model string, texts []string) provider.Event {
+		name := personaID
+		if namer != nil {
+			if n, ok := namer.Name(personaID); ok {
+				name = n
+			}
+		}
+		return provider.Event{
+			Kind: store.EventKindUserMessage,
+			Text: "From " + name + " (" + model + "):\n" + strings.Join(texts, "\n\n"),
+		}
+	}
 	var batonTexts []string
 	var batonPersona, batonModel string
 	flushBaton := func() {
 		if len(batonTexts) == 0 {
 			return
 		}
-		name := batonPersona
-		if namer != nil {
-			if n, ok := namer.Name(batonPersona); ok {
-				name = n
-			}
-		}
-		out = append(out, provider.Event{
-			Kind: store.EventKindUserMessage,
-			Text: "From " + name + " (" + batonModel + "):\n" + strings.Join(batonTexts, "\n\n"),
-		})
+		out = append(out, attributed(batonPersona, batonModel, batonTexts))
 		batonTexts = nil
 	}
+	// A pinned (`always`) foreign turn folds exactly like the baton, but in
+	// place: accumulated while its rows pass, flushed when they end. The
+	// predecessor is handled by the baton case alone (matched first below),
+	// so a pin on the predecessor cannot double-include it.
+	var pinTexts []string
+	var pinTurn, pinPersona, pinModel string
+	flushPin := func() {
+		if len(pinTexts) == 0 {
+			return
+		}
+		out = append(out, attributed(pinPersona, pinModel, pinTexts))
+		pinTexts = nil
+	}
 	for _, r := range rows {
+		if r.TurnID != pinTurn {
+			flushPin()
+		}
 		// The baton lands immediately before the current turn's rows, i.e.
 		// right after the predecessor turn it summarizes.
 		if r.TurnID == currentTurnID {
 			flushBaton()
+		}
+		if r.ContextOverride == store.OverrideNever && r.TurnID != currentTurnID {
+			continue
 		}
 		foreign := r.PersonaID != "" && r.PersonaID != currentPersonaID
 		switch {
@@ -502,10 +529,16 @@ func canonicalEvents(rows []store.ConversationEvent, currentTurnID, currentPerso
 				batonPersona, batonModel = r.PersonaID, r.Model
 			}
 			batonTexts = append(batonTexts, r.Text)
+		case r.ContextOverride == store.OverrideAlways && r.Kind == store.EventKindAssistantText:
+			if len(pinTexts) == 0 {
+				pinTurn, pinPersona, pinModel = r.TurnID, r.PersonaID, r.Model
+			}
+			pinTexts = append(pinTexts, r.Text)
 		}
-		// Any other foreign row (older turn, or a predecessor tool block) is
-		// omitted.
+		// Any other foreign row (older unpinned turn, or any foreign tool
+		// block) is omitted.
 	}
+	flushPin()
 	flushBaton()
 	return out
 }

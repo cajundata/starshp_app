@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -122,5 +123,176 @@ func TestZeroOverridesIsByteIdenticalToSpec2(t *testing.T) {
 				t.Errorf("zero-override payload diverged from Spec 2:\n got %s\nwant %s", got, want)
 			}
 		})
+	}
+}
+
+// always on a non-adjacent foreign turn produces the attributed block, in
+// place, with tool blocks absent — Spec 2's immediate-predecessor treatment
+// extended to any position. Multiple assistant_texts join into ONE block.
+func TestAlwaysPinsANonAdjacentForeignTurn(t *testing.T) {
+	st := openStore(t)
+	conv, err := st.CreateConversation("thread")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinned := completedTurn(t, st, conv.ID, "@skeptic scan this", "skeptic", "m-skeptic", true, "part one", "part two")
+	completedTurn(t, st, conv.ID, "thanks", "scout", "m-scout", false, "scout ack")
+	turnID, runID := currentTurn(t, st, conv.ID, "now use the findings", "scout", "m-scout")
+	if err := st.SetTurnContextOverride(conv.ID, pinned, store.OverrideAlways); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := st.GetProviderReplayEvents(conv.ID, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := canonicalEvents(rows, turnID, "scout", stubNamer{"skeptic": "Skeptic"})
+
+	kinds := make([]string, len(got))
+	for i, e := range got {
+		kinds[i] = e.Kind
+	}
+	want := []string{
+		"user_message",   // @skeptic scan this
+		"user_message",   // pinned Skeptic block, folded in place
+		"user_message",   // thanks
+		"assistant_text", // scout ack (own voice, verbatim)
+		"user_message",   // now use the findings
+	}
+	if !reflect.DeepEqual(kinds, want) {
+		t.Fatalf("kinds = %v, want %v", kinds, want)
+	}
+	if got[1].Text != "From Skeptic (m-skeptic):\npart one\n\npart two" {
+		t.Errorf("pinned block = %q", got[1].Text)
+	}
+	// A foreign persona's tool events never appear in any payload, pinned or
+	// not — Spec 2's dangling-ID reasoning is unchanged by pinning.
+	for _, e := range got {
+		if e.Kind == "assistant_tool_call" || e.Kind == "tool_result" {
+			t.Errorf("foreign tool event leaked into a pinned payload: %+v", e)
+		}
+	}
+	if n := countFromBlocks(got); n != 1 {
+		t.Errorf("From-blocks = %d, want exactly 1", n)
+	}
+}
+
+// always on the immediate predecessor must not duplicate it: the baton path
+// already folds that turn, and the pin is satisfied by the same block.
+func TestAlwaysOnTheImmediatePredecessorDoesNotDuplicate(t *testing.T) {
+	st := openStore(t)
+	conv, err := st.CreateConversation("thread")
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedTurn(t, st, conv.ID, "q1", "scout", "m-scout", false, "scout one")
+	pinned := completedTurn(t, st, conv.ID, "@skeptic poke", "skeptic", "m-skeptic", false, "skeptic critique")
+	turnID, runID := currentTurn(t, st, conv.ID, "respond", "scout", "m-scout")
+	if err := st.SetTurnContextOverride(conv.ID, pinned, store.OverrideAlways); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := st.GetProviderReplayEvents(conv.ID, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := canonicalEvents(rows, turnID, "scout", stubNamer{"skeptic": "Skeptic"})
+	if n := countFromBlocks(got); n != 1 {
+		t.Fatalf("From-blocks = %d, want exactly 1 (no double inclusion)", n)
+	}
+	found := false
+	for _, e := range got {
+		if e.Text == "From Skeptic (m-skeptic):\nskeptic critique" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("predecessor baton missing from %+v", got)
+	}
+}
+
+// never on the immediate predecessor means the next persona gets no baton —
+// identical to Spec 2's errored-predecessor case. Not an error. The whole
+// exchange goes: the excluded turn's operator message vanishes too.
+func TestNeverOnTheImmediatePredecessorMeansNoBaton(t *testing.T) {
+	st := openStore(t)
+	conv, err := st.CreateConversation("thread")
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedTurn(t, st, conv.ID, "q1", "scout", "m-scout", false, "scout one")
+	excluded := completedTurn(t, st, conv.ID, "@skeptic poke", "skeptic", "m-skeptic", false, "skeptic critique")
+	turnID, runID := currentTurn(t, st, conv.ID, "q3", "scout", "m-scout")
+	if err := st.SetTurnContextOverride(conv.ID, excluded, store.OverrideNever); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := st.GetProviderReplayEvents(conv.ID, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := canonicalEvents(rows, turnID, "scout", stubNamer{"skeptic": "Skeptic"})
+	if n := countFromBlocks(got); n != 0 {
+		t.Errorf("From-blocks = %d, want 0 (no baton to pass)", n)
+	}
+	for _, e := range got {
+		if e.Text == "@skeptic poke" || e.Text == "skeptic critique" {
+			t.Errorf("excluded turn leaked into payload: %q", e.Text)
+		}
+	}
+}
+
+// always on the current persona's own turn is a forward guarantee, not a
+// format change: the payload is byte-identical to the same thread with no
+// override. (Fixtures use no tools so tool-call IDs — derived from random
+// run IDs — cannot differ between the two conversations.)
+func TestAlwaysOnAnOwnPersonaTurnStaysVerbatim(t *testing.T) {
+	st := openStore(t)
+
+	build := func(name string) (convID, firstTurn, currentTurnID, runID string) {
+		conv, err := st.CreateConversation(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		firstTurn = completedTurn(t, st, conv.ID, "q1", "scout", "m-scout", false, "a1")
+		completedTurn(t, st, conv.ID, "q2", "scout", "m-scout", false, "a2")
+		currentTurnID, runID = currentTurn(t, st, conv.ID, "q3", "scout", "m-scout")
+		return conv.ID, firstTurn, currentTurnID, runID
+	}
+
+	pinConv, pinTurn, pinCurrent, pinRun := build("pinned")
+	if err := st.SetTurnContextOverride(pinConv, pinTurn, store.OverrideAlways); err != nil {
+		t.Fatal(err)
+	}
+	plainConv, _, plainCurrent, plainRun := build("plain")
+
+	pinRows, err := st.GetProviderReplayEvents(pinConv, pinRun)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainRows, err := st.GetProviderReplayEvents(plainConv, plainRun)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := marshalEvents(t, canonicalEvents(pinRows, pinCurrent, "scout", nil))
+	want := marshalEvents(t, canonicalEvents(plainRows, plainCurrent, "scout", nil))
+	if got != want {
+		t.Errorf("own-persona pin changed the payload:\n got %s\nwant %s", got, want)
+	}
+}
+
+// Defensive never-skip: the store already filters never turns, but if a row
+// slips through (constructed here by hand), canonicalEvents drops it too —
+// except the current turn, which an override never governs (rule 2).
+func TestChatSkipsNeverRowsDefensivelyButNeverTheCurrentTurn(t *testing.T) {
+	rows := []store.ConversationEvent{
+		{TurnID: "t1", Kind: store.EventKindUserMessage, Text: "q1", ContextOverride: store.OverrideNever},
+		{TurnID: "t1", RunID: "r1", PersonaID: "scout", Model: "m", Kind: store.EventKindAssistantText, Text: "a1", ContextOverride: store.OverrideNever},
+		{TurnID: "t2", Kind: store.EventKindUserMessage, Text: "q2", ContextOverride: store.OverrideNever},
+	}
+	// t2 is the current turn: its never row must NOT hide its own prompt.
+	got := canonicalEvents(rows, "t2", "scout", nil)
+	if len(got) != 1 || got[0].Text != "q2" {
+		t.Errorf("payload = %+v, want exactly the current turn's user message", got)
 	}
 }
