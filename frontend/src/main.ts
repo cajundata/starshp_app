@@ -423,6 +423,7 @@ async function openConversation(id: string) {
   thread.innerHTML = ''
   runBubbles.clear()
   turnEls.clear()
+  pendingUserEl = null
   overrides = new Map(Object.entries((await App.GetTurnContextOverrides(id)) || {}))
   // History is the canonical display timeline: the active completed run per
   // turn (or the latest terminal run, so cancelled/errored partial output the

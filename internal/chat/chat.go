@@ -538,6 +538,9 @@ func canonicalEvents(rows []store.ConversationEvent, currentTurnID, currentPerso
 		// Any other foreign row (older unpinned turn, or any foreign tool
 		// block) is omitted.
 	}
+	// Pins flush before the trailing baton. For a rerun whose events were
+	// appended out of sequence, a pinned block can land later than the turn's
+	// original position — content, not position, is the guarantee there.
 	flushPin()
 	flushBaton()
 	return out

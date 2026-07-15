@@ -15,7 +15,9 @@ import (
 // absence IS auto, so this guard is structural, not logical. If
 // canonicalEvents with no overrides diverges from this, an existing
 // conversation replays differently: the one failure this feature must never
-// cause. Do not update this copy when chat.go changes — that is the point.
+// cause. The store-level Spec 2 tests (replay_test.go, runs_test.go, orphan_test.go)
+// pin the row-selection half of that guarantee; this guard compares payload
+// assembly on identical rows, so both halves are needed. Do not update this copy when chat.go changes — that is the point.
 func spec2Canonical(rows []store.ConversationEvent, currentTurnID, currentPersonaID string, namer PersonaNamer) []provider.Event {
 	predecessor := spec2Predecessor(rows, currentTurnID)
 	out := make([]provider.Event, 0, len(rows))
