@@ -113,3 +113,26 @@ llama3.2` complete, register the Llama 3.2 entry from
 54. [x] **Delete an idea.** The detail pane's delete control removes the idea
         (and cascades its status history and kill criteria); it disappears
         from the list with no orphan rows or crash.
+
+## Multi-persona threads
+
+55. [ ] **@ autocomplete is leading-only.** In a conversation, type `@` as
+        the first character of the composer — a popup lists the personas
+        (dot in each persona's color, name, `@id`), filters as you type,
+        arrows move the selection, and Enter/Tab inserts `@id `. Escape
+        dismisses it. Type `@` anywhere after the first character (or paste
+        code containing a `@decorator` mid-message) — no popup.
+56. [ ] **A mention routes one turn.** With persona A pinned, send
+        `@<persona-b-id> hello`. The reply bubble carries B's color, name,
+        and model chip; the persona picker still shows A; the next
+        unmentioned message is answered by A again.
+57. [ ] **A typo'd mention fails without sending.** Send `@no-such-persona
+        hi`. The error names the available persona IDs, the message text is
+        back in the composer, and after closing and reopening the
+        conversation no new turn exists.
+58. [ ] **The baton passes attributed.** In one conversation: ask A a
+        question, then `@<b-id> critique that`, then an unmentioned message
+        asking A to respond to the critique. A's answer shows it can see B's
+        output (it arrived as `From <B> (<model>):` context, so A responds
+        to the critique's substance). Close and reopen the conversation —
+        every bubble replays with the same colors and chips it had live.
