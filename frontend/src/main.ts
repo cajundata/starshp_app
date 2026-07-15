@@ -78,6 +78,96 @@ const msgText = (el: HTMLElement) => el.querySelector('.msg-text') as HTMLElemen
 const COPY_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`
 const CHECK_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
 
+const PIN_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"/></svg>`
+const EYE_OFF_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`
+const AUTO_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" stroke-dasharray="4 3"/></svg>`
+
+// ---- Turn context overrides -------------------------------------------------
+// Tri-state per turn: auto (no entry) / always / never. Payload-only — the
+// thread always shows the full history; the visuals mark what the model is
+// guaranteed to see (pin glyph) or will not see (dimmed bubbles).
+let overrides = new Map<string, string>()        // turnId → 'always' | 'never'
+const turnEls = new Map<string, HTMLElement[]>() // turnId → [user bubble, run bubbles…]
+let pendingUserEl: HTMLElement | null = null     // optimistic user bubble awaiting its turnId
+
+const OVERRIDE_CYCLE: Record<string, string> = { auto: 'always', always: 'never', never: 'auto' }
+const OVERRIDE_ICON: Record<string, string> = { auto: AUTO_ICON, always: PIN_ICON, never: EYE_OFF_ICON }
+const OVERRIDE_TITLE: Record<string, string> = {
+  auto: 'Context: auto — click to always include this turn',
+  always: 'Context: always included — click to exclude',
+  never: 'Context: excluded from the model — click for auto',
+}
+
+function overrideState(turnId: string): string {
+  return overrides.get(turnId) || 'auto'
+}
+
+function registerTurnEl(turnId: string, el: HTMLElement) {
+  if (!turnId) return
+  const els = turnEls.get(turnId) || []
+  if (!els.includes(el)) els.push(el)
+  turnEls.set(turnId, els)
+  applyOverrideVisuals(turnId)
+}
+
+// applyOverrideVisuals stamps the state onto every element of the turn:
+// never dims both bubbles (text stays readable), always shows a pin glyph
+// beside the model chip, auto is exactly today's rendering.
+function applyOverrideVisuals(turnId: string) {
+  const state = overrideState(turnId)
+  for (const el of turnEls.get(turnId) || []) {
+    el.classList.toggle('ctx-excluded', state === 'never')
+    const btn = el.querySelector('.ctx-btn') as HTMLElement | null
+    if (btn) {
+      btn.innerHTML = OVERRIDE_ICON[state]
+      btn.title = OVERRIDE_TITLE[state]
+      btn.classList.toggle('active', state !== 'auto')
+    }
+    const attrib = el.querySelector('.msg-attrib')
+    if (attrib) {
+      let pin = attrib.querySelector('.pin-glyph') as HTMLElement | null
+      if (state === 'always' && !pin) {
+        pin = document.createElement('span')
+        pin.className = 'pin-glyph'
+        pin.innerHTML = PIN_ICON
+        pin.title = 'Always included in context'
+        attrib.appendChild(pin)
+      } else if (state !== 'always' && pin) {
+        pin.remove()
+      }
+    }
+  }
+}
+
+// attachTurnControl adds the hover control that cycles a turn's context
+// override auto → always → never → auto. Anchored on the user bubble — the
+// turn's stable anchor (the assistant side may be an error or still
+// streaming).
+function attachTurnControl(userEl: HTMLElement, turnId: string) {
+  if (!turnId || userEl.querySelector('.ctx-btn')) return
+  const row = document.createElement('div')
+  row.className = 'msg-actions'
+  const btn = document.createElement('button')
+  btn.className = 'ctx-btn'
+  btn.onclick = async () => {
+    const conv = activeConv
+    if (!conv) return
+    const next = OVERRIDE_CYCLE[overrideState(turnId)]
+    try {
+      await App.SetTurnContextOverride(conv, turnId, next)
+    } catch (e: any) {
+      alert(`Could not change the turn's context state: ${e?.userMessage || e}`)
+      return
+    }
+    if (next === 'auto') overrides.delete(turnId)
+    else overrides.set(turnId, next)
+    applyOverrideVisuals(turnId)
+  }
+  row.appendChild(btn)
+  userEl.appendChild(row)
+  applyOverrideVisuals(turnId)
+}
+
 // ---- Assistant run bubbles -------------------------------------------------
 // An assistant turn is one "run". Its bubble is assembled from the chat:* event
 // taxonomy: an optional grounding header, then an ordered sequence of text
@@ -332,6 +422,8 @@ async function openConversation(id: string) {
   activeConv = id
   thread.innerHTML = ''
   runBubbles.clear()
+  turnEls.clear()
+  overrides = new Map(Object.entries((await App.GetTurnContextOverrides(id)) || {}))
   // History is the canonical display timeline: the active completed run per
   // turn (or the latest terminal run, so cancelled/errored partial output the
   // user saw is preserved). Each assistant event carries the persona and model
@@ -341,13 +433,16 @@ async function openConversation(id: string) {
   const events = (await App.GetConversationDisplayEvents(id)) || []
   for (const ev of events) {
     if (ev.kind === 'user_message') {
-      addMsg('user', ev.text || '')
+      const el = addMsg('user', ev.text || '')
+      registerTurnEl(ev.turnId, el)
+      attachTurnControl(el, ev.turnId)
       continue
     }
     if (!ev.runId) continue
     // Create the bubble with its attribution before any content lands in it, so
     // a replayed run is colored exactly as the live one was.
     ensureRunBubble(ev.runId, ev.personaId || '', ev.modelId || '')
+    registerTurnEl(ev.turnId, runBubbles.get(ev.runId)!.el)
     if (ev.kind === 'assistant_text') {
       appendRunText(ev.runId, ev.text || '')
     } else if (ev.kind === 'assistant_tool_call') {
@@ -420,6 +515,7 @@ async function send() {
   input.value = ''
   mentionDismissed = false
   const userEl = addMsg('user', text)
+  pendingUserEl = userEl
   // The assistant bubble is created by the chat:run_started event; the loop's
   // output flows in through the chat:* taxonomy below.
   streaming = true
@@ -446,8 +542,10 @@ async function send() {
       userEl.remove()
       input.value = text
       updateMentionPopup()
+      pendingUserEl = null
     }
   } finally {
+    pendingUserEl = null
     streaming = false
     sendBtn.textContent = 'Send ▸'
     sendBtn.classList.remove('streaming')
@@ -474,7 +572,17 @@ async function send() {
 
 EventsOn('chat:run_started', (p: any) => {
   if (p.convID !== activeConv) return
-  ensureRunBubble(p.runID, p.personaID || '', p.modelID || '')
+  const b = ensureRunBubble(p.runID, p.personaID || '', p.modelID || '')
+  // Stamp the optimistic user bubble with its turn ID — the backend assigns
+  // it, and run_started is the first event that carries it.
+  if (p.turnID) {
+    if (pendingUserEl) {
+      registerTurnEl(p.turnID, pendingUserEl)
+      attachTurnControl(pendingUserEl, p.turnID)
+      pendingUserEl = null
+    }
+    registerTurnEl(p.turnID, b.el)
+  }
 })
 
 EventsOn('chat:grounding_ready', (p: any) => {

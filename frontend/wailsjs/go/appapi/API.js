@@ -62,6 +62,10 @@ export function GetRetrievalMode(arg1) {
   return window['go']['appapi']['API']['GetRetrievalMode'](arg1);
 }
 
+export function GetTurnContextOverrides(arg1) {
+  return window['go']['appapi']['API']['GetTurnContextOverrides'](arg1);
+}
+
 export function ListBooks() {
   return window['go']['appapi']['API']['ListBooks']();
 }
@@ -132,6 +136,10 @@ export function SetIdeaStatus(arg1, arg2, arg3) {
 
 export function SetRetrievalMode(arg1, arg2) {
   return window['go']['appapi']['API']['SetRetrievalMode'](arg1, arg2);
+}
+
+export function SetTurnContextOverride(arg1, arg2, arg3) {
+  return window['go']['appapi']['API']['SetTurnContextOverride'](arg1, arg2, arg3);
 }
 
 export function StartupIssues() {

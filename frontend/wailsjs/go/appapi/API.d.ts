@@ -38,6 +38,8 @@ export function GetIdea(arg1:string):Promise<store.Idea>;
 
 export function GetRetrievalMode(arg1:string):Promise<string>;
 
+export function GetTurnContextOverrides(arg1:string):Promise<Record<string, string>>;
+
 export function ListBooks():Promise<Array<textbooks.Book>>;
 
 export function ListConversations():Promise<Array<store.Conversation>>;
@@ -73,6 +75,8 @@ export function SetConversationScope(arg1:string,arg2:Array<store.TextbookScope>
 export function SetIdeaStatus(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function SetRetrievalMode(arg1:string,arg2:string):Promise<void>;
+
+export function SetTurnContextOverride(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function StartupIssues():Promise<Array<string>>;
 
