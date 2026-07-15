@@ -57,6 +57,7 @@ const thread = $('thread')
 const input = $('input') as HTMLTextAreaElement
 const personaSel = $('personaSel') as HTMLSelectElement
 const sendBtn = $('sendBtn') as HTMLButtonElement
+const mentionPopup = $('mentionPopup') as HTMLDivElement
 
 let ragStatusEl: HTMLElement | null = null
 
@@ -417,7 +418,7 @@ async function send() {
   }
   const text = input.value.trim()
   input.value = ''
-  addMsg('user', text)
+  const userEl = addMsg('user', text)
   // The assistant bubble is created by the chat:run_started event; the loop's
   // output flows in through the chat:* taxonomy below.
   streaming = true
@@ -437,6 +438,13 @@ async function send() {
     // has no run bubble to attach to — surface it inline. Errors raised mid-run
     // are already rendered via chat:run_errored.
     addMsg('assistant', `[${e?.code || 'error'}] ${e?.userMessage || e}`)
+    // A config rejection (typo'd mention, unknown assistant) persisted
+    // nothing server-side — put the text back in the composer and drop the
+    // optimistic user bubble so the view matches the store.
+    if (e?.code === 'config') {
+      userEl.remove()
+      input.value = text
+    }
   } finally {
     streaming = false
     sendBtn.textContent = 'Send ▸'
@@ -718,7 +726,79 @@ libModal.onclick = (e) => { if (e.target === libModal) libModal.classList.add('h
 $('editorBack').onclick = () => { closeEditor(); void openLibraryPanel() }
 $('editorSave').onclick = () => void saveEditor()
 editorDelete.onclick = () => void deleteEditorItem()
+// --- @mention autocomplete -------------------------------------------
+// Mentions are leading-only, so the popup exists only while the composer
+// holds nothing but a partial leading @name. Pasting code mid-message can
+// never trigger it — that is the entire reason for the leading-only rule.
+let mentionMatches: typeof cachedPersonas = []
+let mentionSel = 0
+let mentionDismissed = false
+
+function mentionPrefix(): string | null {
+  const m = /^\s*@([a-zA-Z0-9-]*)$/.exec(input.value)
+  return m ? m[1].toLowerCase() : null
+}
+
+function hideMentionPopup() {
+  mentionPopup.classList.add('hidden')
+  mentionMatches = []
+}
+
+function updateMentionPopup() {
+  const prefix = mentionPrefix()
+  if (prefix === null) { mentionDismissed = false; hideMentionPopup(); return }
+  if (mentionDismissed) { hideMentionPopup(); return }
+  mentionMatches = cachedPersonas.filter(p => p.id.startsWith(prefix))
+  if (!mentionMatches.length) { hideMentionPopup(); return }
+  if (mentionSel >= mentionMatches.length) mentionSel = 0
+  mentionPopup.innerHTML = mentionMatches.map((p, i) =>
+    `<div class="mention-item${i === mentionSel ? ' sel' : ''}" data-id="${p.id}">` +
+    `<span class="mention-dot" style="background:${p.color}"></span>` +
+    `<span>${p.name}</span><span class="mention-id">@${p.id}</span></div>`
+  ).join('')
+  mentionPopup.classList.remove('hidden')
+}
+
+function insertMention(id: string) {
+  input.value = '@' + id + ' '
+  hideMentionPopup()
+  input.focus()
+  input.setSelectionRange(input.value.length, input.value.length)
+}
+
+input.addEventListener('input', () => { mentionSel = 0; updateMentionPopup() })
+// mousedown, not click: it fires before the textarea loses focus.
+mentionPopup.addEventListener('mousedown', (e) => {
+  const item = (e.target as HTMLElement).closest('.mention-item') as HTMLElement | null
+  if (item?.dataset.id) { e.preventDefault(); insertMention(item.dataset.id) }
+})
+
 input.addEventListener('keydown', (e) => {
+  if (!mentionPopup.classList.contains('hidden')) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      mentionSel = (mentionSel + 1) % mentionMatches.length
+      updateMentionPopup()
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      mentionSel = (mentionSel + mentionMatches.length - 1) % mentionMatches.length
+      updateMentionPopup()
+      return
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      insertMention(mentionMatches[mentionSel].id)
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      mentionDismissed = true
+      hideMentionPopup()
+      return
+    }
+  }
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send()
 })
 

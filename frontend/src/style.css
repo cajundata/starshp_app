@@ -136,3 +136,40 @@ body { font-family: system-ui, sans-serif; }
 .detail-row { margin: 6px 0; display: flex; align-items: center; gap: 8px; }
 .detail-row label { color: #6f6f76; margin-right: 4px; }
 .pl-empty, .pl-error { color: #6f6f76; padding: 12px; }
+
+/* --- @mention autocomplete ------------------------------------------- */
+#composer { position: relative; }
+#mentionPopup {
+  position: absolute;
+  bottom: 100%;
+  left: 12px;
+  margin-bottom: 6px;
+  min-width: 220px;
+  background: #1d1d20;
+  border: 1px solid #2b2b30;
+  border-radius: 8px;
+  padding: 4px;
+  z-index: 30;
+}
+#mentionPopup .mention-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+#mentionPopup .mention-item.sel { background: #2b2b30; }
+#mentionPopup .mention-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+#mentionPopup .mention-id {
+  color: #8a8a92;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  margin-left: auto;
+}
