@@ -85,11 +85,13 @@ func TestSetOverrideRejectsUnknownTurn(t *testing.T) {
 	c2, _ := st.CreateConversation("two")
 	turn1 := completedStoreTurn(t, st, c1.ID, "run-1", "q1", "a1")
 
-	if err := st.SetTurnContextOverride(c1.ID, "no-such-turn", OverrideAlways); !errors.Is(err, ErrUnknownTurn) {
-		t.Errorf("bogus turn: err = %v, want ErrUnknownTurn", err)
-	}
-	if err := st.SetTurnContextOverride(c2.ID, turn1, OverrideAlways); !errors.Is(err, ErrUnknownTurn) {
-		t.Errorf("cross-conversation turn: err = %v, want ErrUnknownTurn", err)
+	for _, state := range []string{OverrideAuto, OverrideAlways, OverrideNever} {
+		if err := st.SetTurnContextOverride(c1.ID, "no-such-turn", state); !errors.Is(err, ErrUnknownTurn) {
+			t.Errorf("state %q, bogus turn: err = %v, want ErrUnknownTurn", state, err)
+		}
+		if err := st.SetTurnContextOverride(c2.ID, turn1, state); !errors.Is(err, ErrUnknownTurn) {
+			t.Errorf("state %q, cross-conversation turn: err = %v, want ErrUnknownTurn", state, err)
+		}
 	}
 	m, _ := st.GetTurnContextOverrides(c1.ID)
 	if len(m) != 0 {

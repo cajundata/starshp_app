@@ -22,19 +22,19 @@ const (
 var ErrUnknownTurn = errors.New("unknown turn")
 
 // SetTurnContextOverride records the operator's per-turn context override.
-// auto deletes the row; always/never upsert. The turn must be a user_message
-// event of convID — turn IDs are user_message event IDs, so this also rejects
-// a turn that belongs to another conversation.
+// For auto, the row is deleted (absence is the default state); for always/never,
+// rows are upserted. The turn must be a user_message event of convID for all
+// states — turn IDs are user_message event IDs, so this also rejects a turn
+// that belongs to another conversation.
 func (s *Store) SetTurnContextOverride(convID, turnID, state string) error {
+	// Validate state first.
 	switch state {
-	case OverrideAuto:
-		_, err := s.db.Exec(
-			`DELETE FROM turn_context_overrides WHERE turn_id = ?`, turnID)
-		return err
-	case OverrideAlways, OverrideNever:
+	case OverrideAuto, OverrideAlways, OverrideNever:
 	default:
 		return fmt.Errorf("invalid override state %q", state)
 	}
+
+	// All states require the turn to exist in convID.
 	var id string
 	err := s.db.QueryRow(
 		`SELECT id FROM conversation_events
@@ -46,6 +46,14 @@ func (s *Store) SetTurnContextOverride(convID, turnID, state string) error {
 	if err != nil {
 		return err
 	}
+
+	// auto deletes the row; always/never upsert.
+	if state == OverrideAuto {
+		_, err := s.db.Exec(
+			`DELETE FROM turn_context_overrides WHERE turn_id = ?`, turnID)
+		return err
+	}
+
 	_, err = s.db.Exec(
 		`INSERT INTO turn_context_overrides (conversation_id, turn_id, state)
          VALUES (?,?,?)
