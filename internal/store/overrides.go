@@ -1,0 +1,77 @@
+package store
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+)
+
+// Override states for a turn's contribution to the provider payload. auto is
+// the absence of a row — it is "stored" by deleting — so only always and
+// never persist (see turn_context_overrides in schema.go). Overrides shape
+// what the model sees, never what the operator sees: the display path does
+// not consult them.
+const (
+	OverrideAuto   = "auto"
+	OverrideAlways = "always"
+	OverrideNever  = "never"
+)
+
+// ErrUnknownTurn reports an override write against a turn that does not
+// exist in the given conversation. appapi maps it to AppError{Code:"config"}.
+var ErrUnknownTurn = errors.New("unknown turn")
+
+// SetTurnContextOverride records the operator's per-turn context override.
+// auto deletes the row; always/never upsert. The turn must be a user_message
+// event of convID — turn IDs are user_message event IDs, so this also rejects
+// a turn that belongs to another conversation.
+func (s *Store) SetTurnContextOverride(convID, turnID, state string) error {
+	switch state {
+	case OverrideAuto:
+		_, err := s.db.Exec(
+			`DELETE FROM turn_context_overrides WHERE turn_id = ?`, turnID)
+		return err
+	case OverrideAlways, OverrideNever:
+	default:
+		return fmt.Errorf("invalid override state %q", state)
+	}
+	var id string
+	err := s.db.QueryRow(
+		`SELECT id FROM conversation_events
+          WHERE id = ? AND conversation_id = ? AND kind = 'user_message'`,
+		turnID, convID).Scan(&id)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("%w: %s", ErrUnknownTurn, turnID)
+	}
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO turn_context_overrides (conversation_id, turn_id, state)
+         VALUES (?,?,?)
+         ON CONFLICT(turn_id) DO UPDATE SET state = excluded.state`,
+		convID, turnID, state)
+	return err
+}
+
+// GetTurnContextOverrides returns turn → state for every override row in the
+// conversation, for UI seeding on conversation open. Turns in auto have no
+// row and are absent from the map.
+func (s *Store) GetTurnContextOverrides(convID string) (map[string]string, error) {
+	rows, err := s.db.Query(
+		`SELECT turn_id, state FROM turn_context_overrides
+          WHERE conversation_id = ?`, convID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var turn, state string
+		if err := rows.Scan(&turn, &state); err != nil {
+			return nil, err
+		}
+		out[turn] = state
+	}
+	return out, rows.Err()
+}
