@@ -452,16 +452,80 @@ func (s *Service) errorOut(p SendParams, runID, turnID, reason, code, msg string
 	return RunResult{RunID: runID, TerminalReason: reason}
 }
 
+// canonicalEvents builds the provider payload for the persona speaking now
+// (currentPersonaID, answering currentTurnID). Own-persona and pre-persona
+// rows pass through the six-field whitelist verbatim — a persona keeps its
+// own voice, tool blocks included. The immediately preceding foreign turn's
+// final text folds into one attributed user-role block; its tool blocks are
+// dropped because their provider-specific IDs would dangle in another
+// persona's transcript and the receiving persona may not even have the tool
+// in its registry. Older foreign turns are omitted entirely. The operator's
+// user_message rows are always included, in order. rows arrive ordered by
+// sequence_index.
 func canonicalEvents(rows []store.ConversationEvent, currentTurnID, currentPersonaID string, namer PersonaNamer) []provider.Event {
+	predecessor := predecessorTurnID(rows, currentTurnID)
 	out := make([]provider.Event, 0, len(rows))
-	for _, r := range rows {
+	var batonTexts []string
+	var batonPersona, batonModel string
+	flushBaton := func() {
+		if len(batonTexts) == 0 {
+			return
+		}
+		name := batonPersona
+		if namer != nil {
+			if n, ok := namer.Name(batonPersona); ok {
+				name = n
+			}
+		}
 		out = append(out, provider.Event{
-			Kind: r.Kind, Text: r.Text,
-			ToolCallID: r.ToolCallID, ToolName: r.ToolName,
-			ToolInput: r.ToolInput, IsError: r.IsError,
+			Kind: store.EventKindUserMessage,
+			Text: "From " + name + " (" + batonModel + "):\n" + strings.Join(batonTexts, "\n\n"),
 		})
+		batonTexts = nil
 	}
+	for _, r := range rows {
+		// The baton lands immediately before the current turn's rows, i.e.
+		// right after the predecessor turn it summarizes.
+		if r.TurnID == currentTurnID {
+			flushBaton()
+		}
+		foreign := r.PersonaID != "" && r.PersonaID != currentPersonaID
+		switch {
+		case r.Kind == store.EventKindUserMessage || !foreign:
+			out = append(out, provider.Event{
+				Kind: r.Kind, Text: r.Text,
+				ToolCallID: r.ToolCallID, ToolName: r.ToolName,
+				ToolInput: r.ToolInput, IsError: r.IsError,
+			})
+		case r.TurnID == predecessor && r.Kind == store.EventKindAssistantText:
+			if len(batonTexts) == 0 {
+				batonPersona, batonModel = r.PersonaID, r.Model
+			}
+			batonTexts = append(batonTexts, r.Text)
+		}
+		// Any other foreign row (older turn, or a predecessor tool block) is
+		// omitted.
+	}
+	flushBaton()
 	return out
+}
+
+// predecessorTurnID returns the turn immediately before currentTurnID, in
+// user-message order. User messages are appended chronologically and are
+// unique per turn, so they define turn order even if a turn's run events
+// were appended out of sequence (a rerun). "" means no predecessor.
+func predecessorTurnID(rows []store.ConversationEvent, currentTurnID string) string {
+	prev := ""
+	for _, r := range rows {
+		if r.Kind != store.EventKindUserMessage {
+			continue
+		}
+		if r.TurnID == currentTurnID {
+			return prev
+		}
+		prev = r.TurnID
+	}
+	return ""
 }
 
 func bookNamesFromResolver(ctx context.Context, p SendParams) []string {

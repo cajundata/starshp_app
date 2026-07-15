@@ -14,10 +14,20 @@ import (
 // canonicalEvents (Kind, Text, ToolCallID, ToolName, ToolInput, IsError). That
 // whitelist is the only thing keeping PersonaID and Model — which live right
 // next to those fields on store.ConversationEvent, joined in from runs for
-// display attribution — out of the payload sent to the LLM provider. If a
-// future edit widens the whitelist, or provider.Event grows a field that
-// canonicalEvents starts populating from attribution data, this test must
-// fail loudly.
+// display attribution — out of the payload sent to the LLM provider.
+//
+// Multi-persona threads (Spec 2) deliberately write a persona's display name
+// and model into the *text* of a handoff block ("From Scout (model):").
+// That is not the leak this test forbids, and the distinction is
+// load-bearing:
+//   - persona metadata must never appear as structured fields on
+//     provider.Event — the structural guard below stays, unchanged;
+//   - persona metadata may appear inside Text, but only in a deliberately
+//     constructed handoff block, which this single-persona thread never
+//     produces.
+//
+// If this test goes red, do not loosen the structural assertion — a widened
+// whitelist or a new provider.Event field is leaking attribution.
 func TestCanonicalEvents_NoPersonaOrModelLeak(t *testing.T) {
 	st := openStore(t)
 	conv, err := st.CreateConversation("c")
