@@ -1,7 +1,7 @@
 # Team Protocol Preamble — Design (Spec 2.1)
 
 **Date:** 2026-07-15
-**Status:** Awaiting review
+**Status:** Approved; implemented
 **Builds on:** [Multi-Persona Threads](2026-07-13-multi-persona-threads-design.md)
 (Spec 2, shipped). Independent of
 [Turn Context Overrides](2026-07-14-turn-context-overrides-design.md) (Spec 3)
