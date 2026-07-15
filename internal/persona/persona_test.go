@@ -166,3 +166,15 @@ func TestSeedNoModelsIsANoOp(t *testing.T) {
 		t.Fatal("Seed created a directory with no model to point at")
 	}
 }
+
+// Name satisfies chat.PersonaNamer: the handoff attribution line resolves a
+// persona ID to its display name through this method.
+func TestRegistryNameResolvesDisplayName(t *testing.T) {
+	r := Registry{Personas: []Persona{{ID: "scout", Name: "Scout"}}}
+	if n, ok := r.Name("scout"); !ok || n != "Scout" {
+		t.Errorf("Name(scout) = (%q, %v), want (Scout, true)", n, ok)
+	}
+	if _, ok := r.Name("ghost"); ok {
+		t.Error("Name(ghost) resolved; want ok=false")
+	}
+}

@@ -71,4 +71,3 @@ func TestCancelMessageNoInFlightIsNoop(t *testing.T) {
 	// Must not panic.
 	api.CancelMessage()
 }
-

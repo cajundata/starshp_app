@@ -51,6 +51,14 @@ func (r Registry) ByID(id string) (Persona, bool) {
 	return Persona{}, false
 }
 
+// Name resolves a persona ID to its display name. It satisfies the
+// chat.PersonaNamer interface (declared there), so a handoff block can be
+// attributed without chat importing this package.
+func (r Registry) Name(id string) (string, bool) {
+	p, ok := r.ByID(id)
+	return p.Name, ok
+}
+
 type frontmatter struct {
 	Name    string   `yaml:"name"`
 	Model   string   `yaml:"model"`

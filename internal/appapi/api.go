@@ -13,6 +13,7 @@ import (
 	"github.com/cajundata/starshp_app/internal/chat"
 	"github.com/cajundata/starshp_app/internal/config"
 	"github.com/cajundata/starshp_app/internal/library"
+	"github.com/cajundata/starshp_app/internal/mention"
 	"github.com/cajundata/starshp_app/internal/persona"
 	"github.com/cajundata/starshp_app/internal/provider"
 	"github.com/cajundata/starshp_app/internal/rag"
@@ -196,6 +197,7 @@ func (a *API) SetConversationScope(convID string, scopes []store.TextbookScope) 
 func (a *API) GetConversationScope(convID string) ([]store.TextbookScope, error) {
 	return a.st.GetConversationTextbooks(convID)
 }
+
 // titleFromText derives a conversation title from the first user message.
 // It collapses newlines, trims whitespace, and truncates to 60 runes.
 func titleFromText(s string) string {
@@ -239,16 +241,9 @@ func (r ragRetriever) Retrieve(ctx context.Context, q string) (string, string, [
 // Assistant output is surfaced through the chat:* event taxonomy (the bubble
 // renders from events), so this returns only a normalized error.
 func (a *API) SendMessage(convID, userText, personaID string) error {
-	p, ok := a.personas.ByID(personaID)
-	if !ok {
-		// No fallback to a default persona: a silent substitution would attribute
-		// output to an assistant the operator did not pick, which is the exact
-		// failure per-persona attribution exists to prevent.
-		return provider.AppError{
-			Code:        "config",
-			UserMessage: a.noPersonaMessage(personaID),
-			Retryable:   false,
-		}
+	p, rerr := a.routePersona(userText, personaID)
+	if rerr != nil {
+		return rerr
 	}
 	prov, err := provider.New(a.reg, p.Model, a.cfg.OpenAIAPIKey, a.cfg.AnthropicAPIKey)
 	if err != nil {
@@ -296,6 +291,7 @@ func (a *API) SendMessage(convID, userText, personaID string) error {
 		SystemPrompt:   systemPrompt,
 		Model:          p.Model,
 		PersonaID:      p.ID,
+		Namer:          a.personas,
 		Provider:       prov,
 		ProviderName:   providerNameFromModelID(a.reg, p.Model),
 		Registry:       a.toolReg.Subset(p.Tools),
@@ -330,6 +326,40 @@ func (a *API) noPersonaMessage(personaID string) string {
 		return msg
 	}
 	return "Unknown assistant \"" + personaID + "\". Check your personas folder."
+}
+
+// routePersona resolves who answers this message. A leading @mention routes
+// exactly one turn and never touches pinned_persona; otherwise the picker's
+// persona applies. There is no fallback to a default persona: a silent
+// substitution would attribute output to an assistant the operator did not
+// pick, which is the exact failure per-persona attribution exists to
+// prevent. An unresolvable mention lists the real persona IDs — an
+// edit-distance guess is a magic number that is wrong at the boundary.
+func (a *API) routePersona(userText, pickerID string) (persona.Persona, error) {
+	id := pickerID
+	mentioned, hasMention := mention.Parse(userText)
+	if hasMention {
+		id = mentioned
+	}
+	if p, ok := a.personas.ByID(id); ok {
+		return p, nil
+	}
+	if hasMention && len(a.personas.Personas) > 0 {
+		ids := make([]string, len(a.personas.Personas))
+		for i, p := range a.personas.Personas {
+			ids[i] = p.ID
+		}
+		return persona.Persona{}, provider.AppError{
+			Code:        "config",
+			UserMessage: "No assistant named \"" + mentioned + "\". Available: " + strings.Join(ids, ", ") + ".",
+			Retryable:   false,
+		}
+	}
+	return persona.Persona{}, provider.AppError{
+		Code:        "config",
+		UserMessage: a.noPersonaMessage(id),
+		Retryable:   false,
+	}
 }
 
 // SetConversationPersona pins the persona the operator last used here. The
