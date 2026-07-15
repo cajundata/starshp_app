@@ -128,7 +128,7 @@ llama3.2` complete, register the Llama 3.2 entry from
         and model chip; the persona picker still shows A; the next
         unmentioned message is answered by A again.
 57. [x] **A typo'd mention fails without sending.** Send `@no-such-persona
-    hi`. The error names the available persona IDs, the message text is
+        hi`. The error names the available persona IDs, the message text is
         back in the composer, and after closing and reopening the
         conversation no new turn exists.
 58. [x] **The baton passes attributed.** In one conversation: ask A a
@@ -137,7 +137,7 @@ llama3.2` complete, register the Llama 3.2 entry from
         output (it arrived as `From <B> (<model>):` context, so A responds
         to the critique's substance). Close and reopen the conversation —
         every bubble replays with the same colors and chips it had live.
-59. [ ] **Personas know the working arrangement.** With two or more
+59. [x] **Personas know the working arrangement.** With two or more
         personas loaded, ask the pinned persona "what is your role?" — it
         describes itself without denying that other assistants exist. After
         a `@<other-id>` handoff, ask the pinned persona to respond to the
@@ -147,26 +147,26 @@ llama3.2` complete, register the Llama 3.2 entry from
 
 ## Turn context overrides
 
-60. [ ] **The hover control cycles through three states.** Hover a turn's
+60. [x] **The hover control cycles through three states.** Hover a turn's
         user bubble — a small control appears beside it. Clicking cycles
         auto → always → never → auto (dashed circle → pin → crossed eye),
         and the tooltip names the state each time. The control appears on
         every turn's user bubble, including reopened conversations.
-61. [ ] **Dimming and the pin glyph render.** Set a turn to `always` — a
+61. [x] **Dimming and the pin glyph render.** Set a turn to `always` — a
         gold pin glyph appears beside that turn's model chip. Set a turn to
         `never` — both its bubbles (user and assistant, tool blocks
         included) dim, with the text still readable. Return to auto — the
         conversation renders exactly as before.
-62. [ ] **Occupancy visibly drops.** In a conversation with a heavy turn
+62. [x] **Occupancy visibly drops.** In a conversation with a heavy turn
         (e.g. a long tool-assisted answer), note the context footer's
         occupancy, mark that turn `never`, and send another message. The
         footer reports lower occupancy than the previous send — the lever
         the footer was waiting for.
-63. [ ] **Overrides survive a restart.** Set one turn `always` and another
+63. [x] **Overrides survive a restart.** Set one turn `always` and another
         `never`, quit the app (or stop `wails dev`), relaunch, and reopen
         the conversation. The pin glyph and dimming reappear on the same
         turns.
-64. [ ] **The displayed thread never changes.** Toggle a turn through all
+64. [x] **The displayed thread never changes.** Toggle a turn through all
         three states — every bubble's full text, tool blocks, colors, and
         chips stay identical throughout; only the dimming/pin adornments
         change. Excluding the immediately-preceding foreign turn and sending
