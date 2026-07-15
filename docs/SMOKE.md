@@ -62,9 +62,10 @@ For each step, observe the assistant bubble in addition to the listed expectatio
 36. [x] **Attribution.** Send a message. The bubble carries a colored dot, the persona name in that color, a muted model chip, and a colored left stripe — all present before the first token arrives.
 37. [x] **Two personas.** Send as persona A in one conversation and persona B in another. Distinct colors, correct names, correct model chips.
 38. [x] **Persona switch + replay parity (the important one).** In one conversation, send turn 1 as persona A, then switch the dropdown and send turn 2 as persona B — turn 2's bubble picks up the new color/name/model chip while turn 1's bubble keeps its original attribution. Close the conversation and reopen it: each bubble must come back with **its own** run's persona, not the conversation's `pinned_persona` (whichever persona sent last). This is the regression the replay `LEFT JOIN` on `runs.persona_id` exists to prevent — a version that colors every bubble from the pinned persona instead of each run's own attribution can slip past a single-persona conversation, so this step requires at least two distinct assistants across the two turns. Live/replay divergence here is the failure this design exists to prevent — if it happens, stop and fix it.
-39. [x] **`tools:` subsetting.** **Set `STARSHP_SKIP_AUTO_GROUNDING=1` and relaunch first — without it this step cannot test what it claims.** A textbook-attached conversation injects retrieved chunks pre-turn regardless of the persona's `tools:` list (see "Tools vs. grounding" below), so the model is handed the content and never needs to search; a passing-looking result would prove nothing. With grounding off and a textbook attached, send as an assistant scoped to `tools: [safe_math]` (e.g. Skeptic) and ask something that needs the book: no `🔍 search_textbook` block appears, no `↳ grounded` header appears, and it says plainly that it has no access to the textbook. Then ask the **same question in the same conversation** as an assistant with no `tools:` restriction — `search_textbook` *is* called and the answer is sourced from the book. **The contrast between the two is the test.** The restricted persona's refusal on its own proves nothing: a globally broken `search_textbook` would produce exactly the same output. Unset the env var afterward.
+39. [x] **`tools:` subsetting.** **Set `STARSHP_SKIP_AUTO_GROUNDING=1` and relaunch first — without it this step cannot test what it claims.** A textbook-attached conversation injects retrieved chunks pre-turn regardless of the persona's `tools:` list (see "Tools vs. grounding" below), so the model is handed the content and never needs to search; a passing-looking result would prove nothing. With grounding off and a textbook attached, send as an assistant scoped to `tools: [safe_math]` (e.g. Skeptic) and ask something that needs the book: no `🔍 search_textbook` block appears, no `↳ grounded` header appears, and it says plainly that it has no access to the textbook. Then ask the **same question in the same conversation** as an assistant with no `tools:` restriction — `search_textbook` _is_ called and the answer is sourced from the book. **The contrast between the two is the test.** The restricted persona's refusal on its own proves nothing: a globally broken `search_textbook` would produce exactly the same output. Unset the env var afterward.
 
-    **Tools vs. grounding — two channels, only one is persona-gated.** `tools:` controls what an assistant can *invoke* (`internal/appapi/api.go`, `Subset(p.Tools)`). Pre-turn RAG grounding injects retrieved chunks into the request whenever the conversation has a textbook attached and `retrieval_mode` is `auto_grounded_default` — and it consults no persona at all. So a persona restricted to `tools: [safe_math]` **cannot search the textbook but can still be handed passages from it**. That is deliberate: attaching a textbook scopes the *conversation*, not the assistant's capabilities. Expect it, and don't read a grounded answer from a toolless persona as a whitelist failure.
+    **Tools vs. grounding — two channels, only one is persona-gated.** `tools:` controls what an assistant can _invoke_ (`internal/appapi/api.go`, `Subset(p.Tools)`). Pre-turn RAG grounding injects retrieved chunks into the request whenever the conversation has a textbook attached and `retrieval_mode` is `auto_grounded_default` — and it consults no persona at all. So a persona restricted to `tools: [safe_math]` **cannot search the textbook but can still be handed passages from it**. That is deliberate: attaching a textbook scopes the _conversation_, not the assistant's capabilities. Expect it, and don't read a grounded answer from a toolless persona as a whitelist failure.
+
 40. [x] **`library:` frontmatter auto-attachment.** Add a library item with a distinctive fact (e.g. a made-up rule), leave it **unchecked** in the conversation's active-items panel, then give a persona `library: [that-item]` in its frontmatter and send a message as that persona asking about the fact. The model answers correctly — the persona pulled the item in on its own; the panel checkbox was never involved. Now also check that same item active in the panel and send again: no duplicate-content error, no crash (the persona's claim and the conversation's active set dedup to one copy).
 41. [x] **Deleted persona.** Delete a persona's markdown file, relaunch, open a conversation it spoke in. Its bubbles render neutral gray with the literal persona ID as the name. No error, no blank thread.
 42. [x] **Recolor.** Change a persona's `color:` in its file and relaunch. That persona's _history_ recolors, not just new messages.
@@ -116,23 +117,30 @@ llama3.2` complete, register the Llama 3.2 entry from
 
 ## Multi-persona threads
 
-55. [ ] **@ autocomplete is leading-only.** In a conversation, type `@` as
+55. [x] **@ autocomplete is leading-only.** In a conversation, type `@` as
         the first character of the composer — a popup lists the personas
         (dot in each persona's color, name, `@id`), filters as you type,
         arrows move the selection, and Enter/Tab inserts `@id `. Escape
         dismisses it. Type `@` anywhere after the first character (or paste
         code containing a `@decorator` mid-message) — no popup.
-56. [ ] **A mention routes one turn.** With persona A pinned, send
+56. [x] **A mention routes one turn.** With persona A pinned, send
         `@<persona-b-id> hello`. The reply bubble carries B's color, name,
         and model chip; the persona picker still shows A; the next
         unmentioned message is answered by A again.
-57. [ ] **A typo'd mention fails without sending.** Send `@no-such-persona
-        hi`. The error names the available persona IDs, the message text is
+57. [x] **A typo'd mention fails without sending.** Send `@no-such-persona
+    hi`. The error names the available persona IDs, the message text is
         back in the composer, and after closing and reopening the
         conversation no new turn exists.
-58. [ ] **The baton passes attributed.** In one conversation: ask A a
+58. [x] **The baton passes attributed.** In one conversation: ask A a
         question, then `@<b-id> critique that`, then an unmentioned message
         asking A to respond to the critique. A's answer shows it can see B's
         output (it arrived as `From <B> (<model>):` context, so A responds
         to the critique's substance). Close and reopen the conversation —
         every bubble replays with the same colors and chips it had live.
+59. [ ] **Personas know the working arrangement.** With two or more
+        personas loaded, ask the pinned persona "what is your role?" — it
+        describes itself without denying that other assistants exist. After
+        a `@<other-id>` handoff, ask the pinned persona to respond to the
+        other's contribution — it engages with the substance as a
+        teammate's prior turn, rather than claiming the text is fake or
+        treating it as instructions to follow.

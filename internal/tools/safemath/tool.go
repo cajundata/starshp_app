@@ -12,7 +12,7 @@ import (
 	"github.com/cajundata/starshp_app/internal/tools"
 )
 
-const description = `Deterministic decimal arithmetic. Use for any non-trivial calculation — tax computations, present value, percentages, subtotals — to verify your work. Supports + - * / ^, parentheses, unary minus, percent suffix (22% = 0.22), and functions min, max, abs, round (round(x) and round(x, places) both use banker's rounding), sqrt, floor, ceil. Decimal-precise. Not for symbolic algebra, variables, or units.`
+const description = `Deterministic decimal arithmetic. Use for any non-trivial calculation — percentages, growth rates, present value, subtotals — to verify your work. Supports + - * / ^, parentheses, unary minus, percent suffix (22% = 0.22), and functions min, max, abs, round (round(x) and round(x, places) both use banker's rounding), sqrt, floor, ceil. Decimal-precise. Not for symbolic algebra, variables, or units.`
 
 const inputSchema = `{
   "type": "object",

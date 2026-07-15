@@ -15,7 +15,7 @@ import (
 	"github.com/cajundata/starshp_app/internal/tools"
 )
 
-const description = `Search the user's attached accounting textbooks for relevant passages. Call this when the pre-turn grounding context (already in your prompt) is insufficient — when you need a different chapter, a specific rule the grounding did not cover, a follow-up lookup for a multi-step problem, or a check to verify a claim before answering. Each result has a stable source_id you can cite back to the user.`
+const description = `Search the user's attached reference texts for relevant passages. Call this when the pre-turn grounding context (already in your prompt) is insufficient — when you need a different chapter, a specific rule the grounding did not cover, a follow-up lookup for a multi-step problem, or a check to verify a claim before answering. Each result has a stable source_id you can cite back to the user.`
 
 const inputSchema = `{
   "type": "object",
