@@ -3,9 +3,10 @@
 A desktop LLM chat client (Wails v2 + Go) built around a roster of named
 personas instead of one generic assistant. Each persona is a markdown file
 that pins a model, a system prompt, an optional tool whitelist, and library
-items that attach automatically whenever it runs. One persona is assigned
-per conversation, and its messages are color-coded so who said what stays
-clear across a live session and after a restart.
+items that attach automatically whenever it runs. One persona is pinned per
+conversation, a leading `@persona` mention hands any single turn to a
+different one, and every assistant message is color-coded so who said what
+stays clear across a live session and after a restart.
 
 Single native binary, no browser, no server, no CGO — `modernc.org/sqlite`
 plus pure-Go provider SDKs.
@@ -18,6 +19,13 @@ plus pure-Go provider SDKs.
   attach automatically whenever it runs. Assistant bubbles carry the
   persona's name, color, and model chip, live and on replay alike. See
   [Personas](#personas).
+- **Multi-persona threads via `@` mentions.** Start a message with
+  `@persona-id` to route just that turn to another assistant — the
+  conversation's pinned persona is untouched, and the next unmentioned
+  message goes back to it. Typing `@` as the first character of the composer
+  opens an autocomplete of the roster. A handoff arrives attributed
+  (`From Scout (model): …`), never disguised as the recipient's own words,
+  and a mention that matches no persona errors without sending.
 - **Streaming responses with Stop.** Tokens stream to the UI live via Wails
   runtime events; the Stop button cancels the in-flight stream and persists
   the partial reply.
@@ -69,16 +77,30 @@ plus pure-Go provider SDKs.
 ## Setup
 
 Starshp reads its configuration from a per-user **app directory**, created
-automatically on first launch. Copy the three committed templates
-(`.env.example`, `models.example.yaml`, `textbooks.example.yaml`) into that
-directory, drop the `.example` from each name, and fill in your API keys.
-First launch also seeds a single starter persona at `<app-dir>/personas/`;
-copy the files from `personas.example/` into that folder for a fuller
-starting roster.
+automatically on first launch. Everything needed to build a full one ships
+in the repo as copyable examples:
+
+| Repo source | Copies to | Purpose |
+| --- | --- | --- |
+| `.env.example` | `<app-dir>/.env` | API keys, path overrides, behavior toggles |
+| `models.example.yaml` | `<app-dir>/models.yaml` | Model registry personas may reference |
+| `textbooks.example.yaml` | `<app-dir>/textbooks.yaml` | Textbook manifest (optional, RAG only) |
+| `personas.example/` | `<app-dir>/personas/` | Starter roster: Assistant, Scout, Skeptic |
+| `library.example/` | `<app-dir>/library/` | Starter prompt-library item (`style-guide`) |
+
+Copy each into place (drop the `.example` from the three single files) and
+fill in your API keys. Every model the example personas pin exists in
+`models.example.yaml`, so a directory built entirely from these examples
+validates cleanly at first launch.
+
+If `<app-dir>/personas/` does not exist at launch, it is seeded with a
+single generic persona (`assistant.md`, pinned to the first model in
+`models.yaml`) so the app is never without an assistant — the
+`personas.example/` roster is the fuller starting point.
 
 See [Config files and textbooks](#config-files-and-textbooks) for where the
 app directory is, the copy commands, and the YAML formats, and
-[Personas](#personas) for the persona file format.
+[Personas](#personas) for the persona file format and `@` mention routing.
 
 ## Config files and textbooks
 
@@ -98,15 +120,20 @@ automatically on first launch, along with the `textbooks/`, `personas/`, and
 absolute path) to override its location — handy for tests or a portable
 install.
 
-Three templates ship in the repo. Copy each into the app directory and edit:
+Copy the repo examples into the app directory and edit:
 
 ```bash
 cp .env.example           <app-dir>/.env
 cp models.example.yaml    <app-dir>/models.yaml
 cp textbooks.example.yaml <app-dir>/textbooks.yaml
+cp personas.example/*.md  <app-dir>/personas/
+cp library.example/*.md   <app-dir>/library/
 ```
 
-Edit `.env` to fill in your API keys. None of these files require a recompile.
+Edit `.env` to fill in your API keys. None of these files require a
+recompile. Library items are re-read on every send; `.env`, `models.yaml`,
+`textbooks.yaml`, and the persona roster are read at launch, so changes to
+those take effect on the next restart.
 
 Typical app-directory layout:
 
@@ -117,8 +144,9 @@ Typical app-directory layout:
 ├── textbooks.yaml
 ├── app.db                        (created at runtime)
 ├── rag.db                        (created at runtime)
-├── library/                      (created at runtime)
-├── personas/                     (created at runtime, seeded with assistant.md)
+├── library/                      (created at runtime; copy library.example/ items here)
+│   └── style-guide.md
+├── personas/                     (seeded with assistant.md when absent)
 │   ├── assistant.md
 │   ├── scout.md
 │   └── skeptic.md
@@ -176,6 +204,20 @@ Edit it freely as model IDs evolve — no recompile. A missing or unreadable
 ### Personas
 
 Starshp assigns one persona per conversation instead of picking a raw model.
+The pinned persona answers every unmentioned message. To hand a single turn
+to a different assistant, start the message with its ID — `@skeptic poke
+holes in that` — and that turn alone is answered by Skeptic while the picker
+(and the pin) stay put; the next unmentioned message returns to the pinned
+persona. Typing `@` as the first character of the composer opens an
+autocomplete of the roster. Mentions count only at the very start of a
+message, so pasted code, emails, and mid-sentence `@`s are always literal
+text. A mention that matches no persona is a hard `config` error listing the
+available IDs, and nothing is sent — there is deliberately no fuzzy matching
+or silent substitution. When one persona follows another, the previous
+persona's reply reaches it as an attributed `From Scout (<model>):` block
+(final text only, without the other persona's tool activity), so an
+assistant never mistakes a teammate's words for its own.
+
 Each persona is a single markdown file in `<app-dir>/personas/`; the filename
 stem is its stable ID (`scout.md` → `scout`). Override the directory with the
 `PERSONA_DIR` environment variable (an absolute path). Frontmatter is YAML,
@@ -214,7 +256,10 @@ You are Scout. You find the angle nobody else is looking at.
 - `library` — optional list of library item names this persona always
   carries; the `.md` extension may be omitted. These attach to every turn
   this persona runs, ahead of whatever the conversation has toggled on — an
-  item claimed by both appears once, in the persona's position.
+  item claimed by both appears once, in the persona's position. The
+  `library: [style-guide]` line above resolves once you copy
+  `library.example/style-guide.md` into `<app-dir>/library/`; a named item
+  that is missing is skipped with a soft notice, never an error.
 
 `personas.example/` in the repo ships three starter personas (Assistant,
 Scout, Skeptic) — copy them into `<app-dir>/personas/` as a starting point.
@@ -262,6 +307,8 @@ environment variable, since it determines where `.env` itself is found.
 | `MODELS_CONFIG` | `models.yaml` | Model registry; a relative value resolves inside the app directory. |
 | `CONTEXT_TOKEN_BUDGET` | `2500` | Max textbook context tokens injected per turn. |
 | `RAG_TOP_K` | `8` | Top-K passed to vector search (over-fetched ×6, then scope-filtered + budget-trimmed). |
+| `STARSHP_SKIP_AUTO_GROUNDING` | — | Set to `1` to disable pre-turn textbook injection globally (the `search_textbook` tool still works). |
+| `STARSHP_MAX_TOOL_ITERATIONS` | `16` | Cap on tool-dispatch rounds per turn; at the cap the model is asked for a final answer with tools withheld. |
 
 ## Local models via Ollama
 
@@ -348,6 +395,7 @@ starshp_app/
 ├── models.example.yaml         # template — copy into your app directory
 ├── textbooks.example.yaml      # template — copy into your app directory
 ├── personas.example/           # starter personas — copy into <app-dir>/personas/
+├── library.example/            # starter library items — copy into <app-dir>/library/
 ├── wails.json
 ├── docs/
 │   ├── SMOKE.md                # manual smoke checklist
@@ -403,6 +451,10 @@ The persona system (color-coded multi-model assistant team) has its own
 design doc and plan:
 [`docs/superpowers/specs/2026-07-13-persona-foundation-design.md`](docs/superpowers/specs/2026-07-13-persona-foundation-design.md),
 [`docs/superpowers/plans/2026-07-13-persona-foundation.md`](docs/superpowers/plans/2026-07-13-persona-foundation.md).
+
+Multi-persona threads (`@` mention routing and attributed handoffs):
+[`docs/superpowers/specs/2026-07-13-multi-persona-threads-design.md`](docs/superpowers/specs/2026-07-13-multi-persona-threads-design.md),
+[`docs/superpowers/plans/2026-07-14-multi-persona-threads.md`](docs/superpowers/plans/2026-07-14-multi-persona-threads.md).
 
 ## Out of scope (deferred)
 
