@@ -139,8 +139,10 @@ cleanup code.
 `chat` still does not know what a persona is. `ContextOverride` is a string on
 the event; the Spec 1 boundary holds.
 
-Overrides are read once at send time. Toggling during an in-flight run takes
-effect on the next send.
+Overrides are read from the store at each provider call. A toggle never
+retroactively affects streamed output; within a multi-iteration tool run it
+may reach the run's later iterations, and it always applies from the next
+send. The current turn is exempt either way (rule 2).
 
 ### `internal/appapi`
 
@@ -181,7 +183,7 @@ it can now measure the effect of a lever instead of only reporting drift.
 | `always` on a turn whose run errored (no `assistant_text`) | Nothing to pin; the operator message is included as always. No-op, not an error. |
 | `always` on a foreign turn whose persona file was deleted | Attribution falls back to the literal persona ID — Spec 2's rule, unchanged. |
 | Turn has multiple runs (rerun feature) | Orthogonal: `active_for_replay` picks **which run represents the turn**; the override decides **whether/how the turn appears**. They compose with no special case. |
-| Toggle while a run is in flight | Applies from the next send. |
+| Toggle while a run is in flight | Never retroactive. May reach later tool iterations of the in-flight run; always applies from the next send. |
 
 ## Testing
 

@@ -69,6 +69,11 @@ CREATE INDEX IF NOT EXISTS conversation_events_run
 CREATE INDEX IF NOT EXISTS runs_conv_turn ON runs(conversation_id, turn_id);
 CREATE UNIQUE INDEX IF NOT EXISTS runs_one_active_per_turn
   ON runs(turn_id) WHERE active_for_replay = 1;
+CREATE TABLE IF NOT EXISTS turn_context_overrides (
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    turn_id         TEXT NOT NULL PRIMARY KEY,
+    state           TEXT NOT NULL CHECK (state IN ('always','never'))
+);
 CREATE TABLE IF NOT EXISTS ideas (
   id              TEXT PRIMARY KEY,
   title           TEXT NOT NULL,

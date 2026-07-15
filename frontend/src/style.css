@@ -173,3 +173,18 @@ body { font-family: system-ui, sans-serif; }
   font-size: 11px;
   margin-left: auto;
 }
+
+/* --- Turn context overrides ------------------------------------------- */
+/* The cycle control shares the copy button's hover-reveal (.msg-actions). */
+.ctx-btn { display: inline-flex; align-items: center; background: #202024; border: 1px solid #34343a; color: #a9a9ad; border-radius: 6px; padding: 3px 6px; cursor: pointer; }
+.ctx-btn:hover { color: #e7e7e8; }
+.ctx-btn.active { color: #d7a64a; border-color: #5a4a1f; }
+.ctx-btn svg { display: block; }
+.msg.user .msg-actions { justify-content: flex-end; }
+/* Excluded turns dim but stay readable — at a glance the operator sees
+   what the model will not see. The whole exchange dims: user bubble, text
+   segments, and tool blocks alike. */
+.msg.ctx-excluded .msg-text, .msg.ctx-excluded .tool-call, .msg.ctx-excluded .grounding-header { opacity: .45; }
+/* Pinned: a small glyph beside the model chip on the turn's assistant row. */
+.pin-glyph { display: inline-flex; align-items: center; color: #d7a64a; }
+.pin-glyph svg { display: block; }

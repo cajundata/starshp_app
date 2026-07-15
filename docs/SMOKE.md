@@ -144,3 +144,30 @@ llama3.2` complete, register the Llama 3.2 entry from
         other's contribution — it engages with the substance as a
         teammate's prior turn, rather than claiming the text is fake or
         treating it as instructions to follow.
+
+## Turn context overrides
+
+60. [ ] **The hover control cycles through three states.** Hover a turn's
+        user bubble — a small control appears beside it. Clicking cycles
+        auto → always → never → auto (dashed circle → pin → crossed eye),
+        and the tooltip names the state each time. The control appears on
+        every turn's user bubble, including reopened conversations.
+61. [ ] **Dimming and the pin glyph render.** Set a turn to `always` — a
+        gold pin glyph appears beside that turn's model chip. Set a turn to
+        `never` — both its bubbles (user and assistant, tool blocks
+        included) dim, with the text still readable. Return to auto — the
+        conversation renders exactly as before.
+62. [ ] **Occupancy visibly drops.** In a conversation with a heavy turn
+        (e.g. a long tool-assisted answer), note the context footer's
+        occupancy, mark that turn `never`, and send another message. The
+        footer reports lower occupancy than the previous send — the lever
+        the footer was waiting for.
+63. [ ] **Overrides survive a restart.** Set one turn `always` and another
+        `never`, quit the app (or stop `wails dev`), relaunch, and reopen
+        the conversation. The pin glyph and dimming reappear on the same
+        turns.
+64. [ ] **The displayed thread never changes.** Toggle a turn through all
+        three states — every bubble's full text, tool blocks, colors, and
+        chips stay identical throughout; only the dimming/pin adornments
+        change. Excluding the immediately-preceding foreign turn and sending
+        again still works (the next persona simply gets no baton).

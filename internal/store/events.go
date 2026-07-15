@@ -18,23 +18,24 @@ const (
 )
 
 type ConversationEvent struct {
-	ID             string          `json:"id"`
-	ConversationID string          `json:"conversationId"`
-	TurnID         string          `json:"turnId"`
-	RunID          string          `json:"runId,omitempty"`
-	PersonaID      string          `json:"personaId,omitempty"`
-	Model          string          `json:"model,omitempty"`
-	SequenceIndex  int64           `json:"sequenceIndex"`
-	Kind           string          `json:"kind"`
-	Text           string          `json:"text,omitempty"`
-	ToolCallID     string          `json:"toolCallId,omitempty"`
-	ToolName       string          `json:"toolName,omitempty"`
-	ToolInput      json.RawMessage `json:"toolInput,omitempty"`
-	ToolMetadata   json.RawMessage `json:"toolMetadata,omitempty"`
-	ToolResultHash string          `json:"toolResultHash,omitempty"`
-	ToolLatencyMs  int64           `json:"toolLatencyMs,omitempty"`
-	IsError        bool            `json:"isError,omitempty"`
-	CreatedAt      int64           `json:"createdAt"`
+	ID              string          `json:"id"`
+	ConversationID  string          `json:"conversationId"`
+	TurnID          string          `json:"turnId"`
+	RunID           string          `json:"runId,omitempty"`
+	PersonaID       string          `json:"personaId,omitempty"`
+	Model           string          `json:"model,omitempty"`
+	ContextOverride string          `json:"contextOverride,omitempty"`
+	SequenceIndex   int64           `json:"sequenceIndex"`
+	Kind            string          `json:"kind"`
+	Text            string          `json:"text,omitempty"`
+	ToolCallID      string          `json:"toolCallId,omitempty"`
+	ToolName        string          `json:"toolName,omitempty"`
+	ToolInput       json.RawMessage `json:"toolInput,omitempty"`
+	ToolMetadata    json.RawMessage `json:"toolMetadata,omitempty"`
+	ToolResultHash  string          `json:"toolResultHash,omitempty"`
+	ToolLatencyMs   int64           `json:"toolLatencyMs,omitempty"`
+	IsError         bool            `json:"isError,omitempty"`
+	CreatedAt       int64           `json:"createdAt"`
 }
 
 // nextSequenceIndex returns the next monotonic sequence index for a

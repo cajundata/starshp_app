@@ -6,7 +6,10 @@ import (
 	"fmt"
 )
 
-func (s *Store) turnSelection(convID, sqlOrderedRuns string, currentRunID string) ([]string, error) {
+// turnSelection picks one run per turn. exclude lists turns dropped from the
+// provider payload (state='never'); it is nil on the display path — the
+// filter is a provider-path-only parameter, never a shared-helper default.
+func (s *Store) turnSelection(convID, sqlOrderedRuns string, currentRunID string, exclude map[string]struct{}) ([]string, error) {
 	rows, err := s.db.Query(
 		`SELECT id FROM conversation_events
           WHERE conversation_id = ? AND kind = 'user_message'
@@ -25,6 +28,9 @@ func (s *Store) turnSelection(convID, sqlOrderedRuns string, currentRunID string
 	}
 	var pickedRuns []string
 	for _, turn := range turns {
+		if _, skip := exclude[turn]; skip {
+			continue
+		}
 		if currentRunID != "" {
 			var got string
 			err := s.db.QueryRow(
@@ -53,14 +59,18 @@ func (s *Store) turnSelection(convID, sqlOrderedRuns string, currentRunID string
 }
 
 func (s *Store) GetProviderReplayEvents(convID, currentRunID string) ([]ConversationEvent, error) {
+	exclude, err := s.neverTurnsForReplay(convID, currentRunID)
+	if err != nil {
+		return nil, fmt.Errorf("override selection: %w", err)
+	}
 	runs, err := s.turnSelection(convID,
 		`SELECT id FROM runs
           WHERE turn_id = ? AND active_for_replay = 1 AND status = 'completed'
-          LIMIT 1`, currentRunID)
+          LIMIT 1`, currentRunID, exclude)
 	if err != nil {
 		return nil, fmt.Errorf("provider replay selection: %w", err)
 	}
-	return s.eventsForRunsPlusUserMessages(convID, runs, currentRunID)
+	return s.eventsForRunsPlusUserMessages(convID, runs, currentRunID, exclude)
 }
 
 func (s *Store) GetConversationDisplayEvents(convID string) ([]ConversationEvent, error) {
@@ -76,11 +86,11 @@ func (s *Store) GetConversationDisplayEvents(convID string) ([]ConversationEvent
                    END,
                    COALESCE(ended_at, 0) DESC,
                    started_at DESC
-          LIMIT 1`, "")
+          LIMIT 1`, "", nil)
 	if err != nil {
 		return nil, fmt.Errorf("display selection: %w", err)
 	}
-	events, err := s.eventsForRunsPlusUserMessages(convID, runs, "")
+	events, err := s.eventsForRunsPlusUserMessages(convID, runs, "", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +125,7 @@ func runErrorDisplayText(run Run) string {
 	return "[" + code + "] " + run.ErrorMessage.String
 }
 
-func (s *Store) eventsForRunsPlusUserMessages(convID string, runIDs []string, currentRunID string) ([]ConversationEvent, error) {
+func (s *Store) eventsForRunsPlusUserMessages(convID string, runIDs []string, currentRunID string, exclude map[string]struct{}) ([]ConversationEvent, error) {
 	runSet := map[string]struct{}{}
 	for _, id := range runIDs {
 		runSet[id] = struct{}{}
@@ -123,6 +133,8 @@ func (s *Store) eventsForRunsPlusUserMessages(convID string, runIDs []string, cu
 	if currentRunID != "" {
 		runSet[currentRunID] = struct{}{}
 	}
+	// turn_context_overrides has turn_id as its PRIMARY KEY, so the LEFT JOIN
+	// contributes at most one row per event — no fan-out.
 	rows, err := s.db.Query(
 		`SELECT e.id, e.conversation_id, e.turn_id, COALESCE(e.run_id,''),
                 e.sequence_index, e.kind, COALESCE(e.text,''),
@@ -130,9 +142,11 @@ func (s *Store) eventsForRunsPlusUserMessages(convID string, runIDs []string, cu
                 COALESCE(e.tool_input,''), COALESCE(e.tool_metadata,''),
                 COALESCE(e.tool_result_hash,''),
                 COALESCE(e.tool_latency_ms,0), e.is_error, e.created_at,
-                COALESCE(r.persona_id,''), COALESCE(r.model,'')
+                COALESCE(r.persona_id,''), COALESCE(r.model,''),
+                COALESCE(o.state,'')
            FROM conversation_events e
            LEFT JOIN runs r ON r.id = e.run_id
+           LEFT JOIN turn_context_overrides o ON o.turn_id = e.turn_id
           WHERE e.conversation_id = ?
           ORDER BY e.sequence_index`, convID)
 	if err != nil {
@@ -149,7 +163,7 @@ func (s *Store) eventsForRunsPlusUserMessages(convID string, runIDs []string, cu
 			&ev.SequenceIndex, &ev.Kind, &ev.Text,
 			&ev.ToolCallID, &ev.ToolName, &input, &meta,
 			&ev.ToolResultHash, &ev.ToolLatencyMs, &isErrInt, &ev.CreatedAt,
-			&ev.PersonaID, &ev.Model,
+			&ev.PersonaID, &ev.Model, &ev.ContextOverride,
 		); err != nil {
 			return nil, err
 		}
@@ -161,6 +175,12 @@ func (s *Store) eventsForRunsPlusUserMessages(convID string, runIDs []string, cu
 		}
 		ev.IsError = isErrInt != 0
 		if ev.Kind == EventKindUserMessage {
+			// A never turn's user_message goes too — a dangling question
+			// invites the model to re-answer it. exclude is nil on the
+			// display path, so this drop is provider-path-only.
+			if _, skip := exclude[ev.TurnID]; skip {
+				continue
+			}
 			out = append(out, ev)
 			continue
 		}
