@@ -5,6 +5,7 @@ package appapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -523,4 +524,42 @@ func (a *API) GetRetrievalMode(convID string) (string, error) {
 // SetRetrievalMode updates the per-conversation retrieval policy.
 func (a *API) SetRetrievalMode(convID, mode string) error {
 	return a.st.SetRetrievalMode(convID, mode)
+}
+
+// SetTurnContextOverride records the operator's per-turn payload override:
+// auto (row absence), always (pin), never (exclude). Payload-only — the
+// displayed thread never consults it. Unknown turn or invalid state is a
+// config error; nothing is persisted.
+func (a *API) SetTurnContextOverride(convID, turnID, state string) error {
+	switch state {
+	case store.OverrideAuto, store.OverrideAlways, store.OverrideNever:
+	default:
+		return provider.AppError{
+			Code:        "config",
+			UserMessage: "Invalid context override \"" + state + "\". Use auto, always, or never.",
+			Retryable:   false,
+		}
+	}
+	if err := a.st.SetTurnContextOverride(convID, turnID, state); err != nil {
+		if errors.Is(err, store.ErrUnknownTurn) {
+			return provider.AppError{
+				Code:        "config",
+				UserMessage: "That turn no longer exists in this conversation. Reopen it and try again.",
+				Retryable:   false,
+			}
+		}
+		return provider.NormalizeError(err)
+	}
+	return nil
+}
+
+// GetTurnContextOverrides returns the turn → state map for UI seeding on
+// conversation open, alongside the existing event load. Turns in auto are
+// absent from the map.
+func (a *API) GetTurnContextOverrides(convID string) (map[string]string, error) {
+	m, err := a.st.GetTurnContextOverrides(convID)
+	if err != nil {
+		return nil, provider.NormalizeError(err)
+	}
+	return m, nil
 }
