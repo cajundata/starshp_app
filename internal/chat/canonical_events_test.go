@@ -387,3 +387,112 @@ func TestCanonicalEvents_JoinsMultipleForeignTextsIntoOneBaton(t *testing.T) {
 		t.Errorf("joined baton %q not found in %+v", want, got)
 	}
 }
+
+// imageTurn persists a completed turn whose run emitted images (with optional
+// interleaved text before each image is not modeled here — hashes only).
+func imageTurn(t *testing.T, st *store.Store, convID, userText, personaID, model string, hashes ...string) string {
+	t.Helper()
+	u, err := st.AppendUserMessage(convID, userText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := uuid.NewString()
+	if err := st.CreateRun(convID, u.TurnID, runID, "gemini", model, "auto_grounded_default", personaID); err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range hashes {
+		if _, err := st.AppendAssistantImage(convID, u.TurnID, runID, h); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.CompleteRun(runID, store.RunTotals{}, "end_turn"); err != nil {
+		t.Fatal(err)
+	}
+	return u.TurnID
+}
+
+func TestCanonicalEvents_OwnImageKeepsHash(t *testing.T) {
+	st := openStore(t)
+	conv, _ := st.CreateConversation("c")
+	imageTurn(t, st, conv.ID, "draw a cat", "artist", "gemini-3-pro-image", strings.Repeat("aa", 32))
+	turnID, runID := currentTurn(t, st, conv.ID, "make the sky darker", "artist", "gemini-3-pro-image")
+
+	rows, err := st.GetProviderReplayEvents(conv.ID, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := canonicalEvents(rows, turnID, "artist", nil)
+	// user / assistant_image / user — the artist keeps its own image event.
+	if len(got) != 3 {
+		t.Fatalf("events = %+v, want 3", got)
+	}
+	if got[1].Kind != store.EventKindAssistantImage || got[1].ImageHash != strings.Repeat("aa", 32) {
+		t.Fatalf("own image event = %+v", got[1])
+	}
+}
+
+func TestCanonicalEvents_ForeignImageTextualizesInBaton(t *testing.T) {
+	st := openStore(t)
+	conv, _ := st.CreateConversation("c")
+	prompt := "draw a cat sitting on " + strings.Repeat("a very long fence ", 20) // > 120 runes
+	imageTurn(t, st, conv.ID, prompt, "artist", "gemini-3-pro-image", strings.Repeat("aa", 32))
+	turnID, runID := currentTurn(t, st, conv.ID, "what do you think of it?", "copywriter", "claude-x")
+
+	rows, err := st.GetProviderReplayEvents(conv.ID, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := canonicalEvents(rows, turnID, "copywriter", nil)
+	// user(prompt) / attributed baton block / user(current) — no image event survives.
+	for _, e := range got {
+		if e.Kind == store.EventKindAssistantImage {
+			t.Fatalf("foreign image leaked as event: %+v", e)
+		}
+	}
+	var baton string
+	for _, e := range got {
+		if strings.HasPrefix(e.Text, "From artist (gemini-3-pro-image):") {
+			baton = e.Text
+		}
+	}
+	if baton == "" {
+		t.Fatalf("no attributed baton block in %+v", got)
+	}
+	if !strings.Contains(baton, `[image — generated from: "`) {
+		t.Fatalf("baton lacks image line: %q", baton)
+	}
+	if !strings.Contains(baton, "…") {
+		t.Fatalf("prompt not truncated at 120 runes: %q", baton)
+	}
+	if strings.Contains(baton, strings.Repeat("aa", 32)) {
+		t.Fatalf("baton leaks raw hash: %q", baton)
+	}
+}
+
+func TestInflateImages_CapNewestAndSkipMissing(t *testing.T) {
+	images := newFakeImages()
+	var events []provider.Event
+	var hashes []string
+	for i := 0; i < 8; i++ {
+		h, _ := images.Put([]byte{byte(i)})
+		hashes = append(hashes, h)
+		events = append(events, provider.Event{Kind: store.EventKindAssistantImage, ImageHash: h})
+	}
+	// Delete the newest image's file: it must not consume a cap slot.
+	delete(images.files, hashes[7])
+
+	inflateImages(events, images, 6)
+
+	if len(events[7].ImageData) != 0 {
+		t.Fatal("deleted image inflated")
+	}
+	// Newest 6 readable images (indexes 6,5,4,3,2,1) carry bytes; 0 does not.
+	for _, i := range []int{6, 5, 4, 3, 2, 1} {
+		if len(events[i].ImageData) == 0 {
+			t.Fatalf("events[%d] not inflated", i)
+		}
+	}
+	if len(events[0].ImageData) != 0 {
+		t.Fatal("event beyond cap inflated")
+	}
+}

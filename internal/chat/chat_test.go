@@ -2,9 +2,13 @@ package chat
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -458,5 +462,114 @@ func TestSend_FinalCallNoUsage_RetainsLastReported(t *testing.T) {
 	// Final call reported no usage; lastCall retains the last call that did.
 	if pl["lastInput"] != 50000 || pl["lastOutput"] != 1000 {
 		t.Errorf("lastInput=%v lastOutput=%v want 50000/1000 (retained)", pl["lastInput"], pl["lastOutput"])
+	}
+}
+
+// fakeImages is an in-memory ImageStore matching imagestore semantics.
+type fakeImages struct{ files map[string][]byte }
+
+func newFakeImages() *fakeImages { return &fakeImages{files: map[string][]byte{}} }
+
+func (f *fakeImages) Put(data []byte) (string, error) {
+	sum := sha256.Sum256(data)
+	h := hex.EncodeToString(sum[:])
+	f.files[h] = data
+	return h, nil
+}
+
+func (f *fakeImages) Read(hash string) ([]byte, error) {
+	b, ok := f.files[hash]
+	if !ok {
+		return nil, fs.ErrNotExist
+	}
+	return b, nil
+}
+
+func TestSend_ImageDeltas_PersistInterleavedAndEmitSink(t *testing.T) {
+	st := openStore(t)
+	conv, _ := st.CreateConversation("c")
+	svc := New(st)
+	sink := &captureSink{}
+	images := newFakeImages()
+
+	prov := &scriptedProvider{iterations: [][]provider.Delta{{
+		{Text: "Two options:"},
+		{Image: &provider.ImageBlob{MIME: "image/png", Data: []byte("png-1")}},
+		{Text: "and a variant:"},
+		{Image: &provider.ImageBlob{MIME: "image/png", Data: []byte("png-2")}},
+		{Done: true, StopReason: "end_turn", Usage: &provider.Usage{InputTokens: 5, OutputTokens: 9}},
+	}}}
+
+	res, err := svc.Send(context.Background(), SendParams{
+		ConversationID: conv.ID,
+		UserText:       "draw a cat",
+		Model:          "gemini-3-pro-image",
+		Provider:       prov,
+		Registry:       tools.NewRegistry(time.Second),
+		Resolver:       emptyResolver{},
+		RetrievalMode:  RetrievalAutoGroundedDefault,
+		Sink:           sink,
+		Images:         images,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.TerminalReason != "end_turn" {
+		t.Fatalf("terminal = %q", res.TerminalReason)
+	}
+
+	evs, _ := st.GetConversationDisplayEvents(conv.ID)
+	kinds := make([]string, len(evs))
+	for i, e := range evs {
+		kinds[i] = e.Kind
+	}
+	want := []string{
+		store.EventKindUserMessage,
+		store.EventKindAssistantText,  // "Two options:"
+		store.EventKindAssistantImage, // png-1
+		store.EventKindAssistantText,  // "and a variant:"
+		store.EventKindAssistantImage, // png-2
+	}
+	if !reflect.DeepEqual(kinds, want) {
+		t.Fatalf("event kinds = %v, want %v", kinds, want)
+	}
+	if evs[2].ImageHash == "" || evs[4].ImageHash == "" || evs[2].ImageHash == evs[4].ImageHash {
+		t.Fatalf("image hashes wrong: %q, %q", evs[2].ImageHash, evs[4].ImageHash)
+	}
+	if _, err := images.Read(evs[2].ImageHash); err != nil {
+		t.Fatalf("first image not in store: %v", err)
+	}
+
+	var imageSinks []SinkEvent
+	for _, e := range sink.events {
+		if e.Kind == SinkImage {
+			imageSinks = append(imageSinks, e)
+		}
+	}
+	if len(imageSinks) != 2 {
+		t.Fatalf("got %d image sink events, want 2", len(imageSinks))
+	}
+	if h, _ := imageSinks[0].Payload["hash"].(string); h != evs[2].ImageHash {
+		t.Fatalf("sink hash = %q, want %q", h, evs[2].ImageHash)
+	}
+}
+
+func TestSend_ImageDeltaWithoutStore_ErrorsRun(t *testing.T) {
+	st := openStore(t)
+	conv, _ := st.CreateConversation("c")
+	svc := New(st)
+	sink := &captureSink{}
+	prov := &scriptedProvider{iterations: [][]provider.Delta{{
+		{Image: &provider.ImageBlob{MIME: "image/png", Data: []byte("png")}},
+		{Done: true, StopReason: "end_turn"},
+	}}}
+	res, _ := svc.Send(context.Background(), SendParams{
+		ConversationID: conv.ID, UserText: "draw", Model: "m",
+		Provider: prov, Registry: tools.NewRegistry(time.Second),
+		Resolver: emptyResolver{}, RetrievalMode: RetrievalAutoGroundedDefault,
+		Sink: sink, // Images deliberately nil
+	}, nil)
+	if res.TerminalReason != "provider_error" {
+		t.Fatalf("terminal = %q, want provider_error", res.TerminalReason)
 	}
 }

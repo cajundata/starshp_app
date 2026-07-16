@@ -37,6 +37,20 @@ type RetrievedSource struct {
 	ChunkID string `json:"chunkId"`
 }
 
+// ImageStore persists generated images by content hash; implemented by
+// imagestore.Store. Nil is legal — an image delta then errors the run with a
+// clear message instead of panicking.
+type ImageStore interface {
+	Put(data []byte) (string, error)
+	Read(hash string) ([]byte, error)
+}
+
+// maxInlineImages caps how many of the persona's own prior images ride back
+// into provider context as inline bytes (newest first). Gemini's inline
+// request payload tops out around 20 MB and each PNG runs 1–2 MB; older
+// images degrade to a textual placeholder instead of hard-failing the call.
+const maxInlineImages = 6
+
 // SinkEventKind names the emitted lifecycle events.
 type SinkEventKind string
 
@@ -50,6 +64,7 @@ const (
 	SinkRunErrored     SinkEventKind = "run_errored"
 	SinkRunCancelled   SinkEventKind = "run_cancelled"
 	SinkUsage          SinkEventKind = "usage"
+	SinkImage          SinkEventKind = "image"
 )
 
 type SinkEvent struct {
@@ -88,6 +103,7 @@ type SendParams struct {
 	Retriever       Retriever // may be nil
 	RetrievalMode   RetrievalMode
 	Sink            EventSink
+	Images          ImageStore // image persistence for image-output models; may be nil
 	// RemapErr, when set, post-processes a provider error's normalized AppError
 	// before it is recorded/emitted (e.g. to upgrade a generic network failure of
 	// a local openai_compat model into a friendlier local_unreachable message).
@@ -233,12 +249,14 @@ func (s *Service) runLoop(ctx context.Context, p SendParams, runID, turnID, grou
 			return s.errorOut(p, runID, turnID, "provider_error",
 				"store_error", err.Error()), provider.NormalizeError(err)
 		}
+		evs := canonicalEvents(events, turnID, p.PersonaID, p.Namer)
+		inflateImages(evs, p.Images, maxInlineImages)
 		req := provider.ChatRequest{
 			Model:           p.Model,
 			System:          p.SystemPrompt,
 			Grounding:       grounding,
 			Tools:           catalog,
-			Events:          canonicalEvents(events, turnID, p.PersonaID, p.Namer),
+			Events:          evs,
 			ReasoningEffort: p.ReasoningEffort,
 		}
 		ch, err := p.Provider.Stream(ctx, req)
@@ -247,11 +265,29 @@ func (s *Service) runLoop(ctx context.Context, p SendParams, runID, turnID, grou
 				"stream_error", err.Error()), provider.NormalizeError(err)
 		}
 		var (
-			text       strings.Builder
-			toolCalls  []*provider.ToolCall
-			stopReason string
-			streamErr  error
+			text        strings.Builder
+			toolCalls   []*provider.ToolCall
+			stopReason  string
+			streamErr   error
+			persistErr  error
+			persistCode string
 		)
+		// flushText persists the accumulated text segment, if any. Called when
+		// an image lands (so the event log preserves text/image interleaving)
+		// and once after the stream drains.
+		flushText := func() {
+			if persistErr != nil {
+				return
+			}
+			t := strings.TrimSpace(text.String())
+			text.Reset()
+			if t == "" {
+				return
+			}
+			if _, err := s.st.AppendAssistantText(p.ConversationID, turnID, runID, t); err != nil {
+				persistErr, persistCode = err, "persist_assistant_text"
+			}
+		}
 		for d := range ch {
 			if d.Err != nil {
 				streamErr = d.Err
@@ -261,6 +297,20 @@ func (s *Service) runLoop(ctx context.Context, p SendParams, runID, turnID, grou
 				text.WriteString(d.Text)
 				emit(p.Sink, SinkToken, p.ConversationID, runID, turnID,
 					map[string]any{"text": d.Text})
+			}
+			if d.Image != nil && persistErr == nil {
+				flushText()
+				if persistErr == nil {
+					hash, err := putImage(p.Images, d.Image.Data)
+					if err != nil {
+						persistErr, persistCode = err, "persist_image"
+					} else if _, err := s.st.AppendAssistantImage(p.ConversationID, turnID, runID, hash); err != nil {
+						persistErr, persistCode = err, "persist_image"
+					} else {
+						emit(p.Sink, SinkImage, p.ConversationID, runID, turnID,
+							map[string]any{"hash": hash})
+					}
+				}
 			}
 			if d.ToolCall != nil {
 				toolCalls = append(toolCalls, d.ToolCall)
@@ -275,11 +325,10 @@ func (s *Service) runLoop(ctx context.Context, p SendParams, runID, turnID, grou
 				stopReason = d.StopReason
 			}
 		}
-		if t := strings.TrimSpace(text.String()); t != "" {
-			if _, err := s.st.AppendAssistantText(p.ConversationID, turnID, runID, t); err != nil {
-				return s.errorOut(p, runID, turnID, "provider_error", "persist_assistant_text", err.Error()),
-					err
-			}
+		flushText()
+		if persistErr != nil {
+			return s.errorOut(p, runID, turnID, "provider_error", persistCode, persistErr.Error()),
+				persistErr
 		}
 		if streamErr != nil {
 			return s.handleStreamErr(ctx, p, runID, turnID, streamErr), nil
@@ -349,12 +398,14 @@ func (s *Service) finalizeWithoutTools(ctx context.Context, p SendParams, runID,
 	system := strings.TrimSpace(p.SystemPrompt + "\n\n" +
 		"You have reached the tool-use limit for this turn. Do not request any more tools. " +
 		"Give your best, complete final answer now using the information already gathered.")
+	evs := canonicalEvents(events, turnID, p.PersonaID, p.Namer)
+	inflateImages(evs, p.Images, maxInlineImages)
 	req := provider.ChatRequest{
 		Model:           p.Model,
 		System:          system,
 		Grounding:       grounding,
 		Tools:           nil, // withheld: force a tool-free answer
-		Events:          canonicalEvents(events, turnID, p.PersonaID, p.Namer),
+		Events:          evs,
 		ReasoningEffort: p.ReasoningEffort,
 	}
 	ch, err := p.Provider.Stream(ctx, req)
@@ -474,6 +525,14 @@ func (s *Service) errorOut(p SendParams, runID, turnID, reason, code, msg string
 // sequence_index.
 func canonicalEvents(rows []store.ConversationEvent, currentTurnID, currentPersonaID string, namer PersonaNamer) []provider.Event {
 	predecessor := predecessorTurnID(rows, currentTurnID)
+	// turnPrompts lets a foreign image textualize as the prompt that produced
+	// it: the image turn's own user_message.
+	turnPrompts := map[string]string{}
+	for _, r := range rows {
+		if r.Kind == store.EventKindUserMessage {
+			turnPrompts[r.TurnID] = r.Text
+		}
+	}
 	out := make([]provider.Event, 0, len(rows))
 	attributed := func(personaID, model string, texts []string) provider.Event {
 		name := personaID
@@ -528,21 +587,24 @@ func canonicalEvents(rows []store.ConversationEvent, currentTurnID, currentPerso
 				Kind: r.Kind, Text: r.Text,
 				ToolCallID: r.ToolCallID, ToolName: r.ToolName,
 				ToolInput: r.ToolInput, IsError: r.IsError,
+				ImageHash: r.ImageHash,
 			}
 			if r.Kind == store.EventKindAssistantToolCall {
 				ev.ToolMetadata = r.ToolMetadata
 			}
 			out = append(out, ev)
-		case r.TurnID == predecessor && r.Kind == store.EventKindAssistantText:
+		case r.TurnID == predecessor &&
+			(r.Kind == store.EventKindAssistantText || r.Kind == store.EventKindAssistantImage):
 			if len(batonTexts) == 0 {
 				batonPersona, batonModel = r.PersonaID, r.Model
 			}
-			batonTexts = append(batonTexts, r.Text)
-		case r.ContextOverride == store.OverrideAlways && r.Kind == store.EventKindAssistantText:
+			batonTexts = append(batonTexts, batonLine(r, turnPrompts))
+		case r.ContextOverride == store.OverrideAlways &&
+			(r.Kind == store.EventKindAssistantText || r.Kind == store.EventKindAssistantImage):
 			if len(pinTexts) == 0 {
 				pinTurn, pinPersona, pinModel = r.TurnID, r.PersonaID, r.Model
 			}
-			pinTexts = append(pinTexts, r.Text)
+			pinTexts = append(pinTexts, batonLine(r, turnPrompts))
 		}
 		// Any other foreign row (older unpinned turn, or any foreign tool
 		// block) is omitted.
@@ -553,6 +615,31 @@ func canonicalEvents(rows []store.ConversationEvent, currentTurnID, currentPerso
 	flushPin()
 	flushBaton()
 	return out
+}
+
+// inflateImages loads the newest max assistant_image events' bytes so the
+// provider replays them inline (iterative refinement edits the actual image).
+// Walking newest-first, an unreadable file (deleted) is skipped without
+// consuming a cap slot; anything not inflated keeps empty ImageData and the
+// adapter renders "[earlier image omitted]" instead. Only the current
+// persona's own images reach this point — canonicalEvents already textualized
+// foreign ones.
+func inflateImages(events []provider.Event, images ImageStore, max int) {
+	if images == nil {
+		return
+	}
+	inflated := 0
+	for i := len(events) - 1; i >= 0 && inflated < max; i-- {
+		if events[i].Kind != store.EventKindAssistantImage || events[i].ImageHash == "" {
+			continue
+		}
+		data, err := images.Read(events[i].ImageHash)
+		if err != nil {
+			continue
+		}
+		events[i].ImageData = data
+		inflated++
+	}
 }
 
 // predecessorTurnID returns the turn immediately before currentTurnID, in
@@ -573,6 +660,27 @@ func predecessorTurnID(rows []store.ConversationEvent, currentTurnID string) str
 	return ""
 }
 
+// batonLine renders one foreign event inside an attributed block: text rides
+// verbatim; an image becomes a textual description carrying the prompt that
+// produced it. Raw image bytes never cross a persona boundary.
+func batonLine(r store.ConversationEvent, turnPrompts map[string]string) string {
+	if r.Kind != store.EventKindAssistantImage {
+		return r.Text
+	}
+	return `[image — generated from: "` + truncateRunes(turnPrompts[r.TurnID], 120) + `"]`
+}
+
+// truncateRunes shortens s to at most n runes with an ellipsis, never
+// splitting a multibyte character (summarize is byte-based; prompts are
+// operator text).
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
+}
+
 func bookNamesFromResolver(ctx context.Context, p SendParams) []string {
 	if p.Resolver == nil {
 		return nil
@@ -582,6 +690,15 @@ func bookNamesFromResolver(ctx context.Context, p SendParams) []string {
 		return nil
 	}
 	return BookNames(entries)
+}
+
+// putImage stores one generated image, guarding the nil-store case (an image
+// model was invoked through a path that never wired an ImageStore).
+func putImage(images ImageStore, data []byte) (string, error) {
+	if images == nil {
+		return "", errors.New("image store unavailable: cannot persist generated image")
+	}
+	return images.Put(data)
 }
 
 func errorCodeFromMetadata(raw json.RawMessage) string {
