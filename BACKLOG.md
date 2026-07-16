@@ -27,6 +27,8 @@ Tags: `[feat]` new feature · `[chg]` change to existing behavior · `[fix]` kno
 [chg] surface non-STOP Gemini finish reasons (SAFETY / RECITATION / PROHIBITED_CONTENT) as a visible run condition — today they complete the run silently, possibly with an empty reply (from gemini final review)
 [chore] guard the error-path channel sends in all three streaming adapters with select/ctx.Done() — gemini, anthropic, and openai share the unguarded terminal-send pattern; benign with current draining callers (from gemini final review)
 [chore] gemini test: assert functionDeclarations reach the wire in TestGeminiStreamToolCall's posted body (from gemini final review)
+[chore] chat-level regression test: assert SendParams.ReasoningEffort reaches the ChatRequest via fakeprovider, covering the finalizeWithoutTools literal and appapi wiring (from smoke-fix final review)
+[chore] validate (or warn on) unknown reasoning_effort values in LoadRegistry — today a typo like "nonee" only surfaces as a runtime provider 400 (from smoke-fix final review)
 
 - Mention polish (from multi-persona final review): Ctrl/Cmd+Enter with the @-popup open should send, not insert; click-away should dismiss the popup; auto-title could strip a leading @mention.
 - Mention test hardening: parser rows for `@scout!` / `@scout,`; a dedicated first-turn/no-predecessor canonicalEvents test; `found` flag in TestSendMessageWithMentionDoesNotRepin.
