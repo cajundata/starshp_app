@@ -2,8 +2,11 @@ package provider
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+
+	"google.golang.org/genai"
 )
 
 func TestNormalizeError(t *testing.T) {
@@ -79,5 +82,27 @@ func TestNormalizeErrorClassifiesConnectionVariants(t *testing.T) {
 		if got.Code != "network" {
 			t.Errorf("NormalizeError(%q).Code = %q, want network", msg, got.Code)
 		}
+	}
+}
+
+func TestNormalizeErrorGeminiAPIErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		code string
+	}{
+		{"api key invalid 400", genai.APIError{Code: 400, Message: "API key not valid. Please pass a valid API key.", Status: "INVALID_ARGUMENT"}, "auth"},
+		{"permission denied 403", genai.APIError{Code: 403, Message: "permission denied", Status: "PERMISSION_DENIED"}, "auth"},
+		{"unauthenticated 401", genai.APIError{Code: 401, Message: "unauthenticated", Status: "UNAUTHENTICATED"}, "auth"},
+		{"resource exhausted 429", genai.APIError{Code: 429, Message: "quota exceeded", Status: "RESOURCE_EXHAUSTED"}, "rate_limit"},
+		{"token overflow 400", genai.APIError{Code: 400, Message: "The input token count (2000001) exceeds the maximum number of tokens allowed (2000000).", Status: "INVALID_ARGUMENT"}, "context_length"},
+		{"wrapped api error", fmt.Errorf("send: %w", genai.APIError{Code: 429, Message: "slow down", Status: "RESOURCE_EXHAUSTED"}), "rate_limit"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := NormalizeError(tc.err); got.Code != tc.code {
+				t.Fatalf("NormalizeError(%v).Code = %q, want %q", tc.err, got.Code, tc.code)
+			}
+		})
 	}
 }
