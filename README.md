@@ -204,7 +204,11 @@ Edit it freely as model IDs evolve — no recompile. A missing or unreadable
 `models.yaml` produces a setup notice at launch and an empty model dropdown.
 An `openai`/`openai_compat` entry may also set `reasoning_effort` (forwarded
 verbatim to the chat-completions request) to work around models — like GPT-5.6
-Sol — whose default reasoning effort rejects function tools.
+Sol — whose default reasoning effort rejects function tools. Entries may also
+set `input_modalities` / `output_modalities` (each a list of `text`/`image`,
+defaulting to `[text]`); since the app is text-only today, a persona pinned to
+a model whose `output_modalities` excludes `text` is disabled at startup until
+image output ships.
 
 ### Personas
 

@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -72,7 +74,46 @@ func NewAPI(cfg config.Config, st *store.Store, reg provider.Registry, ragAdpt *
 		slog.Warn("persona: seed failed", "dir", cfg.PersonaDir, "err", err)
 	}
 	a.personas = persona.LoadRegistry(cfg.PersonaDir, modelIDs(reg), allToolNames)
+	a.personas = disableNonTextOutputPersonas(a.personas, reg)
 	return a
+}
+
+// disableNonTextOutputPersonas drops any persona pinned to a model whose
+// OutputModalities explicitly excludes "text": the app can only render text
+// chat today, so such a persona could never produce output if selected. It is
+// disabled the same way any other invalid persona is — moved out of Personas
+// and reported as an Issue for the startup banner.
+//
+// A model with no OutputModalities at all (registries built programmatically,
+// e.g. in tests, bypass LoadRegistry's normalization) is treated as
+// text-capable: only an explicit non-text list disables a persona.
+func disableNonTextOutputPersonas(reg persona.Registry, models provider.Registry) persona.Registry {
+	kept := make([]persona.Persona, 0, len(reg.Personas))
+	issues := append([]persona.Issue(nil), reg.Issues...)
+	for _, p := range reg.Personas {
+		m, ok := models.ByID(p.Model)
+		if ok && len(m.OutputModalities) > 0 && !modalitiesInclude(m.OutputModalities, "text") {
+			issues = append(issues, persona.Issue{
+				File: p.ID + ".md",
+				Reason: fmt.Sprintf(
+					"model %s cannot output text (output_modalities: %v); text chat requires text output",
+					p.Model, m.OutputModalities),
+			})
+			continue
+		}
+		kept = append(kept, p)
+	}
+	sort.Slice(issues, func(i, j int) bool { return issues[i].File < issues[j].File })
+	return persona.Registry{Personas: kept, Issues: issues}
+}
+
+func modalitiesInclude(vals []string, want string) bool {
+	for _, v := range vals {
+		if v == want {
+			return true
+		}
+	}
+	return false
 }
 
 // defaultModelID is the model a seeded persona points at: the first entry in

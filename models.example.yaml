@@ -17,6 +17,17 @@
 #   reasoning_effort — (optional, openai/openai_compat only) forwarded
 #                 verbatim; set "none" for models that reject function tools
 #                 with reasoning on /v1/chat/completions (e.g. GPT-5.6 Sol)
+#   input_modalities  — (optional) what the model accepts. Default [text].
+#   output_modalities — (optional) what the model produces. Default [text].
+#                 Both are lists drawn from the closed set "text" | "image" —
+#                 any other value is rejected at load. The app is text-only
+#                 today: a persona pinned to a model whose output_modalities
+#                 does not include "text" is disabled at startup (see the
+#                 startup-issues banner) until image output ships (e.g. Nano
+#                 Banana 2). Declaring input_modalities: [text, image] on a
+#                 model that also accepts image input costs nothing now — it
+#                 documents the model's real capability ahead of image-input
+#                 personas.
 models:
   - display: Claude Opus 4.7
     id: claude-opus-4-7
@@ -38,6 +49,11 @@ models:
     id: gemini-3-pro
     provider: gemini
     max_context: 1000000
+    # Gemini 3 Pro accepts image input today even though the app has no
+    # image-input persona yet; output stays text (explicit here just to show
+    # the syntax — it matches the default).
+    input_modalities: [text, image]
+    output_modalities: [text]
   - display: Gemini 3 Flash
     id: gemini-3-flash
     provider: gemini

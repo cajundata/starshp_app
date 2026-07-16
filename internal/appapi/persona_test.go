@@ -158,6 +158,57 @@ func TestSendMessageWithNoValidPersonasNamesTheValidationFailures(t *testing.T) 
 	}
 }
 
+// A persona pinned to a model whose OutputModalities lacks "text" cannot
+// produce chat output at all: the app is text-only today, so it must be
+// disabled at startup like any other invalid persona, not silently offered
+// in the picker where selecting it would go nowhere.
+func TestPersonaOnNonTextOutputModelIsDisabled(t *testing.T) {
+	dir := t.TempDir()
+	pdir := filepath.Join(dir, "personas")
+	if err := os.MkdirAll(pdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pdir, "painter.md"),
+		[]byte("---\nname: Painter\nmodel: nano-banana-2\n---\nYou paint.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		PersonaDir: pdir,
+		LibraryDir: filepath.Join(dir, "library"),
+		AppDBPath:  filepath.Join(dir, "app.db"),
+	}
+	reg := provider.Registry{Models: []provider.ModelInfo{
+		{ID: "nano-banana-2", Display: "Nano Banana 2", Provider: "gemini", OutputModalities: []string{"image"}},
+	}}
+	a := NewAPI(cfg, testStore(t), reg, nil)
+
+	if ps := a.Personas(); len(ps) != 0 {
+		t.Fatalf("Personas() = %+v, want painter dropped (image-only output model)", ps)
+	}
+	var found bool
+	for _, s := range a.StartupIssues() {
+		if strings.Contains(s, "painter.md") && strings.Contains(s, "nano-banana-2") && strings.Contains(s, "text") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("StartupIssues() = %v, want a line naming painter.md, nano-banana-2, and text", a.StartupIssues())
+	}
+}
+
+// A persona pinned to a model that has no explicit output_modalities (the
+// default text-only case) must load normally — the gate only fires on an
+// explicit non-text list.
+func TestPersonaOnDefaultModalityModelUnaffected(t *testing.T) {
+	a := newPersonaAPI(t, map[string]string{
+		"scout.md": "---\nname: Scout\nmodel: gpt-5\n---\nYou are Scout.\n",
+	})
+	ps := a.Personas()
+	if len(ps) != 1 || ps[0].ID != "scout" {
+		t.Fatalf("Personas() = %+v, want scout loaded (default text-output model)", ps)
+	}
+}
+
 func TestSeedsAnAssistantWhenThePersonaDirIsAbsent(t *testing.T) {
 	dir := t.TempDir()
 	cfg := config.Config{

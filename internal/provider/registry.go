@@ -19,6 +19,13 @@ type ModelInfo struct {
 	// models (e.g. GPT-5.6 Sol) reject function tools with their default
 	// reasoning effort on /v1/chat/completions and require "none".
 	ReasoningEffort string `yaml:"reasoning_effort,omitempty" json:"reasoningEffort,omitempty"`
+	// InputModalities / OutputModalities declare what a model can consume and
+	// produce. Both are optional and default to ["text"]; the only allowed
+	// values today are "text" and "image" (image support, e.g. Nano Banana 2,
+	// is not yet wired into the app — see the appapi startup gate that
+	// disables any persona pinned to a model without "text" output).
+	InputModalities  []string `yaml:"input_modalities,omitempty" json:"inputModalities,omitempty"`
+	OutputModalities []string `yaml:"output_modalities,omitempty" json:"outputModalities,omitempty"`
 }
 
 type Registry struct {
@@ -34,7 +41,21 @@ func LoadRegistry(path string) (Registry, error) {
 	if err := yaml.Unmarshal(raw, &r); err != nil {
 		return Registry{}, err
 	}
+	for i := range r.Models {
+		if len(r.Models[i].InputModalities) == 0 {
+			r.Models[i].InputModalities = []string{"text"}
+		}
+		if len(r.Models[i].OutputModalities) == 0 {
+			r.Models[i].OutputModalities = []string{"text"}
+		}
+	}
 	for _, m := range r.Models {
+		if err := validateModalities(m.ID, "input_modalities", m.InputModalities); err != nil {
+			return Registry{}, err
+		}
+		if err := validateModalities(m.ID, "output_modalities", m.OutputModalities); err != nil {
+			return Registry{}, err
+		}
 		switch m.Provider {
 		case "openai_compat":
 			if m.BaseURL == "" {
@@ -57,6 +78,19 @@ func LoadRegistry(path string) (Registry, error) {
 		}
 	}
 	return r, nil
+}
+
+var validModalities = map[string]bool{"text": true, "image": true}
+
+// validateModalities rejects any value outside the closed set {text, image}.
+// field is "input_modalities" or "output_modalities", for the error message.
+func validateModalities(id, field string, vals []string) error {
+	for _, v := range vals {
+		if !validModalities[v] {
+			return fmt.Errorf("model %s: %s value %q is not supported (want text or image)", id, field, v)
+		}
+	}
+	return nil
 }
 
 func (r Registry) ByID(id string) (ModelInfo, bool) {

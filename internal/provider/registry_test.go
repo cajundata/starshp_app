@@ -273,3 +273,68 @@ func TestLoadRegistryRejectsReasoningEffortOnAnthropic(t *testing.T) {
 		t.Errorf("error %q does not mention reasoning_effort", err)
 	}
 }
+
+func TestLoadRegistryDefaultsModalitiesToText(t *testing.T) {
+	p := writeRegistry(t, `models:
+  - display: GPT-5.4
+    id: gpt-5.4-2026-03-05
+    provider: openai
+`)
+	r, err := LoadRegistry(p)
+	if err != nil {
+		t.Fatalf("LoadRegistry: %v", err)
+	}
+	m, ok := r.ByID("gpt-5.4-2026-03-05")
+	if !ok {
+		t.Fatal("gpt-5.4-2026-03-05 not in registry")
+	}
+	if len(m.InputModalities) != 1 || m.InputModalities[0] != "text" {
+		t.Errorf("InputModalities = %v, want [text]", m.InputModalities)
+	}
+	if len(m.OutputModalities) != 1 || m.OutputModalities[0] != "text" {
+		t.Errorf("OutputModalities = %v, want [text]", m.OutputModalities)
+	}
+}
+
+func TestLoadRegistryParsesExplicitModalities(t *testing.T) {
+	p := writeRegistry(t, `models:
+  - display: Nano Banana 2
+    id: nano-banana-2
+    provider: gemini
+    input_modalities: [text, image]
+    output_modalities: [image]
+`)
+	r, err := LoadRegistry(p)
+	if err != nil {
+		t.Fatalf("LoadRegistry: %v", err)
+	}
+	m, ok := r.ByID("nano-banana-2")
+	if !ok {
+		t.Fatal("nano-banana-2 not in registry")
+	}
+	if len(m.InputModalities) != 2 || m.InputModalities[0] != "text" || m.InputModalities[1] != "image" {
+		t.Errorf("InputModalities = %v, want [text image]", m.InputModalities)
+	}
+	if len(m.OutputModalities) != 1 || m.OutputModalities[0] != "image" {
+		t.Errorf("OutputModalities = %v, want [image]", m.OutputModalities)
+	}
+}
+
+func TestLoadRegistryRejectsUnsupportedModality(t *testing.T) {
+	p := writeRegistry(t, `models:
+  - display: Some Model
+    id: some-model
+    provider: openai
+    output_modalities: [audio]
+`)
+	_, err := LoadRegistry(p)
+	if err == nil {
+		t.Fatal("LoadRegistry accepted an unsupported modality; want error")
+	}
+	if !strings.Contains(err.Error(), "audio") {
+		t.Errorf("error %q does not mention the offending modality", err)
+	}
+	if !strings.Contains(err.Error(), "some-model") {
+		t.Errorf("error %q does not mention the offending model id", err)
+	}
+}
