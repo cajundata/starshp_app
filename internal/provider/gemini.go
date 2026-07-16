@@ -30,6 +30,12 @@ func (p *geminiProvider) Stream(ctx context.Context, req ChatRequest) (<-chan De
 // Consecutive same-role events merge into one Content with multiple parts.
 func geminiContentsFromEvents(events []Event) []*genai.Content {
 	var out []*genai.Content
+	resultByID := map[string]bool{}
+	for _, e := range events {
+		if e.Kind == "tool_result" {
+			resultByID[e.ToolCallID] = true
+		}
+	}
 	appendPart := func(role string, part *genai.Part) {
 		if n := len(out); n > 0 && out[n-1].Role == role {
 			out[n-1].Parts = append(out[n-1].Parts, part)
@@ -44,6 +50,11 @@ func geminiContentsFromEvents(events []Event) []*genai.Content {
 		case "assistant_text":
 			appendPart(genai.RoleModel, genai.NewPartFromText(e.Text))
 		case "assistant_tool_call":
+			// Drop a tool_call that has no result anywhere — emitting it would
+			// leave a trailing functionCall with no functionResponse.
+			if !resultByID[e.ToolCallID] {
+				continue
+			}
 			var args map[string]any
 			if len(e.ToolInput) > 0 {
 				_ = json.Unmarshal(e.ToolInput, &args)

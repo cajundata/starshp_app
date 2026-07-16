@@ -56,6 +56,17 @@ func TestGeminiContentsFromEventsErrorResult(t *testing.T) {
 	}
 }
 
+func TestGeminiContentsFromEventsDropsOrphanedToolCall(t *testing.T) {
+	events := []Event{
+		{Kind: "user_message", Text: "add 2+2"},
+		{Kind: "assistant_tool_call", ToolCallID: "c1", ToolName: "safe_math", ToolInput: json.RawMessage(`{"expr":"2+2"}`)},
+	}
+	got := geminiContentsFromEvents(events)
+	if len(got) != 1 || got[0].Role != genai.RoleUser {
+		t.Fatalf("orphaned tool call not dropped: %+v", got)
+	}
+}
+
 func TestBuildGeminiTools(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"expr":{"type":"string"}},"required":["expr"]}`)
 	tools := buildGeminiTools([]ToolDef{{Name: "safe_math", Description: "evaluate", InputSchema: schema}})
