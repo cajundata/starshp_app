@@ -153,3 +153,53 @@ func TestLoadRegistryRejectsCloudProvidersWithBaseURL(t *testing.T) {
 		t.Errorf("openai error %q does not mention base_url", err)
 	}
 }
+
+func writeRegistry(t *testing.T, yaml string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "models.yaml")
+	if err := os.WriteFile(p, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("write models.yaml: %v", err)
+	}
+	return p
+}
+
+func TestLoadRegistryAcceptsGemini(t *testing.T) {
+	p := writeRegistry(t, `models:
+  - display: Gemini 3 Pro
+    id: gemini-3-pro
+    provider: gemini
+    max_context: 1000000
+`)
+	r, err := LoadRegistry(p)
+	if err != nil {
+		t.Fatalf("LoadRegistry: %v", err)
+	}
+	m, ok := r.ByID("gemini-3-pro")
+	if !ok || m.Provider != "gemini" || m.MaxContext != 1000000 {
+		t.Fatalf("ByID = %+v, %v; want gemini model with max_context 1000000", m, ok)
+	}
+}
+
+func TestLoadRegistryRejectsBaseURLOnGemini(t *testing.T) {
+	p := writeRegistry(t, `models:
+  - display: Gemini 3 Pro
+    id: gemini-3-pro
+    provider: gemini
+    base_url: http://localhost:1234/v1
+`)
+	if _, err := LoadRegistry(p); err == nil {
+		t.Fatal("LoadRegistry accepted base_url on a gemini model; want error")
+	}
+}
+
+func TestLoadRegistryRejectsAPIKeyEnvOnGemini(t *testing.T) {
+	p := writeRegistry(t, `models:
+  - display: Gemini 3 Pro
+    id: gemini-3-pro
+    provider: gemini
+    api_key_env: MY_KEY
+`)
+	if _, err := LoadRegistry(p); err == nil {
+		t.Fatal("LoadRegistry accepted api_key_env on a gemini model; want error")
+	}
+}

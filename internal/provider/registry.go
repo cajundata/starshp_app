@@ -10,7 +10,7 @@ import (
 type ModelInfo struct {
 	Display    string `yaml:"display" json:"display"`
 	ID         string `yaml:"id" json:"id"`
-	Provider   string `yaml:"provider" json:"provider"` // "openai" | "anthropic" | "openai_compat"
+	Provider   string `yaml:"provider" json:"provider"` // "openai" | "anthropic" | "openai_compat" | "gemini"
 	MaxContext int    `yaml:"max_context,omitempty" json:"maxContext,omitempty"`
 	BaseURL    string `yaml:"base_url,omitempty" json:"baseURL,omitempty"`
 	APIKeyEnv  string `yaml:"api_key_env,omitempty" json:"apiKeyEnv,omitempty"`
@@ -38,6 +38,13 @@ func LoadRegistry(path string) (Registry, error) {
 		case "openai", "anthropic":
 			if m.BaseURL != "" {
 				return Registry{}, fmt.Errorf("model %s: base_url is not allowed for provider %s", m.ID, m.Provider)
+			}
+		case "gemini":
+			if m.BaseURL != "" {
+				return Registry{}, fmt.Errorf("model %s: base_url is not allowed for provider gemini", m.ID)
+			}
+			if m.APIKeyEnv != "" {
+				return Registry{}, fmt.Errorf("model %s: api_key_env is not allowed for provider gemini (set GEMINI_API_KEY)", m.ID)
 			}
 		}
 	}
