@@ -37,7 +37,7 @@ func TestFactoryOpenAICompatPointsAtBaseURL(t *testing.T) {
 	reg := compatReg("llama3.2", srv.URL, "")
 
 	// Cloud keys are irrelevant for openai_compat; pass empty to prove they're ignored.
-	p, err := New(reg, "llama3.2", "", "")
+	p, err := New(reg, "llama3.2", Keys{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestFactoryOpenAICompatHonorsAPIKeyEnv(t *testing.T) {
 	t.Setenv("LM_STUDIO_TOKEN", "lms-secret-42")
 	reg := compatReg("qwen2.5", srv.URL, "LM_STUDIO_TOKEN")
 
-	p, err := New(reg, "qwen2.5", "", "")
+	p, err := New(reg, "qwen2.5", Keys{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestFactoryOpenAICompatFallsBackWhenEnvUnset(t *testing.T) {
 	t.Setenv("SOME_UNSET_TOKEN_VAR", "")
 	reg := compatReg("custom", srv.URL, "SOME_UNSET_TOKEN_VAR")
 
-	p, err := New(reg, "custom", "", "")
+	p, err := New(reg, "custom", Keys{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

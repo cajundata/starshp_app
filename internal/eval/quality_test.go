@@ -75,7 +75,10 @@ func TestQualityFixtures(t *testing.T) {
 			preg := provider.Registry{Models: []provider.ModelInfo{
 				{ID: modelID, Provider: providerName},
 			}}
-			prov, err := provider.New(preg, modelID, cfg.OpenAIAPIKey, cfg.AnthropicAPIKey)
+			prov, err := provider.New(preg, modelID, provider.Keys{
+				OpenAI:    cfg.OpenAIAPIKey,
+				Anthropic: cfg.AnthropicAPIKey,
+			})
 			if err != nil {
 				t.Skipf("no provider for %s: %v", modelID, err)
 			}

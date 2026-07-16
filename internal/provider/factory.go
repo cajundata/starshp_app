@@ -5,23 +5,32 @@ import (
 	"os"
 )
 
+// Keys carries the per-provider-family API keys the factory needs. Fields
+// may be empty; New errors only when the selected model's family lacks its
+// key.
+type Keys struct {
+	OpenAI    string
+	Anthropic string
+	Gemini    string
+}
+
 // New builds the right provider for a model ID using the registry.
-func New(reg Registry, modelID, openAIKey, anthropicKey string) (ChatProvider, error) {
+func New(reg Registry, modelID string, keys Keys) (ChatProvider, error) {
 	m, ok := reg.ByID(modelID)
 	if !ok {
 		return nil, fmt.Errorf("unknown model: %s", modelID)
 	}
 	switch m.Provider {
 	case "openai":
-		if openAIKey == "" {
+		if keys.OpenAI == "" {
 			return nil, AppError{"auth", "OpenAI API key not set.", false}
 		}
-		return NewOpenAI(openAIKey, ""), nil
+		return NewOpenAI(keys.OpenAI, ""), nil
 	case "anthropic":
-		if anthropicKey == "" {
+		if keys.Anthropic == "" {
 			return nil, AppError{"auth", "Anthropic API key not set.", false}
 		}
-		return NewAnthropic(anthropicKey, ""), nil
+		return NewAnthropic(keys.Anthropic, ""), nil
 	case "openai_compat":
 		// LoadRegistry already rejects an empty BaseURL; keep the guard for
 		// programmatically-built registries (e.g., tests).
