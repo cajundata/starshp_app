@@ -1,7 +1,13 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"google.golang.org/genai"
@@ -79,5 +85,150 @@ func TestBuildGeminiTools(t *testing.T) {
 	}
 	if buildGeminiTools(nil) != nil {
 		t.Fatal("buildGeminiTools(nil) should be nil")
+	}
+}
+
+// newGeminiFake serves canned SSE frames and captures the request body.
+func newGeminiFake(t *testing.T, frames []string, gotBody *[]byte) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, ":streamGenerateContent") {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if k := r.Header.Get("x-goog-api-key"); k != "test-key" {
+			t.Errorf("x-goog-api-key = %q, want test-key", k)
+		}
+		if gotBody != nil {
+			b, _ := io.ReadAll(r.Body)
+			*gotBody = b
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := w.(http.Flusher)
+		for _, f := range frames {
+			fmt.Fprintf(w, "data: %s\r\n\r\n", f)
+			fl.Flush()
+		}
+	}))
+}
+
+func TestGeminiStreamText(t *testing.T) {
+	var body []byte
+	srv := newGeminiFake(t, []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"Hel"}]}}]}`,
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"lo"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":120,"candidatesTokenCount":45,"cachedContentTokenCount":80}}`,
+	}, &body)
+	defer srv.Close()
+
+	p := NewGemini("test-key", srv.URL)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model:  "gemini-3-pro",
+		System: "You are helpful.",
+		Events: []Event{{Kind: "user_message", Text: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var sb strings.Builder
+	var final Delta
+	for d := range ch {
+		if d.Err != nil {
+			t.Fatalf("delta err: %v", d.Err)
+		}
+		sb.WriteString(d.Text)
+		if d.Done {
+			final = d
+		}
+	}
+	if sb.String() != "Hello" {
+		t.Fatalf("assembled = %q, want %q", sb.String(), "Hello")
+	}
+	if final.StopReason != "end_turn" {
+		t.Fatalf("StopReason = %q, want end_turn", final.StopReason)
+	}
+	if final.Usage == nil || final.Usage.InputTokens != 120 || final.Usage.OutputTokens != 45 || final.Usage.CachedInputTokens != 80 {
+		t.Fatalf("Usage = %+v, want {120 45 80}", final.Usage)
+	}
+
+	// The posted request must carry systemInstruction and the user content.
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatalf("request body not JSON: %v", err)
+	}
+	if _, ok := req["systemInstruction"]; !ok {
+		t.Fatalf("request lacks systemInstruction: %s", body)
+	}
+}
+
+func TestGeminiStreamGroundingConcatenatedIntoSystem(t *testing.T) {
+	var body []byte
+	srv := newGeminiFake(t, []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`,
+	}, &body)
+	defer srv.Close()
+
+	p := NewGemini("test-key", srv.URL)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model:     "gemini-3-pro",
+		System:    "SYS.",
+		Grounding: "GROUND.",
+		Events:    []Event{{Kind: "user_message", Text: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	for range ch {
+	}
+	s := string(body)
+	if !strings.Contains(s, "SYS.") || !strings.Contains(s, "GROUND.") {
+		t.Fatalf("system+grounding not in request: %s", s)
+	}
+}
+
+func TestGeminiStreamMaxTokensStopReason(t *testing.T) {
+	srv := newGeminiFake(t, []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"x"}]},"finishReason":"MAX_TOKENS"}]}`,
+	}, nil)
+	defer srv.Close()
+
+	p := NewGemini("test-key", srv.URL)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model:  "gemini-3-pro",
+		Events: []Event{{Kind: "user_message", Text: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var final Delta
+	for d := range ch {
+		if d.Done {
+			final = d
+		}
+	}
+	if final.StopReason != "max_tokens" {
+		t.Fatalf("StopReason = %q, want max_tokens", final.StopReason)
+	}
+}
+
+func TestGeminiStreamLegacyMessagesFallback(t *testing.T) {
+	var body []byte
+	srv := newGeminiFake(t, []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`,
+	}, &body)
+	defer srv.Close()
+
+	p := NewGemini("test-key", srv.URL)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model:        "gemini-3-pro",
+		CachedPrefix: "You are helpful.",
+		Messages:     []Message{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "yes?"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	for range ch {
+	}
+	s := string(body)
+	if !strings.Contains(s, `"hi"`) || !strings.Contains(s, `"yes?"`) || !strings.Contains(s, "You are helpful.") {
+		t.Fatalf("legacy fallback request missing content: %s", s)
 	}
 }
