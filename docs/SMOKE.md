@@ -174,28 +174,28 @@ llama3.2` complete, register the Llama 3.2 entry from
 
 ## Gemini provider
 
-65. [ ] **A Gemini persona streams.** Add a persona pinned to a `gemini`
+65. [x] **A Gemini persona streams.** Add a persona pinned to a `gemini`
     model (or edit one), set `GEMINI_API_KEY`, restart. Send a message —
     tokens stream live and the reply carries the persona's name, color, and
     model chip.
-66. [ ] **Stop persists the partial.** Send a long-form prompt to the Gemini
+66. [x] **Stop persists the partial.** Send a long-form prompt to the Gemini
     persona, hit Stop mid-stream — the partial reply persists and survives a
     conversation switch and back.
-67. [ ] **A Gemini persona calls tools.** With a Gemini persona whose
+67. [x] **A Gemini persona calls tools.** With a Gemini persona whose
     `tools:` allows `safe_math` (or omits the whitelist), ask "use the
     safe_math tool to compute 12*34+56/7". The tool activity renders and the
     final answer is correct.
-68. [ ] **Mention routing and the baton.** In a conversation pinned to a
+68. [x] **Mention routing and the baton.** In a conversation pinned to a
     non-Gemini persona, send `@<gemini-persona-id> summarize the thread so
     far`. That turn is answered by the Gemini persona; the next unmentioned
     turn returns to the pinned persona and receives the attributed
     `From <Name> (<model>):` block.
-69. [ ] **Footer counts look sane.** After a few Gemini turns, the context
+69. [x] **Footer counts look sane.** After a few Gemini turns, the context
     footer shows nonzero input/output tokens against the model's
     `max_context` denominator; on a repeated turn, cached tokens are
     plausible (Gemini implicit caching — may be 0 on small prompts, never
     negative or absurd).
-70. [ ] **Missing key is a banner, not a crash.** Remove `GEMINI_API_KEY`
+70. [x] **Missing key is a banner, not a crash.** Remove `GEMINI_API_KEY`
     from `.env`, restart with a `gemini` model still in `models.yaml` — the
     setup banner lists GEMINI_API_KEY; chatting with a non-Gemini persona
     still works.
