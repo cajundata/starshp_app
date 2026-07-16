@@ -3,11 +3,13 @@ package main
 import (
 	"embed"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/cajundata/starshp_app/internal/appapi"
 	"github.com/cajundata/starshp_app/internal/config"
+	"github.com/cajundata/starshp_app/internal/imagestore"
 	"github.com/cajundata/starshp_app/internal/provider"
 	"github.com/cajundata/starshp_app/internal/rag"
 	"github.com/cajundata/starshp_app/internal/store"
@@ -40,6 +42,9 @@ func main() {
 	if cfg.PersonaDir == "" {
 		cfg.PersonaDir = filepath.Join(appDir, "personas")
 	}
+	if cfg.ImagesDir == "" {
+		cfg.ImagesDir = filepath.Join(appDir, "images")
+	}
 	// Books live under <app-dir>/textbooks/<book>/chapter-NN.md by convention.
 	// Pre-create the parent so a fresh install has the expected shape.
 	if err := os.MkdirAll(filepath.Join(appDir, "textbooks"), 0o755); err != nil {
@@ -64,14 +69,31 @@ func main() {
 
 	api := appapi.NewAPI(cfg, st, reg, ragAdpt)
 
+	// Generated images are served to the webview from the app dir; the handler
+	// receives every request the embedded bundle can't satisfy.
+	img, err := imagestore.New(cfg.ImagesDir)
+	if err != nil {
+		log.Printf("warning: image store: %v", err)
+	}
+
 	if err := wails.Run(&options.App{
 		Title:       "Starshp",
 		Width:       1100,
 		Height:      760,
-		AssetServer: &assetserver.Options{Assets: assets},
+		AssetServer: &assetserver.Options{Assets: assets, Handler: imageHandler(img)},
 		OnStartup:   api.Startup,
 		Bind:        []any{api},
 	}); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// imageHandler serves /appimages/<hash>.png from the image store; a store
+// that failed to initialize degrades to 404s (broken images render as the
+// frontend's placeholder), never a startup crash.
+func imageHandler(img *imagestore.Store) http.Handler {
+	if img == nil {
+		return http.NotFoundHandler()
+	}
+	return img.Handler()
 }
