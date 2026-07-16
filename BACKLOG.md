@@ -32,3 +32,7 @@ Tags: `[feat]` new feature · `[chg]` change to existing behavior · `[fix]` kno
 
 - Mention polish (from multi-persona final review): Ctrl/Cmd+Enter with the @-popup open should send, not insert; click-away should dismiss the popup; auto-title could strip a leading @mention.
 - Mention test hardening: parser rows for `@scout!` / `@scout,`; a dedicated first-turn/no-predecessor canonicalEvents test; `found` flag in TestSendMessageWithMentionDoesNotRepin.
+
+- Operator image upload (attach a sketch/logo for the Visual Designer to refine) — Spec B deferred.
+- Image viewer polish: click-to-enlarge, save-as, copy image — Spec B deferred.
+- Configurable refinement image cap (constant 6 in v1) — Spec B deferred.

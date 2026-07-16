@@ -20,14 +20,16 @@
 #   input_modalities  — (optional) what the model accepts. Default [text].
 #   output_modalities — (optional) what the model produces. Default [text].
 #                 Both are lists drawn from the closed set "text" | "image" —
-#                 any other value is rejected at load. The app is text-only
-#                 today: a persona pinned to a model whose output_modalities
-#                 does not include "text" is disabled at startup (see the
-#                 startup-issues banner) until image output ships (e.g. Nano
-#                 Banana 2). Declaring input_modalities: [text, image] on a
-#                 model that also accepts image input costs nothing now — it
-#                 documents the model's real capability ahead of image-input
-#                 personas.
+#                 any other value is rejected at load. Image output now
+#                 renders in-thread for gemini models (e.g. Nano Banana 2):
+#                 generated PNGs are stored under <app-dir>/images/ and shown
+#                 inline in the persona's bubble. A persona pinned to a model
+#                 whose output_modalities does not include "text" on a
+#                 provider without image support is still disabled at startup
+#                 (see the startup-issues banner). Declaring
+#                 input_modalities: [text, image] on a model that also
+#                 accepts image input costs nothing now — it documents the
+#                 model's real capability ahead of image-input personas.
 models:
   - display: Claude Fable 5
     id: claude-fable-5
@@ -69,6 +71,12 @@ models:
     # the syntax — it matches the default).
     input_modalities: [text, image]
     output_modalities: [text]
+  - display: Nano Banana 2
+    id: gemini-3-pro-image
+    provider: gemini
+    max_context: 32768
+    input_modalities: [text, image]
+    output_modalities: [text, image]
   - display: Gemini 3 Flash
     id: gemini-3-flash
     provider: gemini

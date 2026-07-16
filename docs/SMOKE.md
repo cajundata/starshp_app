@@ -199,3 +199,24 @@ llama3.2` complete, register the Llama 3.2 entry from
     from `.env`, restart with a `gemini` model still in `models.yaml` — the
     setup banner lists GEMINI_API_KEY; chatting with a non-Gemini persona
     still works.
+
+## Spec B — image generation (Nano Banana 2)
+
+71. [ ] **Registry and persona load.** Add the Nano Banana 2 entry to
+    `models.yaml` and the visual-designer persona; restart. Persona picker
+    shows Visual Designer with no startup banner.
+72. [ ] **Image generation renders in-thread.** As Visual Designer: "draw a
+    small cartoon cat". Interleaved text + image render in one attributed
+    bubble; a `<sha256>.png` appears under `<app-dir>/images/`.
+73. [ ] **Refinement context.** Follow up: "make the sky darker". The reply
+    edits the prior image (same subject, darker sky) — refinement context
+    works.
+74. [ ] **Cross-persona reference.** `@`-mention a text persona:
+    "@<text-persona> critique the image". Its reply shows it received the
+    attributed block (it references the image textually); no error.
+75. [ ] **Missing image placeholder.** Delete the newest PNG from
+    `<app-dir>/images/`, reopen the conversation. The bubble shows the
+    "image unavailable" placeholder; other images still render.
+76. [ ] **Replay after restart.** Restart the app, reopen the conversation.
+    All images replay in position; footer shows sane token counts after the
+    next image turn.
