@@ -33,9 +33,10 @@ any other; nothing else about the app changes.
   auth against `generativelanguage.googleapis.com` (the Gemini Developer
   API); Vertex AI auth is out of scope.
 - **`GEMINI_API_KEY` follows conditional validation.** Required at startup
-  only when `models.yaml` holds at least one `provider: gemini` entry that a
-  valid persona references; absent otherwise with no complaint. A missing
-  key surfaces in the startup-issues banner.
+  only when `models.yaml` holds at least one `provider: gemini` entry —
+  the same registry-only check as `needsOpenAIKey`/`needsAnthropicKey`;
+  absent otherwise with no complaint. A missing key surfaces in the
+  startup-issues banner.
 - **`provider.New` takes a `Keys` struct.** The current
   `New(reg, model, openaiKey, anthropicKey)` signature would grow a
   positional parameter per provider family; it changes to
@@ -130,8 +131,8 @@ All pure Go, no network — the SDK accepts a `BaseURL` override, so an
   rejected.
 - Factory: `Keys` struct refactor; `gemini` case returns the adapter.
 - `NormalizeError`: table rows for the vocabulary above.
-- Startup validation: `GEMINI_API_KEY` demanded only when a valid persona
-  references a `gemini` model.
+- Startup validation: `GEMINI_API_KEY` demanded only when the registry
+  holds a `gemini` model.
 
 **SMOKE.md additions (six steps):** pin a persona to a Gemini model and
 stream a reply; Stop mid-stream persists the partial; a `safe_math` tool
