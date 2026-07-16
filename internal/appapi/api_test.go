@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/cajundata/starshp_app/internal/config"
+	"github.com/cajundata/starshp_app/internal/persona"
 	"github.com/cajundata/starshp_app/internal/provider"
 	"github.com/cajundata/starshp_app/internal/store"
 )
@@ -35,6 +36,44 @@ func TestSendMessageNilRagAdapterNoPanic(t *testing.T) {
 	// Sanity: it's a provider AppError, not a panic/raw.
 	if !strings.Contains(strings.ToLower(err.Error()), "key") {
 		t.Logf("note: error was %q (acceptable as long as no panic)", err.Error())
+	}
+}
+
+// disableUnrenderablePersonas gates on renderability, not just modality:
+// text always renders; image renders only through the gemini adapter. A
+// model with no OutputModalities at all is treated as text-capable.
+func TestDisableUnrenderablePersonas(t *testing.T) {
+	models := provider.Registry{Models: []provider.ModelInfo{
+		{ID: "text-model", Provider: "openai", OutputModalities: []string{"text"}},
+		{ID: "nano-banana", Provider: "gemini", OutputModalities: []string{"text", "image"}},
+		{ID: "gemini-image-only", Provider: "gemini", OutputModalities: []string{"image"}},
+		{ID: "openai-image-only", Provider: "openai", OutputModalities: []string{"image"}},
+		{ID: "no-modalities", Provider: "anthropic"},
+	}}
+	reg := persona.Registry{Personas: []persona.Persona{
+		{ID: "writer", Model: "text-model"},
+		{ID: "artist", Model: "nano-banana"},
+		{ID: "pure-artist", Model: "gemini-image-only"},
+		{ID: "broken", Model: "openai-image-only"},
+		{ID: "vintage", Model: "no-modalities"},
+	}}
+
+	got := disableUnrenderablePersonas(reg, models)
+
+	kept := map[string]bool{}
+	for _, p := range got.Personas {
+		kept[p.ID] = true
+	}
+	for _, want := range []string{"writer", "artist", "pure-artist", "vintage"} {
+		if !kept[want] {
+			t.Errorf("persona %s should be kept; issues: %+v", want, got.Issues)
+		}
+	}
+	if kept["broken"] {
+		t.Error("persona pinned to image-only non-gemini model must be disabled")
+	}
+	if len(got.Issues) != 1 || got.Issues[0].File != "broken.md" {
+		t.Fatalf("issues = %+v, want exactly broken.md", got.Issues)
 	}
 }
 

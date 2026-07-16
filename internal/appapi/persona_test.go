@@ -158,11 +158,11 @@ func TestSendMessageWithNoValidPersonasNamesTheValidationFailures(t *testing.T) 
 	}
 }
 
-// A persona pinned to a model whose OutputModalities lacks "text" cannot
-// produce chat output at all: the app is text-only today, so it must be
-// disabled at startup like any other invalid persona, not silently offered
-// in the picker where selecting it would go nowhere.
-func TestPersonaOnNonTextOutputModelIsDisabled(t *testing.T) {
+// A persona pinned to a model whose image output renders through the gemini
+// adapter must load normally: gemini image output is renderable, so this is
+// no longer a gate failure (see TestDisableUnrenderablePersonas in
+// api_test.go for the non-gemini image-only case, which still disables).
+func TestPersonaOnGeminiImageOnlyModelIsKept(t *testing.T) {
 	dir := t.TempDir()
 	pdir := filepath.Join(dir, "personas")
 	if err := os.MkdirAll(pdir, 0o755); err != nil {
@@ -182,17 +182,14 @@ func TestPersonaOnNonTextOutputModelIsDisabled(t *testing.T) {
 	}}
 	a := NewAPI(cfg, testStore(t), reg, nil)
 
-	if ps := a.Personas(); len(ps) != 0 {
-		t.Fatalf("Personas() = %+v, want painter dropped (image-only output model)", ps)
+	ps := a.Personas()
+	if len(ps) != 1 || ps[0].ID != "painter" {
+		t.Fatalf("Personas() = %+v, want painter kept (gemini image-output model is renderable)", ps)
 	}
-	var found bool
 	for _, s := range a.StartupIssues() {
-		if strings.Contains(s, "painter.md") && strings.Contains(s, "nano-banana-2") && strings.Contains(s, "text") {
-			found = true
+		if strings.Contains(s, "painter.md") {
+			t.Errorf("StartupIssues() = %v, want no issue naming painter.md", a.StartupIssues())
 		}
-	}
-	if !found {
-		t.Errorf("StartupIssues() = %v, want a line naming painter.md, nano-banana-2, and text", a.StartupIssues())
 	}
 }
 

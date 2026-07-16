@@ -29,4 +29,7 @@ func TestSinkEventName(t *testing.T) {
 	if got := sinkEventName(chat.SinkEventKind("bogus")); got != "" {
 		t.Errorf("unknown kind should map to empty, got %q", got)
 	}
+	if got := sinkEventName(chat.SinkImage); got != "chat:image" {
+		t.Errorf("sinkEventName(SinkImage) = %q, want chat:image", got)
+	}
 }

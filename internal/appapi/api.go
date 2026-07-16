@@ -15,6 +15,7 @@ import (
 
 	"github.com/cajundata/starshp_app/internal/chat"
 	"github.com/cajundata/starshp_app/internal/config"
+	"github.com/cajundata/starshp_app/internal/imagestore"
 	"github.com/cajundata/starshp_app/internal/library"
 	"github.com/cajundata/starshp_app/internal/mention"
 	"github.com/cajundata/starshp_app/internal/persona"
@@ -38,6 +39,7 @@ type API struct {
 	lib            *library.Library
 	chatSvc        *chat.Service
 	toolReg        *tools.Registry
+	images         *imagestore.Store
 	mu             sync.Mutex
 	cancelInFlight context.CancelFunc
 
@@ -67,6 +69,18 @@ func NewAPI(cfg config.Config, st *store.Store, reg provider.Registry, ragAdpt *
 	_ = a.toolReg.Register(safemath.New())
 	a.emit = func(name string, payload any) { wruntime.EventsEmit(a.ctx, name, payload) }
 
+	// Image persistence for image-output models. A failure leaves images nil;
+	// an image-generating run then errors with a clear message instead of the
+	// app failing to start.
+	if cfg.ImagesDir != "" {
+		img, err := imagestore.New(cfg.ImagesDir)
+		if err != nil {
+			slog.Warn("imagestore: init failed", "dir", cfg.ImagesDir, "err", err)
+		} else {
+			a.images = img
+		}
+	}
+
 	// Seed a starter persona only when the folder is absent, then load. Loading
 	// never writes and never fails: a bad persona file is disabled and reported
 	// through StartupIssues.
@@ -74,29 +88,36 @@ func NewAPI(cfg config.Config, st *store.Store, reg provider.Registry, ragAdpt *
 		slog.Warn("persona: seed failed", "dir", cfg.PersonaDir, "err", err)
 	}
 	a.personas = persona.LoadRegistry(cfg.PersonaDir, modelIDs(reg), allToolNames)
-	a.personas = disableNonTextOutputPersonas(a.personas, reg)
+	a.personas = disableUnrenderablePersonas(a.personas, reg)
 	return a
 }
 
-// disableNonTextOutputPersonas drops any persona pinned to a model whose
-// OutputModalities explicitly excludes "text": the app can only render text
-// chat today, so such a persona could never produce output if selected. It is
+// disableUnrenderablePersonas drops any persona pinned to a model whose
+// output the app cannot render. Text output renders everywhere; image output
+// renders only through the gemini adapter (the only image-capable provider),
+// so an image-only model on any other provider disables its personas. It is
 // disabled the same way any other invalid persona is — moved out of Personas
 // and reported as an Issue for the startup banner.
 //
 // A model with no OutputModalities at all (registries built programmatically,
 // e.g. in tests, bypass LoadRegistry's normalization) is treated as
-// text-capable: only an explicit non-text list disables a persona.
-func disableNonTextOutputPersonas(reg persona.Registry, models provider.Registry) persona.Registry {
+// text-capable: only an explicit non-renderable list disables a persona.
+func disableUnrenderablePersonas(reg persona.Registry, models provider.Registry) persona.Registry {
 	kept := make([]persona.Persona, 0, len(reg.Personas))
 	issues := append([]persona.Issue(nil), reg.Issues...)
 	for _, p := range reg.Personas {
 		m, ok := models.ByID(p.Model)
-		if ok && len(m.OutputModalities) > 0 && !modalitiesInclude(m.OutputModalities, "text") {
+		if !ok || len(m.OutputModalities) == 0 {
+			kept = append(kept, p)
+			continue
+		}
+		renderable := modalitiesInclude(m.OutputModalities, "text") ||
+			(m.OutputsImage() && m.Provider == "gemini")
+		if !renderable {
 			issues = append(issues, persona.Issue{
 				File: p.ID + ".md",
 				Reason: fmt.Sprintf(
-					"model %s cannot output text (output_modalities: %v); text chat requires text output",
+					"model %s output (%v) cannot be rendered: text output or gemini image output required",
 					p.Model, m.OutputModalities),
 			})
 			continue
@@ -156,6 +177,8 @@ func sinkEventName(k chat.SinkEventKind) string {
 		return "chat:run_cancelled"
 	case chat.SinkUsage:
 		return "chat:usage"
+	case chat.SinkImage:
+		return "chat:image"
 	}
 	return ""
 }
@@ -336,7 +359,7 @@ func (a *API) SendMessage(convID, userText, personaID string) error {
 		reasoningEffort = m.ReasoningEffort
 	}
 
-	_, err = a.chatSvc.Send(cctx, chat.SendParams{
+	params := chat.SendParams{
 		ConversationID:  convID,
 		UserText:        userText,
 		SystemPrompt:    systemPrompt,
@@ -355,7 +378,13 @@ func (a *API) SendMessage(convID, userText, personaID string) error {
 		// the run-errored event, where agentic errors are surfaced (the agentic
 		// Send returns nil and reports errors via the sink, not the return value).
 		RemapErr: a.localRemapErr(p.Model),
-	}, nil)
+	}
+	// Assign only when non-nil: a typed-nil *imagestore.Store in the interface
+	// would defeat the engine's nil check.
+	if a.images != nil {
+		params.Images = a.images
+	}
+	_, err = a.chatSvc.Send(cctx, params, nil)
 	return err
 }
 
@@ -538,6 +567,7 @@ type EventDTO struct {
 	ToolInput     json.RawMessage `json:"toolInput,omitempty"`
 	ToolMetadata  json.RawMessage `json:"toolMetadata,omitempty"`
 	ToolLatencyMs int64           `json:"toolLatencyMs,omitempty"`
+	ImageHash     string          `json:"imageHash,omitempty"`
 	IsError       bool            `json:"isError,omitempty"`
 }
 
@@ -557,7 +587,7 @@ func (a *API) GetConversationDisplayEvents(convID string) ([]EventDTO, error) {
 			Kind: r.Kind,
 			Text: r.Text, ToolCallID: r.ToolCallID, ToolName: r.ToolName,
 			ToolInput: r.ToolInput, ToolMetadata: r.ToolMetadata,
-			ToolLatencyMs: r.ToolLatencyMs, IsError: r.IsError,
+			ToolLatencyMs: r.ToolLatencyMs, ImageHash: r.ImageHash, IsError: r.IsError,
 		})
 	}
 	return out, nil
