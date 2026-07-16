@@ -184,9 +184,10 @@ body { font-family: system-ui, sans-serif; }
 /* Excluded turns dim but stay readable — at a glance the operator sees
    what the model will not see. The whole exchange dims: user bubble, text
    segments, and tool blocks alike. */
-.msg.ctx-excluded .msg-text, .msg.ctx-excluded .tool-call, .msg.ctx-excluded .grounding-header { opacity: .45; }
+.msg.ctx-excluded .msg-text, .msg.ctx-excluded .tool-call, .msg.ctx-excluded .grounding-header, .msg.ctx-excluded .msg-image { opacity: .45; }
 /* Pinned: a small glyph beside the model chip on the turn's assistant row. */
 .pin-glyph { display: inline-flex; align-items: center; color: #d7a64a; }
+.pin-glyph svg { display: block; }
 
 .msg-image { margin: 6px 0; }
 .msg-image img {
@@ -203,4 +204,3 @@ body { font-family: system-ui, sans-serif; }
   border-radius: 8px;
   width: fit-content;
 }
-.pin-glyph svg { display: block; }

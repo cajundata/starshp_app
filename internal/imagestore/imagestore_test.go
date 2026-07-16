@@ -111,10 +111,10 @@ func TestHandler404s(t *testing.T) {
 	defer srv.Close()
 	for _, path := range []string{
 		"/appimages/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png", // unknown hash
-		"/appimages/notahash.png",       // malformed hash
-		"/appimages/../app.db",          // traversal shape
-		"/somewhere/else.png",           // wrong prefix
-		"/appimages/",                   // empty
+		"/appimages/notahash.png", // malformed hash
+		"/appimages/../app.db",    // traversal shape
+		"/somewhere/else.png",     // wrong prefix
+		"/appimages/",             // empty
 	} {
 		resp, err := http.Get(srv.URL + path)
 		if err != nil {

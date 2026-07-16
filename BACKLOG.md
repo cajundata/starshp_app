@@ -24,7 +24,6 @@ Tags: `[feat]` new feature · `[chg]` change to existing behavior · `[fix]` kno
 [feat] per-model "Test connection" button in a model-registry settings UI so a user can validate a local entry's `base_url` without sending a real chat turn
 [feat] curated starter-model recommendations for local entries (e.g., suggested Ollama IDs by Apple Silicon RAM tier and by Windows GPU VRAM tier) shown inline when a user adds a new local model
 
-[chg] surface non-STOP Gemini finish reasons (SAFETY / RECITATION / PROHIBITED_CONTENT) as a visible run condition — today they complete the run silently, possibly with an empty reply (from gemini final review)
 [chore] guard the error-path channel sends in all three streaming adapters with select/ctx.Done() — gemini, anthropic, and openai share the unguarded terminal-send pattern; benign with current draining callers (from gemini final review)
 [chore] gemini test: assert functionDeclarations reach the wire in TestGeminiStreamToolCall's posted body (from gemini final review)
 [chore] chat-level regression test: assert SendParams.ReasoningEffort reaches the ChatRequest via fakeprovider, covering the finalizeWithoutTools literal and appapi wiring (from smoke-fix final review)
@@ -34,5 +33,6 @@ Tags: `[feat]` new feature · `[chg]` change to existing behavior · `[fix]` kno
 - Mention test hardening: parser rows for `@scout!` / `@scout,`; a dedicated first-turn/no-predecessor canonicalEvents test; `found` flag in TestSendMessageWithMentionDoesNotRepin.
 
 - Operator image upload (attach a sketch/logo for the Visual Designer to refine) — Spec B deferred.
-- Image viewer polish: click-to-enlarge, save-as, copy image — Spec B deferred.
+- Image viewer polish: click-to-enlarge, save-as, copy image, bottom-pin rescroll on image load — Spec B deferred.
 - Configurable refinement image cap (constant 6 in v1) — Spec B deferred.
+- Persona re-pin edge: a persona moved off gemini loses its historical images from its own context (adapter skip); a gemini model without image input could reject inflated bytes — Spec B deferred.

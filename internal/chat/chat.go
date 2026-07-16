@@ -435,6 +435,8 @@ func (s *Service) finalizeWithoutTools(ctx context.Context, p SendParams, runID,
 			lastCall = *d.Usage
 		}
 		// Any tool call in this turn is ignored — tools were withheld.
+		// Image deltas are likewise unreachable here: image mode omits tools, so a run can
+		// never reach the iteration cap with an image-capable model.
 	}
 	if t := strings.TrimSpace(text.String()); t != "" {
 		if _, err := s.st.AppendAssistantText(p.ConversationID, turnID, runID, t); err != nil {
