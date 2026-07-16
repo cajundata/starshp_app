@@ -72,7 +72,7 @@ func TestAppendAssistantToolCall_PersistsInputJSON(t *testing.T) {
 	_ = st.CreateRun(conv.ID, user.TurnID, runID, "openai", "gpt-x", "auto_grounded_default", "")
 	input := json.RawMessage(`{"query":"realization principle"}`)
 	ev, err := st.AppendAssistantToolCall(conv.ID, user.TurnID, runID, "call_1",
-		"search_textbook", input)
+		"search_textbook", input, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,6 +81,53 @@ func TestAppendAssistantToolCall_PersistsInputJSON(t *testing.T) {
 	}
 	if string(ev.ToolInput) != string(input) {
 		t.Fatalf("input mismatch: want %s, got %s", input, ev.ToolInput)
+	}
+	if ev.ToolMetadata != nil {
+		t.Fatalf("ToolMetadata = %s, want nil when no metadata passed", ev.ToolMetadata)
+	}
+}
+
+// TestAppendAssistantToolCall_ThoughtSignatureRoundTrips is the store-level
+// half of the Gemini thought_signature invariant: metadata written at append
+// time comes back byte-identical through the provider replay read path.
+func TestAppendAssistantToolCall_ThoughtSignatureRoundTrips(t *testing.T) {
+	st := openTestStore(t)
+	conv, _ := st.CreateConversation("c")
+	user, _ := st.AppendUserMessage(conv.ID, "q")
+	runID := "r1"
+	_ = st.CreateRun(conv.ID, user.TurnID, runID, "gemini", "gemini-3-pro", "auto_grounded_default", "")
+	input := json.RawMessage(`{"expr":"2+2"}`)
+	meta := json.RawMessage(`{"thought_signature":"c2lnLWJ5dGVzLTE="}`)
+	ev, err := st.AppendAssistantToolCall(conv.ID, user.TurnID, runID, "call_1",
+		"safe_math", input, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(ev.ToolMetadata) != string(meta) {
+		t.Fatalf("append-time ToolMetadata mismatch: want %s, got %s", meta, ev.ToolMetadata)
+	}
+	if _, err := st.AppendToolResult(conv.ID, user.TurnID, runID, "call_1",
+		"safe_math", "4", nil, false, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CompleteRun(runID, RunTotals{}, "end_turn"); err != nil {
+		t.Fatal(err)
+	}
+	events, err := st.GetProviderReplayEvents(conv.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range events {
+		if e.Kind == EventKindAssistantToolCall && e.ToolCallID == "call_1" {
+			found = true
+			if string(e.ToolMetadata) != string(meta) {
+				t.Fatalf("replayed ToolMetadata = %s, want %s", e.ToolMetadata, meta)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("assistant_tool_call event not found in replay")
 	}
 }
 
@@ -91,7 +138,7 @@ func TestAppendToolResult_PersistsMetadataAndHash(t *testing.T) {
 	runID := "r1"
 	_ = st.CreateRun(conv.ID, user.TurnID, runID, "openai", "gpt-x", "auto_grounded_default", "")
 	_, _ = st.AppendAssistantToolCall(conv.ID, user.TurnID, runID, "call_1",
-		"safe_math", json.RawMessage(`{"expression":"1+1"}`))
+		"safe_math", json.RawMessage(`{"expression":"1+1"}`), nil)
 	meta := json.RawMessage(`{"normalized_expression":"1+1"}`)
 	ev, err := st.AppendToolResult(conv.ID, user.TurnID, runID, "call_1",
 		"safe_math", "2", meta /*isError*/, false /*latencyMs*/, 3)

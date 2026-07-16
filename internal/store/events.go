@@ -92,8 +92,12 @@ func (s *Store) AppendAssistantText(convID, turnID, runID, text string) (Convers
 	return ev, err
 }
 
+// AppendAssistantToolCall persists a functionCall/tool_use request the model
+// emitted mid-turn. metadata is a nullable provider-opaque payload (e.g.
+// Gemini's base64 thought signature) written verbatim to tool_metadata and
+// replayed unchanged by store.GetProviderReplayEvents; empty/nil stores NULL.
 func (s *Store) AppendAssistantToolCall(
-	convID, turnID, runID, toolCallID, toolName string, input json.RawMessage,
+	convID, turnID, runID, toolCallID, toolName string, input, metadata json.RawMessage,
 ) (ConversationEvent, error) {
 	id := uuid.NewString()
 	seq, err := nextSequenceIndex(s, convID)
@@ -104,15 +108,20 @@ func (s *Store) AppendAssistantToolCall(
 		ID: id, ConversationID: convID, TurnID: turnID, RunID: runID,
 		SequenceIndex: seq, Kind: EventKindAssistantToolCall,
 		ToolCallID: toolCallID, ToolName: toolName, ToolInput: input,
-		CreatedAt: time.Now().UnixMilli(),
+		ToolMetadata: metadata,
+		CreatedAt:    time.Now().UnixMilli(),
+	}
+	var metaArg any
+	if len(metadata) > 0 {
+		metaArg = string(metadata)
 	}
 	_, err = s.db.Exec(
 		`INSERT INTO conversation_events
             (id, conversation_id, turn_id, run_id, sequence_index, kind,
-             tool_call_id, tool_name, tool_input, is_error, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,0,?)`,
+             tool_call_id, tool_name, tool_input, tool_metadata, is_error, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,0,?)`,
 		ev.ID, convID, turnID, runID, ev.SequenceIndex, ev.Kind,
-		toolCallID, toolName, string(input), ev.CreatedAt)
+		toolCallID, toolName, string(input), metaArg, ev.CreatedAt)
 	return ev, err
 }
 

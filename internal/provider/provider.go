@@ -19,12 +19,13 @@ type Message struct {
 // loop. Adapters translate a slice of Events into provider-specific wire
 // format (role-based for OpenAI, content-block for Anthropic).
 type Event struct {
-	Kind       string          // user_message | assistant_text | assistant_tool_call | tool_result
-	Text       string          // user_message, assistant_text, tool_result.output
-	ToolCallID string          // assistant_tool_call, tool_result
-	ToolName   string          // assistant_tool_call, tool_result
-	ToolInput  json.RawMessage // assistant_tool_call: provider input JSON
-	IsError    bool            // tool_result
+	Kind         string          // user_message | assistant_text | assistant_tool_call | tool_result
+	Text         string          // user_message, assistant_text, tool_result.output
+	ToolCallID   string          // assistant_tool_call, tool_result
+	ToolName     string          // assistant_tool_call, tool_result
+	ToolInput    json.RawMessage // assistant_tool_call: provider input JSON
+	ToolMetadata json.RawMessage // assistant_tool_call rows: replayed tool metadata
+	IsError      bool            // tool_result
 }
 
 // ToolDef is the provider-facing description of a registered tool.
@@ -65,9 +66,10 @@ type Usage struct {
 // input JSON is fully buffered. Schema validation happens in
 // registry.Execute, not in the adapter.
 type ToolCall struct {
-	ID    string
-	Name  string
-	Input json.RawMessage
+	ID       string
+	Name     string
+	Input    json.RawMessage
+	Metadata json.RawMessage // provider-specific opaque payload persisted to the event log and replayed to the same provider; gemini stores its thought signature here
 }
 
 // Delta is one frame of a streaming response.

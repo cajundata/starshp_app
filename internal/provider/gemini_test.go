@@ -236,7 +236,7 @@ func TestGeminiStreamLegacyMessagesFallback(t *testing.T) {
 
 func TestGeminiStreamToolCall(t *testing.T) {
 	srv := newGeminiFake(t, []string{
-		`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"safe_math","args":{"expr":"2+2"}}},{"functionCall":{"name":"safe_math","args":{"expr":"3+3"}}}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}`,
+		`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"safe_math","args":{"expr":"2+2"}},"thoughtSignature":"c2lnLWJ5dGVzLTE="},{"functionCall":{"name":"safe_math","args":{"expr":"3+3"}}}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}`,
 	}, nil)
 	defer srv.Close()
 
@@ -273,6 +273,78 @@ func TestGeminiStreamToolCall(t *testing.T) {
 	}
 	if final.StopReason != "tool_use" {
 		t.Fatalf("StopReason = %q, want tool_use", final.StopReason)
+	}
+	var meta struct {
+		ThoughtSignature string `json:"thought_signature"`
+	}
+	if calls[0].Metadata == nil {
+		t.Fatal("calls[0].Metadata is nil, want thought_signature payload")
+	}
+	if err := json.Unmarshal(calls[0].Metadata, &meta); err != nil {
+		t.Fatalf("calls[0].Metadata unmarshal: %v", err)
+	}
+	if meta.ThoughtSignature != "c2lnLWJ5dGVzLTE=" {
+		t.Fatalf("calls[0] thought_signature = %q, want c2lnLWJ5dGVzLTE=", meta.ThoughtSignature)
+	}
+	if calls[1].Metadata != nil {
+		t.Fatalf("calls[1].Metadata = %s, want nil (no signature on the frame)", calls[1].Metadata)
+	}
+}
+
+func TestGeminiContentsThoughtSignatureRoundTrip(t *testing.T) {
+	var body []byte
+	srv := newGeminiFake(t, []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"4"}]},"finishReason":"STOP"}]}`,
+	}, &body)
+	defer srv.Close()
+
+	p := NewGemini("test-key", srv.URL)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model: "gemini-3-pro",
+		Events: []Event{
+			{Kind: "user_message", Text: "add 2+2"},
+			{Kind: "assistant_tool_call", ToolCallID: "c1", ToolName: "safe_math",
+				ToolInput:    json.RawMessage(`{"expr":"2+2"}`),
+				ToolMetadata: json.RawMessage(`{"thought_signature":"c2lnLWJ5dGVzLTE="}`)},
+			{Kind: "tool_result", ToolCallID: "c1", ToolName: "safe_math", Text: "4"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	for range ch {
+	}
+	s := string(body)
+	if !strings.Contains(s, `"thoughtSignature":"c2lnLWJ5dGVzLTE="`) {
+		t.Fatalf("request lacks echoed thoughtSignature: %s", s)
+	}
+}
+
+func TestGeminiContentsNoSignatureOmitsField(t *testing.T) {
+	var body []byte
+	srv := newGeminiFake(t, []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"4"}]},"finishReason":"STOP"}]}`,
+	}, &body)
+	defer srv.Close()
+
+	p := NewGemini("test-key", srv.URL)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model: "gemini-3-pro",
+		Events: []Event{
+			{Kind: "user_message", Text: "add 2+2"},
+			{Kind: "assistant_tool_call", ToolCallID: "c1", ToolName: "safe_math",
+				ToolInput: json.RawMessage(`{"expr":"2+2"}`)},
+			{Kind: "tool_result", ToolCallID: "c1", ToolName: "safe_math", Text: "4"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	for range ch {
+	}
+	s := string(body)
+	if strings.Contains(s, "thoughtSignature") {
+		t.Fatalf("request should omit thoughtSignature when none stored: %s", s)
 	}
 }
 

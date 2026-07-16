@@ -287,7 +287,7 @@ func (s *Service) runLoop(ctx context.Context, p SendParams, runID, turnID, grou
 		// Dispatch tool calls sequentially in emitted order.
 		for _, tc := range toolCalls {
 			if _, err := s.st.AppendAssistantToolCall(p.ConversationID, turnID, runID,
-				tc.ID, tc.Name, tc.Input); err != nil {
+				tc.ID, tc.Name, tc.Input, tc.Metadata); err != nil {
 				return s.errorOut(p, runID, turnID, "provider_error",
 					"persist_tool_call", err.Error()), err
 			}
@@ -519,11 +519,15 @@ func canonicalEvents(rows []store.ConversationEvent, currentTurnID, currentPerso
 		foreign := r.PersonaID != "" && r.PersonaID != currentPersonaID
 		switch {
 		case r.Kind == store.EventKindUserMessage || !foreign:
-			out = append(out, provider.Event{
+			ev := provider.Event{
 				Kind: r.Kind, Text: r.Text,
 				ToolCallID: r.ToolCallID, ToolName: r.ToolName,
 				ToolInput: r.ToolInput, IsError: r.IsError,
-			})
+			}
+			if r.Kind == store.EventKindAssistantToolCall {
+				ev.ToolMetadata = r.ToolMetadata
+			}
+			out = append(out, ev)
 		case r.TurnID == predecessor && r.Kind == store.EventKindAssistantText:
 			if len(batonTexts) == 0 {
 				batonPersona, batonModel = r.PersonaID, r.Model

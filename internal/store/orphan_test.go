@@ -11,7 +11,7 @@ func TestOrphanRun_ExcludedFromProviderReplay(t *testing.T) {
 	u, _ := st.AppendUserMessage(conv.ID, "q")
 	_ = st.CreateRun(conv.ID, u.TurnID, "rOrphan", "openai", "gpt", "auto_grounded_default", "")
 	_, _ = st.AppendAssistantToolCall(conv.ID, u.TurnID, "rOrphan", "callX",
-		"search_textbook", json.RawMessage(`{"query":"x"}`))
+		"search_textbook", json.RawMessage(`{"query":"x"}`), nil)
 	events, err := st.GetProviderReplayEvents(conv.ID, "")
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +29,7 @@ func TestSweepOrphans_ReconcilesStatus(t *testing.T) {
 	u, _ := st.AppendUserMessage(conv.ID, "q")
 	_ = st.CreateRun(conv.ID, u.TurnID, "rOrphan", "openai", "gpt", "auto_grounded_default", "")
 	_, _ = st.AppendAssistantToolCall(conv.ID, u.TurnID, "rOrphan", "callX",
-		"search_textbook", json.RawMessage(`{"query":"x"}`))
+		"search_textbook", json.RawMessage(`{"query":"x"}`), nil)
 	if err := st.SweepOrphanedRuns(); err != nil {
 		t.Fatal(err)
 	}

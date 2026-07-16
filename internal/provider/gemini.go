@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -105,9 +106,21 @@ func (p *geminiProvider) Stream(ctx context.Context, req ChatRequest) (<-chan De
 						if id == "" {
 							id = geminiCallID()
 						}
+						// The thought signature lives on the enclosing Part, not on
+						// FunctionCall itself — capture it here so it can be echoed
+						// back verbatim when this call is replayed (Gemini 3 hard-400s
+						// a functionCall part in the current turn without one).
+						var metadata json.RawMessage
+						if len(part.ThoughtSignature) > 0 {
+							if b, merr := json.Marshal(map[string]string{
+								"thought_signature": base64.StdEncoding.EncodeToString(part.ThoughtSignature),
+							}); merr == nil {
+								metadata = b
+							}
+						}
 						sawToolCall = true
 						select {
-						case out <- Delta{ToolCall: &ToolCall{ID: id, Name: fc.Name, Input: input}}:
+						case out <- Delta{ToolCall: &ToolCall{ID: id, Name: fc.Name, Input: input, Metadata: metadata}}:
 						case <-ctx.Done():
 							return
 						}
@@ -179,9 +192,23 @@ func geminiContentsFromEvents(events []Event) []*genai.Content {
 			if len(e.ToolInput) > 0 {
 				_ = json.Unmarshal(e.ToolInput, &args)
 			}
-			appendPart(genai.RoleModel, &genai.Part{
-				FunctionCall: &genai.FunctionCall{Name: e.ToolName, Args: args},
-			})
+			part := &genai.Part{FunctionCall: &genai.FunctionCall{Name: e.ToolName, Args: args}}
+			// Echo the real thought signature Gemini sent with this call, when we
+			// stored one. Absent or unparseable metadata leaves the field unset —
+			// never invent a value; strict validation only applies to the calls
+			// replayed within the current turn, and those always have one after
+			// this fix.
+			if len(e.ToolMetadata) > 0 {
+				var meta struct {
+					ThoughtSignature string `json:"thought_signature"`
+				}
+				if err := json.Unmarshal(e.ToolMetadata, &meta); err == nil && meta.ThoughtSignature != "" {
+					if sig, derr := base64.StdEncoding.DecodeString(meta.ThoughtSignature); derr == nil {
+						part.ThoughtSignature = sig
+					}
+				}
+			}
+			appendPart(genai.RoleModel, part)
 		case "tool_result":
 			resp := map[string]any{"output": e.Text}
 			if e.IsError {

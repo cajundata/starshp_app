@@ -27,7 +27,7 @@ func completedTurn(t *testing.T, st *store.Store, convID, userText, personaID, m
 	if withTool {
 		callID := "call-" + runID[:8]
 		if _, err := st.AppendAssistantToolCall(convID, u.TurnID, runID, callID,
-			"safemath", json.RawMessage(`{"expression":"2+2"}`)); err != nil {
+			"safemath", json.RawMessage(`{"expression":"2+2"}`), nil); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := st.AppendToolResult(convID, u.TurnID, runID, callID,
@@ -128,6 +128,57 @@ func TestCanonicalEvents_LegacyNoPersonaRunsAreByteIdenticalToLegacy(t *testing.
 	want := marshalEvents(t, legacyCanonical(rows))
 	if got != want {
 		t.Errorf("legacy no-persona payload diverged:\n got %s\nwant %s", got, want)
+	}
+}
+
+// TestCanonicalEvents_ToolMetadataSurvivesForSamePersona is the chat-level
+// half of the Gemini thought_signature invariant: a stored tool_metadata
+// value on an assistant_tool_call row must reach the provider Event for the
+// current turn's own-persona replay (Task 1's copy in canonicalEvents).
+func TestCanonicalEvents_ToolMetadataSurvivesForSamePersona(t *testing.T) {
+	st := openStore(t)
+	conv, err := st.CreateConversation("meta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := st.AppendUserMessage(conv.ID, "add 2+2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := uuid.NewString()
+	if err := st.CreateRun(conv.ID, u.TurnID, runID, "gemini", "gemini-3-pro", "auto_grounded_default", "scout"); err != nil {
+		t.Fatal(err)
+	}
+	meta := json.RawMessage(`{"thought_signature":"c2lnLWJ5dGVzLTE="}`)
+	if _, err := st.AppendAssistantToolCall(conv.ID, u.TurnID, runID, "call_1",
+		"safe_math", json.RawMessage(`{"expr":"2+2"}`), meta); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AppendToolResult(conv.ID, u.TurnID, runID, "call_1",
+		"safe_math", "4", nil, false, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CompleteRun(runID, store.RunTotals{}, "end_turn"); err != nil {
+		t.Fatal(err)
+	}
+	turnID, curRunID := currentTurn(t, st, conv.ID, "and 3+3?", "scout", "gemini-3-pro")
+
+	rows, err := st.GetProviderReplayEvents(conv.ID, curRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := canonicalEvents(rows, turnID, "scout", nil)
+	found := false
+	for _, e := range got {
+		if e.Kind == store.EventKindAssistantToolCall && e.ToolCallID == "call_1" {
+			found = true
+			if string(e.ToolMetadata) != string(meta) {
+				t.Fatalf("ToolMetadata = %s, want %s", e.ToolMetadata, meta)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("assistant_tool_call event not found in canonicalEvents output")
 	}
 }
 
