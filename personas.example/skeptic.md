@@ -1,6 +1,6 @@
 ---
 name: Skeptic
-model: gpt-5.4-2026-03-05
+model: gpt-5.6-sol
 color: "#ff7b72"
 tools: [safe_math]
 ---

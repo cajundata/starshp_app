@@ -29,6 +29,14 @@
 #                 documents the model's real capability ahead of image-input
 #                 personas.
 models:
+  - display: Claude Fable 5
+    id: claude-fable-5
+    provider: anthropic
+    max_context: 1000000
+  - display: Claude Opus 4.8
+    id: claude-opus-4-8
+    provider: anthropic
+    max_context: 1000000
   - display: Claude Opus 4.7
     id: claude-opus-4-7
     provider: anthropic
@@ -41,6 +49,13 @@ models:
     id: claude-haiku-4-5-20251001
     provider: anthropic
     max_context: 200000
+  - display: GPT-5.6 Sol
+    id: gpt-5.6-sol
+    provider: openai
+    max_context: 400000
+    # GPT-5.6 Sol rejects function tools when reasoning is active on
+    # /v1/chat/completions — "none" keeps tool-carrying personas working.
+    reasoning_effort: none
   - display: GPT-5.4
     id: gpt-5.4-2026-03-05
     provider: openai
@@ -58,6 +73,10 @@ models:
     id: gemini-3-flash
     provider: gemini
     max_context: 1000000
+  - display: Gemini 3.1 Flash Lite
+    id: gemini-3.1-flash-lite
+    provider: gemini
+    max_context: 1048576
 
   # ---------------------------------------------------------------------------
   # Local model via Ollama (https://ollama.com).
