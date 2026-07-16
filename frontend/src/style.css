@@ -187,4 +187,20 @@ body { font-family: system-ui, sans-serif; }
 .msg.ctx-excluded .msg-text, .msg.ctx-excluded .tool-call, .msg.ctx-excluded .grounding-header { opacity: .45; }
 /* Pinned: a small glyph beside the model chip on the turn's assistant row. */
 .pin-glyph { display: inline-flex; align-items: center; color: #d7a64a; }
+
+.msg-image { margin: 6px 0; }
+.msg-image img {
+  max-width: min(480px, 100%);
+  border-radius: 8px;
+  display: block;
+}
+.msg-image.unavailable {
+  color: #8a8a90;
+  font-style: italic;
+  font-size: 12px;
+  padding: 10px 12px;
+  border: 1px dashed #8a8a90;
+  border-radius: 8px;
+  width: fit-content;
+}
 .pin-glyph svg { display: block; }

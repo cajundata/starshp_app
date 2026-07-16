@@ -263,6 +263,27 @@ function appendRunText(runId: string, text: string) {
   thread.scrollTop = thread.scrollHeight
 }
 
+// appendRunImage adds a generated-image segment to the run bubble, parallel
+// to appendRunText. A missing file (the operator deleted the PNG from the
+// app dir) swaps in a placeholder via onerror — identical for live + replay.
+function appendRunImage(runId: string, hash: string) {
+  if (!hash) return
+  const b = ensureRunBubble(runId)
+  b.curText = null // text after an image starts a new segment
+  const wrap = document.createElement('div')
+  wrap.className = 'msg-image'
+  const img = document.createElement('img')
+  img.src = `/appimages/${hash}.png`
+  img.alt = 'Generated image'
+  img.onerror = () => {
+    wrap.classList.add('unavailable')
+    wrap.textContent = 'image unavailable'
+  }
+  wrap.appendChild(img)
+  b.el.appendChild(wrap)
+  thread.scrollTop = thread.scrollHeight
+}
+
 function addRunToolCall(runId: string, toolCallId: string, name: string, input: any) {
   const b = ensureRunBubble(runId)
   b.curText = null // text after a tool block starts a new segment
@@ -446,6 +467,8 @@ async function openConversation(id: string) {
     registerTurnEl(ev.turnId, runBubbles.get(ev.runId)!.el)
     if (ev.kind === 'assistant_text') {
       appendRunText(ev.runId, ev.text || '')
+    } else if (ev.kind === 'assistant_image') {
+      appendRunImage(ev.runId, (ev as any).imageHash || '')
     } else if (ev.kind === 'assistant_tool_call') {
       addRunToolCall(ev.runId, ev.toolCallId || '', ev.toolName || '', (ev as any).toolInput)
     } else if (ev.kind === 'tool_result') {
@@ -594,6 +617,11 @@ EventsOn('chat:grounding_ready', (p: any) => {
 EventsOn('chat:token_v2', (p: any) => {
   if (p.convID !== activeConv) return
   appendRunText(p.runID, p.text)
+})
+
+EventsOn('chat:image', (p: any) => {
+  if (p.convID !== activeConv) return
+  appendRunImage(p.runID, p.hash || '')
 })
 
 EventsOn('chat:tool_call', (p: any) => {

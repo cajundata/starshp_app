@@ -13,6 +13,7 @@ export namespace appapi {
 	    toolInput?: number[];
 	    toolMetadata?: number[];
 	    toolLatencyMs?: number;
+	    imageHash?: string;
 	    isError?: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -33,6 +34,7 @@ export namespace appapi {
 	        this.toolInput = source["toolInput"];
 	        this.toolMetadata = source["toolMetadata"];
 	        this.toolLatencyMs = source["toolLatencyMs"];
+	        this.imageHash = source["imageHash"];
 	        this.isError = source["isError"];
 	    }
 	}
