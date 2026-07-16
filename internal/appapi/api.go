@@ -290,20 +290,26 @@ func (a *API) SendMessage(convID, userText, personaID string) error {
 		a.mu.Unlock()
 	}()
 
+	var reasoningEffort string
+	if m, found := a.reg.ByID(p.Model); found {
+		reasoningEffort = m.ReasoningEffort
+	}
+
 	_, err = a.chatSvc.Send(cctx, chat.SendParams{
-		ConversationID: convID,
-		UserText:       userText,
-		SystemPrompt:   systemPrompt,
-		Model:          p.Model,
-		PersonaID:      p.ID,
-		Namer:          a.personas,
-		Provider:       prov,
-		ProviderName:   providerNameFromModelID(a.reg, p.Model),
-		Registry:       a.toolReg.Subset(p.Tools),
-		Resolver:       chatStoreResolver{st: a.st},
-		Retriever:      retr,
-		RetrievalMode:  a.retrievalMode(convID),
-		Sink:           wailsSink{a: a},
+		ConversationID:  convID,
+		UserText:        userText,
+		SystemPrompt:    systemPrompt,
+		Model:           p.Model,
+		PersonaID:       p.ID,
+		Namer:           a.personas,
+		Provider:        prov,
+		ProviderName:    providerNameFromModelID(a.reg, p.Model),
+		ReasoningEffort: reasoningEffort,
+		Registry:        a.toolReg.Subset(p.Tools),
+		Resolver:        chatStoreResolver{st: a.st},
+		Retriever:       retr,
+		RetrievalMode:   a.retrievalMode(convID),
+		Sink:            wailsSink{a: a},
 		// Upgrade a local (openai_compat) network failure to local_unreachable in
 		// the run-errored event, where agentic errors are surfaced (the agentic
 		// Send returns nil and reports errors via the sink, not the return value).

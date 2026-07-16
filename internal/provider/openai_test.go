@@ -245,6 +245,65 @@ func TestOpenAI_OutOfOrderToolResultStaysAdjacent(t *testing.T) {
 	}
 }
 
+func TestOpenAI_SetsReasoningEffortWhenPresent(t *testing.T) {
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		capturedBody = string(b)
+		w.Header().Set("Content-Type", "text/event-stream")
+		flush := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"index\":0}]}\n\n")
+		flush.Flush()
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		flush.Flush()
+	}))
+	defer srv.Close()
+
+	p := NewOpenAI("openai-key", srv.URL)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model:           "gpt-5.6-sol",
+		Messages:        []Message{{Role: "user", Content: "hi"}},
+		ReasoningEffort: "none",
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	for range ch { //nolint:revive // drain
+	}
+	if !strings.Contains(capturedBody, `"reasoning_effort":"none"`) {
+		t.Fatalf("request body missing reasoning_effort: %s", capturedBody)
+	}
+}
+
+func TestOpenAI_OmitsReasoningEffortWhenAbsent(t *testing.T) {
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		capturedBody = string(b)
+		w.Header().Set("Content-Type", "text/event-stream")
+		flush := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"index\":0}]}\n\n")
+		flush.Flush()
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		flush.Flush()
+	}))
+	defer srv.Close()
+
+	p := NewOpenAI("openai-key", srv.URL)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model:    "gpt-5.4-2026-03-05",
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	for range ch { //nolint:revive // drain
+	}
+	if strings.Contains(capturedBody, "reasoning_effort") {
+		t.Fatalf("request body should omit reasoning_effort when unset: %s", capturedBody)
+	}
+}
+
 func TestOpenAI_StreamSurfacesToolCallsAndStopReason(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

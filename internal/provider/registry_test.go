@@ -203,3 +203,73 @@ func TestLoadRegistryRejectsAPIKeyEnvOnGemini(t *testing.T) {
 		t.Fatal("LoadRegistry accepted api_key_env on a gemini model; want error")
 	}
 }
+
+func TestLoadRegistryAcceptsReasoningEffortOnOpenAI(t *testing.T) {
+	p := writeRegistry(t, `models:
+  - display: GPT-5.6 Sol
+    id: gpt-5.6-sol
+    provider: openai
+    reasoning_effort: none
+`)
+	r, err := LoadRegistry(p)
+	if err != nil {
+		t.Fatalf("LoadRegistry: %v", err)
+	}
+	m, ok := r.ByID("gpt-5.6-sol")
+	if !ok || m.ReasoningEffort != "none" {
+		t.Fatalf("ByID = %+v, %v; want ReasoningEffort=none", m, ok)
+	}
+}
+
+func TestLoadRegistryAcceptsReasoningEffortOnOpenAICompat(t *testing.T) {
+	p := writeRegistry(t, `models:
+  - display: LM Studio Local
+    id: local-model
+    provider: openai_compat
+    base_url: http://localhost:1234/v1
+    reasoning_effort: low
+`)
+	r, err := LoadRegistry(p)
+	if err != nil {
+		t.Fatalf("LoadRegistry: %v", err)
+	}
+	m, ok := r.ByID("local-model")
+	if !ok || m.ReasoningEffort != "low" {
+		t.Fatalf("ByID = %+v, %v; want ReasoningEffort=low", m, ok)
+	}
+}
+
+func TestLoadRegistryRejectsReasoningEffortOnGemini(t *testing.T) {
+	p := writeRegistry(t, `models:
+  - display: Gemini 3 Pro
+    id: gemini-3-pro
+    provider: gemini
+    reasoning_effort: none
+`)
+	_, err := LoadRegistry(p)
+	if err == nil {
+		t.Fatal("LoadRegistry accepted reasoning_effort on a gemini model; want error")
+	}
+	if !strings.Contains(err.Error(), "reasoning_effort") {
+		t.Errorf("error %q does not mention reasoning_effort", err)
+	}
+	if !strings.Contains(err.Error(), "gemini-3-pro") {
+		t.Errorf("error %q does not mention the offending model id", err)
+	}
+}
+
+func TestLoadRegistryRejectsReasoningEffortOnAnthropic(t *testing.T) {
+	p := writeRegistry(t, `models:
+  - display: Claude Opus 4.7
+    id: claude-opus-4-7
+    provider: anthropic
+    reasoning_effort: none
+`)
+	_, err := LoadRegistry(p)
+	if err == nil {
+		t.Fatal("LoadRegistry accepted reasoning_effort on an anthropic model; want error")
+	}
+	if !strings.Contains(err.Error(), "reasoning_effort") {
+		t.Errorf("error %q does not mention reasoning_effort", err)
+	}
+}

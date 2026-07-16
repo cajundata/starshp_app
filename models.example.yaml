@@ -14,6 +14,9 @@
 #   max_context — (optional) context-window size in tokens; supplies the
 #                 denominator in the conversation footer HUD. Omit to display
 #                 absolute tokens with no denominator.
+#   reasoning_effort — (optional, openai/openai_compat only) forwarded
+#                 verbatim; set "none" for models that reject function tools
+#                 with reasoning on /v1/chat/completions (e.g. GPT-5.6 Sol)
 models:
   - display: Claude Opus 4.7
     id: claude-opus-4-7

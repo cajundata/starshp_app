@@ -61,6 +61,9 @@ func (p *openAIProvider) Stream(ctx context.Context, req ChatRequest) (<-chan De
 	if tools := openaiToolsFromDefs(req.Tools); len(tools) > 0 {
 		params.Tools = tools
 	}
+	if req.ReasoningEffort != "" {
+		params.ReasoningEffort = shared.ReasoningEffort(req.ReasoningEffort)
+	}
 	stream := p.client.Chat.Completions.NewStreaming(ctx, params)
 	out := make(chan Delta)
 	go func() {

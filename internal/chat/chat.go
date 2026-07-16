@@ -80,11 +80,14 @@ type SendParams struct {
 	Namer          PersonaNamer // resolves persona IDs for handoff attribution; nil → literal IDs
 	Provider       provider.ChatProvider
 	ProviderName   string // "openai" | "anthropic" — recorded on runs
-	Registry       *tools.Registry
-	Resolver       ScopeResolver
-	Retriever      Retriever // may be nil
-	RetrievalMode  RetrievalMode
-	Sink           EventSink
+	// ReasoningEffort is forwarded to provider.ChatRequest verbatim (openai/
+	// openai_compat only); "" means the provider default applies.
+	ReasoningEffort string
+	Registry        *tools.Registry
+	Resolver        ScopeResolver
+	Retriever       Retriever // may be nil
+	RetrievalMode   RetrievalMode
+	Sink            EventSink
 	// RemapErr, when set, post-processes a provider error's normalized AppError
 	// before it is recorded/emitted (e.g. to upgrade a generic network failure of
 	// a local openai_compat model into a friendlier local_unreachable message).
@@ -231,11 +234,12 @@ func (s *Service) runLoop(ctx context.Context, p SendParams, runID, turnID, grou
 				"store_error", err.Error()), provider.NormalizeError(err)
 		}
 		req := provider.ChatRequest{
-			Model:     p.Model,
-			System:    p.SystemPrompt,
-			Grounding: grounding,
-			Tools:     catalog,
-			Events:    canonicalEvents(events, turnID, p.PersonaID, p.Namer),
+			Model:           p.Model,
+			System:          p.SystemPrompt,
+			Grounding:       grounding,
+			Tools:           catalog,
+			Events:          canonicalEvents(events, turnID, p.PersonaID, p.Namer),
+			ReasoningEffort: p.ReasoningEffort,
 		}
 		ch, err := p.Provider.Stream(ctx, req)
 		if err != nil {
@@ -346,11 +350,12 @@ func (s *Service) finalizeWithoutTools(ctx context.Context, p SendParams, runID,
 		"You have reached the tool-use limit for this turn. Do not request any more tools. " +
 		"Give your best, complete final answer now using the information already gathered.")
 	req := provider.ChatRequest{
-		Model:     p.Model,
-		System:    system,
-		Grounding: grounding,
-		Tools:     nil, // withheld: force a tool-free answer
-		Events:    canonicalEvents(events, turnID, p.PersonaID, p.Namer),
+		Model:           p.Model,
+		System:          system,
+		Grounding:       grounding,
+		Tools:           nil, // withheld: force a tool-free answer
+		Events:          canonicalEvents(events, turnID, p.PersonaID, p.Namer),
+		ReasoningEffort: p.ReasoningEffort,
 	}
 	ch, err := p.Provider.Stream(ctx, req)
 	if err != nil {

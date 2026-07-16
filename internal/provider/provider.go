@@ -52,6 +52,9 @@ type ChatRequest struct {
 	Events       []Event   // canonical timeline; preferred when non-empty
 	CachedPrefix string    // LEGACY: system prompt + textbook context
 	Messages     []Message // LEGACY: text-only message history
+	// ReasoningEffort is forwarded verbatim by the openai adapter when
+	// non-empty (ModelInfo.ReasoningEffort); ignored by other providers.
+	ReasoningEffort string
 }
 
 // Usage carries token counts surfaced by a provider at end-of-stream.
