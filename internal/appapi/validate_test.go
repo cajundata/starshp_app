@@ -121,3 +121,31 @@ func TestValidateStartupStillReportsMissingModelsYAML(t *testing.T) {
 		t.Errorf("expected missing-models.yaml warning; got %v", issues)
 	}
 }
+
+func TestValidateStartupRequiresGeminiKeyWhenGeminiModelRegistered(t *testing.T) {
+	c, _ := goodConfig(t)
+	reg := provider.Registry{Models: []provider.ModelInfo{
+		{ID: "gemini-3-pro", Provider: "gemini"},
+	}}
+	issues := ValidateStartup(c, reg)
+	if !hasIssueMentioning(issues, "GEMINI_API_KEY") {
+		t.Fatalf("issues = %v, want GEMINI_API_KEY complaint", issues)
+	}
+	c.GeminiAPIKey = "k"
+	issues = ValidateStartup(c, reg)
+	if hasIssueMentioning(issues, "GEMINI_API_KEY") {
+		t.Fatalf("issues = %v, key is set — no complaint expected", issues)
+	}
+}
+
+func TestValidateStartupSkipsGeminiKeyWithoutGeminiModels(t *testing.T) {
+	c, _ := goodConfig(t)
+	reg := provider.Registry{Models: []provider.ModelInfo{
+		{ID: "claude-opus-4-7", Provider: "anthropic"},
+	}}
+	c.AnthropicAPIKey = "k"
+	issues := ValidateStartup(c, reg)
+	if hasIssueMentioning(issues, "GEMINI_API_KEY") {
+		t.Fatalf("issues = %v, no gemini model — no complaint expected", issues)
+	}
+}

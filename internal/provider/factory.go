@@ -38,6 +38,11 @@ func New(reg Registry, modelID string, keys Keys) (ChatProvider, error) {
 			return nil, fmt.Errorf("model %s: base_url required for openai_compat", m.ID)
 		}
 		return NewOpenAI(resolveCompatKey(m), m.BaseURL), nil
+	case "gemini":
+		if keys.Gemini == "" {
+			return nil, AppError{"auth", "Gemini API key not set.", false}
+		}
+		return NewGemini(keys.Gemini, ""), nil
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", m.Provider)
 	}

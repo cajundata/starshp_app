@@ -125,3 +125,23 @@ func TestFactoryOpenAICompatFallsBackWhenEnvUnset(t *testing.T) {
 		t.Errorf("Authorization = %q, want fallback \"Bearer local\"", gotAuth)
 	}
 }
+
+func TestNewGeminiFromRegistry(t *testing.T) {
+	reg := Registry{Models: []ModelInfo{{ID: "gemini-3-pro", Provider: "gemini"}}}
+	p, err := New(reg, "gemini-3-pro", Keys{Gemini: "k"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if p == nil {
+		t.Fatal("New returned nil provider")
+	}
+}
+
+func TestNewGeminiRequiresKey(t *testing.T) {
+	reg := Registry{Models: []ModelInfo{{ID: "gemini-3-pro", Provider: "gemini"}}}
+	_, err := New(reg, "gemini-3-pro", Keys{})
+	ae, ok := err.(AppError)
+	if !ok || ae.Code != "auth" {
+		t.Fatalf("err = %v, want AppError{auth}", err)
+	}
+}

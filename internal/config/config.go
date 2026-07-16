@@ -13,6 +13,7 @@ import (
 type Config struct {
 	OpenAIAPIKey       string
 	AnthropicAPIKey    string
+	GeminiAPIKey       string
 	EmbeddingModel     string
 	AppDBPath          string
 	RAGDBPath          string
@@ -57,6 +58,7 @@ func Load(envPath string) (Config, error) {
 	c := Config{
 		OpenAIAPIKey:       strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
 		AnthropicAPIKey:    strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")),
+		GeminiAPIKey:       strings.TrimSpace(os.Getenv("GEMINI_API_KEY")),
 		EmbeddingModel:     envOr("EMBEDDING_MODEL", "text-embedding-3-small"),
 		AppDBPath:          os.Getenv("APP_DB_PATH"),
 		RAGDBPath:          os.Getenv("RAG_DB_PATH"),

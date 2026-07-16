@@ -22,6 +22,9 @@ func ValidateStartup(c config.Config, reg provider.Registry) []string {
 	if needsAnthropicKey(reg) && c.AnthropicAPIKey == "" {
 		issues = append(issues, "ANTHROPIC_API_KEY is not set (required for the registered Anthropic model).")
 	}
+	if needsGeminiKey(reg) && c.GeminiAPIKey == "" {
+		issues = append(issues, "GEMINI_API_KEY is not set (required for the registered Gemini model).")
+	}
 
 	if _, err := os.Stat(c.ModelsConfig); err != nil {
 		issues = append(issues, "models.yaml not found at "+c.ModelsConfig+".")
@@ -69,6 +72,15 @@ func needsOpenAIKey(c config.Config, reg provider.Registry) bool {
 func needsAnthropicKey(reg provider.Registry) bool {
 	for _, m := range reg.Models {
 		if m.Provider == "anthropic" {
+			return true
+		}
+	}
+	return false
+}
+
+func needsGeminiKey(reg provider.Registry) bool {
+	for _, m := range reg.Models {
+		if m.Provider == "gemini" {
 			return true
 		}
 	}

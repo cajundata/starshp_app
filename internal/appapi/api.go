@@ -249,6 +249,7 @@ func (a *API) SendMessage(convID, userText, personaID string) error {
 	prov, err := provider.New(a.reg, p.Model, provider.Keys{
 		OpenAI:    a.cfg.OpenAIAPIKey,
 		Anthropic: a.cfg.AnthropicAPIKey,
+		Gemini:    a.cfg.GeminiAPIKey,
 	})
 	if err != nil {
 		return provider.NormalizeError(err)
