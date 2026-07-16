@@ -141,7 +141,8 @@ func (s *Store) eventsForRunsPlusUserMessages(convID string, runIDs []string, cu
                 COALESCE(e.tool_call_id,''), COALESCE(e.tool_name,''),
                 COALESCE(e.tool_input,''), COALESCE(e.tool_metadata,''),
                 COALESCE(e.tool_result_hash,''),
-                COALESCE(e.tool_latency_ms,0), e.is_error, e.created_at,
+                COALESCE(e.tool_latency_ms,0), COALESCE(e.image_hash,''),
+                e.is_error, e.created_at,
                 COALESCE(r.persona_id,''), COALESCE(r.model,''),
                 COALESCE(o.state,'')
            FROM conversation_events e
@@ -162,7 +163,7 @@ func (s *Store) eventsForRunsPlusUserMessages(convID string, runIDs []string, cu
 			&ev.ID, &ev.ConversationID, &ev.TurnID, &ev.RunID,
 			&ev.SequenceIndex, &ev.Kind, &ev.Text,
 			&ev.ToolCallID, &ev.ToolName, &input, &meta,
-			&ev.ToolResultHash, &ev.ToolLatencyMs, &isErrInt, &ev.CreatedAt,
+			&ev.ToolResultHash, &ev.ToolLatencyMs, &ev.ImageHash, &isErrInt, &ev.CreatedAt,
 			&ev.PersonaID, &ev.Model, &ev.ContextOverride,
 		); err != nil {
 			return nil, err

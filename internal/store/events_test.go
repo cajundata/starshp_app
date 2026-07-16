@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -153,5 +154,47 @@ func TestAppendToolResult_PersistsMetadataAndHash(t *testing.T) {
 	}
 	if string(ev.ToolMetadata) != string(meta) {
 		t.Fatalf("metadata mismatch: %s", ev.ToolMetadata)
+	}
+}
+
+func TestAppendAssistantImageAndReplay(t *testing.T) {
+	s := openTestStore(t) // match the existing test helper name in this file
+	conv, err := s.CreateConversation("c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := s.AppendUserMessage(conv.ID, "draw a cat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := "run-img-1"
+	if err := s.CreateRun(conv.ID, u.TurnID, runID, "gemini", "gemini-3-pro-image", "auto_grounded_default", "artist"); err != nil {
+		t.Fatal(err)
+	}
+	hash := strings.Repeat("ab", 32) // 64 hex chars
+	ev, err := s.AppendAssistantImage(conv.ID, u.TurnID, runID, hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ev.Kind != EventKindAssistantImage || ev.ImageHash != hash {
+		t.Fatalf("event = %+v", ev)
+	}
+	if err := s.CompleteRun(runID, RunTotals{}, "end_turn"); err != nil {
+		t.Fatal(err)
+	}
+
+	disp, err := s.GetConversationDisplayEvents(conv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(disp) != 2 || disp[1].Kind != EventKindAssistantImage || disp[1].ImageHash != hash {
+		t.Fatalf("display events = %+v", disp)
+	}
+	prov, err := s.GetProviderReplayEvents(conv.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prov) != 2 || prov[1].Kind != EventKindAssistantImage || prov[1].ImageHash != hash {
+		t.Fatalf("provider events = %+v", prov)
 	}
 }

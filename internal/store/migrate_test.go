@@ -2,7 +2,9 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -330,5 +332,81 @@ INSERT INTO conversations(id,title,created_at,updated_at) VALUES('c1','old',1,1)
 	}
 	if len(convs) != 1 || convs[0].ID != "c1" {
 		t.Errorf("ListConversations = %+v, want the legacy row", convs)
+	}
+}
+
+// TestMigrateAddsImageHashToLegacyEventsTable simulates a database created
+// before Spec B: conversation_events exists with the four-kind CHECK and no
+// image_hash column. Open must rebuild the table, preserve rows, and accept
+// the new kind afterward.
+func TestMigrateAddsImageHashToLegacyEventsTable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(wal)&_pragma=foreign_keys(on)", path)
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := `
+CREATE TABLE conversations (
+  id TEXT PRIMARY KEY, title TEXT NOT NULL,
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  pinned_model TEXT, pinned_persona TEXT,
+  retrieval_mode TEXT NOT NULL DEFAULT 'auto_grounded_default'
+);
+CREATE TABLE conversation_events (
+  id              TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  turn_id         TEXT NOT NULL,
+  run_id          TEXT,
+  sequence_index  INTEGER NOT NULL,
+  kind            TEXT NOT NULL CHECK (kind IN (
+                      'user_message','assistant_text',
+                      'assistant_tool_call','tool_result')),
+  text            TEXT,
+  tool_call_id    TEXT,
+  tool_name       TEXT,
+  tool_input      TEXT,
+  tool_metadata   TEXT,
+  tool_result_hash TEXT,
+  tool_latency_ms INTEGER,
+  is_error        INTEGER NOT NULL DEFAULT 0,
+  created_at      INTEGER NOT NULL
+);`
+	if _, err := db.Exec(legacy); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO conversations (id, title, created_at, updated_at) VALUES ('c1','t',1,1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO conversation_events (id, conversation_id, turn_id, sequence_index, kind, text, created_at)
+		 VALUES ('e1','c1','e1',0,'user_message','hello',1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open on legacy db: %v", err)
+	}
+	defer s.Close()
+
+	// The legacy row survived.
+	evs, err := s.GetConversationDisplayEvents("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 1 || evs[0].Text != "hello" {
+		t.Fatalf("legacy rows lost: %+v", evs)
+	}
+	// The new kind is accepted (the old CHECK would reject it).
+	if err := s.CreateRun("c1", "e1", "r1", "gemini", "m", "auto_grounded_default", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AppendAssistantImage("c1", "e1", "r1", strings.Repeat("ab", 32)); err != nil {
+		t.Fatalf("AppendAssistantImage on migrated db: %v", err)
 	}
 }

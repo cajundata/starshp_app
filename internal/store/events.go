@@ -15,6 +15,7 @@ const (
 	EventKindAssistantText     = "assistant_text"
 	EventKindAssistantToolCall = "assistant_tool_call"
 	EventKindToolResult        = "tool_result"
+	EventKindAssistantImage    = "assistant_image"
 )
 
 type ConversationEvent struct {
@@ -34,6 +35,7 @@ type ConversationEvent struct {
 	ToolMetadata    json.RawMessage `json:"toolMetadata,omitempty"`
 	ToolResultHash  string          `json:"toolResultHash,omitempty"`
 	ToolLatencyMs   int64           `json:"toolLatencyMs,omitempty"`
+	ImageHash       string          `json:"imageHash,omitempty"`
 	IsError         bool            `json:"isError,omitempty"`
 	CreatedAt       int64           `json:"createdAt"`
 }
@@ -159,5 +161,29 @@ func (s *Store) AppendToolResult(
 	if err != nil {
 		return ConversationEvent{}, fmt.Errorf("append tool_result: %w", err)
 	}
+	return ev, err
+}
+
+// AppendAssistantImage persists one generated image the model emitted, by
+// content hash. The bytes live in the imagestore (<app-dir>/images/); the
+// event log carries only the reference, so a deleted file degrades to a
+// placeholder rather than corrupting replay.
+func (s *Store) AppendAssistantImage(convID, turnID, runID, imageHash string) (ConversationEvent, error) {
+	id := uuid.NewString()
+	seq, err := nextSequenceIndex(s, convID)
+	if err != nil {
+		return ConversationEvent{}, err
+	}
+	ev := ConversationEvent{
+		ID: id, ConversationID: convID, TurnID: turnID, RunID: runID,
+		SequenceIndex: seq, Kind: EventKindAssistantImage, ImageHash: imageHash,
+		CreatedAt: time.Now().UnixMilli(),
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO conversation_events
+            (id, conversation_id, turn_id, run_id, sequence_index, kind,
+             image_hash, is_error, created_at)
+         VALUES (?,?,?,?,?,?,?,0,?)`,
+		ev.ID, convID, turnID, runID, ev.SequenceIndex, ev.Kind, imageHash, ev.CreatedAt)
 	return ev, err
 }

@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS conversation_events (
   sequence_index  INTEGER NOT NULL,
   kind            TEXT NOT NULL CHECK (kind IN (
                       'user_message','assistant_text',
-                      'assistant_tool_call','tool_result')),
+                      'assistant_tool_call','tool_result',
+                      'assistant_image')),
   text            TEXT,
   tool_call_id    TEXT,
   tool_name       TEXT,
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS conversation_events (
   tool_metadata   TEXT,
   tool_result_hash TEXT,
   tool_latency_ms INTEGER,
+  image_hash      TEXT,
   is_error        INTEGER NOT NULL DEFAULT 0,
   created_at      INTEGER NOT NULL
 );
