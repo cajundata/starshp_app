@@ -19,13 +19,15 @@ type Message struct {
 // loop. Adapters translate a slice of Events into provider-specific wire
 // format (role-based for OpenAI, content-block for Anthropic).
 type Event struct {
-	Kind         string          // user_message | assistant_text | assistant_tool_call | tool_result
+	Kind         string          // user_message | assistant_text | assistant_tool_call | tool_result | assistant_image
 	Text         string          // user_message, assistant_text, tool_result.output
 	ToolCallID   string          // assistant_tool_call, tool_result
 	ToolName     string          // assistant_tool_call, tool_result
 	ToolInput    json.RawMessage // assistant_tool_call: provider input JSON
 	ToolMetadata json.RawMessage // assistant_tool_call rows: replayed tool metadata
 	IsError      bool            // tool_result
+	ImageHash    string          // assistant_image: content hash of the stored PNG
+	ImageData    []byte          // assistant_image: bytes inflated by the chat engine for provider replay; transient, never persisted
 }
 
 // ToolDef is the provider-facing description of a registered tool.
@@ -75,6 +77,13 @@ type ToolCall struct {
 	Metadata json.RawMessage // provider-specific opaque payload persisted to the event log and replayed to the same provider; gemini stores its thought signature here
 }
 
+// ImageBlob is one generated image emitted mid-stream by an image-capable
+// provider. Data is the raw (already base64-decoded) file bytes.
+type ImageBlob struct {
+	MIME string
+	Data []byte
+}
+
 // Delta is one frame of a streaming response.
 //
 // StopReason is populated only on the terminal Done frame:
@@ -83,6 +92,7 @@ type ToolCall struct {
 type Delta struct {
 	Text       string
 	ToolCall   *ToolCall
+	Image      *ImageBlob
 	StopReason string
 	Done       bool
 	Err        error

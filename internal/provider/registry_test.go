@@ -338,3 +338,15 @@ func TestLoadRegistryRejectsUnsupportedModality(t *testing.T) {
 		t.Errorf("error %q does not mention the offending model id", err)
 	}
 }
+
+func TestOutputsImage(t *testing.T) {
+	if (ModelInfo{OutputModalities: []string{"text"}}).OutputsImage() {
+		t.Fatal("text-only model reports image output")
+	}
+	if !(ModelInfo{OutputModalities: []string{"text", "image"}}).OutputsImage() {
+		t.Fatal("text+image model does not report image output")
+	}
+	if (ModelInfo{}).OutputsImage() {
+		t.Fatal("empty modalities must not report image output")
+	}
+}

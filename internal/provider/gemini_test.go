@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -120,7 +121,7 @@ func TestGeminiStreamText(t *testing.T) {
 	}, &body)
 	defer srv.Close()
 
-	p := NewGemini("test-key", srv.URL)
+	p := NewGemini("test-key", srv.URL, false)
 	ch, err := p.Stream(context.Background(), ChatRequest{
 		Model:  "gemini-3-pro",
 		System: "You are helpful.",
@@ -167,7 +168,7 @@ func TestGeminiStreamGroundingConcatenatedIntoSystem(t *testing.T) {
 	}, &body)
 	defer srv.Close()
 
-	p := NewGemini("test-key", srv.URL)
+	p := NewGemini("test-key", srv.URL, false)
 	ch, err := p.Stream(context.Background(), ChatRequest{
 		Model:     "gemini-3-pro",
 		System:    "SYS.",
@@ -191,7 +192,7 @@ func TestGeminiStreamMaxTokensStopReason(t *testing.T) {
 	}, nil)
 	defer srv.Close()
 
-	p := NewGemini("test-key", srv.URL)
+	p := NewGemini("test-key", srv.URL, false)
 	ch, err := p.Stream(context.Background(), ChatRequest{
 		Model:  "gemini-3-pro",
 		Events: []Event{{Kind: "user_message", Text: "hi"}},
@@ -217,7 +218,7 @@ func TestGeminiStreamLegacyMessagesFallback(t *testing.T) {
 	}, &body)
 	defer srv.Close()
 
-	p := NewGemini("test-key", srv.URL)
+	p := NewGemini("test-key", srv.URL, false)
 	ch, err := p.Stream(context.Background(), ChatRequest{
 		Model:        "gemini-3-pro",
 		CachedPrefix: "You are helpful.",
@@ -240,7 +241,7 @@ func TestGeminiStreamToolCall(t *testing.T) {
 	}, nil)
 	defer srv.Close()
 
-	p := NewGemini("test-key", srv.URL)
+	p := NewGemini("test-key", srv.URL, false)
 	ch, err := p.Stream(context.Background(), ChatRequest{
 		Model:  "gemini-3-pro",
 		Tools:  []ToolDef{{Name: "safe_math", Description: "evaluate", InputSchema: json.RawMessage(`{"type":"object"}`)}},
@@ -298,7 +299,7 @@ func TestGeminiContentsThoughtSignatureRoundTrip(t *testing.T) {
 	}, &body)
 	defer srv.Close()
 
-	p := NewGemini("test-key", srv.URL)
+	p := NewGemini("test-key", srv.URL, false)
 	ch, err := p.Stream(context.Background(), ChatRequest{
 		Model: "gemini-3-pro",
 		Events: []Event{
@@ -327,7 +328,7 @@ func TestGeminiContentsNoSignatureOmitsField(t *testing.T) {
 	}, &body)
 	defer srv.Close()
 
-	p := NewGemini("test-key", srv.URL)
+	p := NewGemini("test-key", srv.URL, false)
 	ch, err := p.Stream(context.Background(), ChatRequest{
 		Model: "gemini-3-pro",
 		Events: []Event{
@@ -357,7 +358,7 @@ func TestGeminiStreamToolResultRoundTrip(t *testing.T) {
 	}, &body)
 	defer srv.Close()
 
-	p := NewGemini("test-key", srv.URL)
+	p := NewGemini("test-key", srv.URL, false)
 	ch, err := p.Stream(context.Background(), ChatRequest{
 		Model: "gemini-3-pro",
 		Events: []Event{
@@ -393,7 +394,7 @@ func TestGeminiStreamCancellation(t *testing.T) {
 	defer close(release)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	p := NewGemini("test-key", srv.URL)
+	p := NewGemini("test-key", srv.URL, false)
 	ch, err := p.Stream(ctx, ChatRequest{
 		Model:  "gemini-3-pro",
 		Events: []Event{{Kind: "user_message", Text: "hi"}},
@@ -418,5 +419,143 @@ func TestGeminiStreamCancellation(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("stream did not terminate after cancel")
+	}
+}
+
+func TestGeminiStreamImageDelta(t *testing.T) {
+	// "aGVsbG8=" is base64 for "hello" — stands in for PNG bytes.
+	srv := newGeminiFake(t, []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"Here you go:"}]}}]}`,
+		`{"candidates":[{"content":{"role":"model","parts":[{"inlineData":{"mimeType":"image/png","data":"aGVsbG8="}}]}}]}`,
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"One cat."}]},"finishReason":"STOP"}]}`,
+	}, nil)
+	defer srv.Close()
+
+	p := NewGemini("test-key", srv.URL, true)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model:  "gemini-3-pro-image",
+		Events: []Event{{Kind: "user_message", Text: "draw a cat"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var order []string
+	var img *ImageBlob
+	for d := range ch {
+		if d.Err != nil {
+			t.Fatalf("delta err: %v", d.Err)
+		}
+		if d.Text != "" {
+			order = append(order, "text")
+		}
+		if d.Image != nil {
+			order = append(order, "image")
+			img = d.Image
+		}
+	}
+	if want := []string{"text", "image", "text"}; !reflect.DeepEqual(order, want) {
+		t.Fatalf("delta order = %v, want %v", order, want)
+	}
+	if img == nil || img.MIME != "image/png" || string(img.Data) != "hello" {
+		t.Fatalf("image = %+v, want mime image/png data 'hello'", img)
+	}
+}
+
+func TestGeminiImageModeSetsModalitiesAndOmitsTools(t *testing.T) {
+	var body []byte
+	srv := newGeminiFake(t, []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`,
+	}, &body)
+	defer srv.Close()
+
+	p := NewGemini("test-key", srv.URL, true)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model:  "gemini-3-pro-image",
+		Tools:  []ToolDef{{Name: "safe_math", Description: "evaluate", InputSchema: json.RawMessage(`{"type":"object"}`)}},
+		Events: []Event{{Kind: "user_message", Text: "draw"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	for range ch {
+	}
+	s := string(body)
+	if !strings.Contains(s, `"responseModalities":["TEXT","IMAGE"]`) {
+		t.Fatalf("request lacks responseModalities: %s", s)
+	}
+	if strings.Contains(s, "functionDeclarations") {
+		t.Fatalf("image mode must omit tools: %s", s)
+	}
+}
+
+func TestGeminiTextModeOmitsModalities(t *testing.T) {
+	var body []byte
+	srv := newGeminiFake(t, []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`,
+	}, &body)
+	defer srv.Close()
+
+	p := NewGemini("test-key", srv.URL, false)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model:  "gemini-3-pro",
+		Events: []Event{{Kind: "user_message", Text: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	for range ch {
+	}
+	if strings.Contains(string(body), "responseModalities") {
+		t.Fatalf("text mode must not set responseModalities: %s", body)
+	}
+}
+
+func TestGeminiSafetyFinishReasonErrors(t *testing.T) {
+	srv := newGeminiFake(t, []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"partial"}]},"finishReason":"IMAGE_SAFETY"}]}`,
+	}, nil)
+	defer srv.Close()
+
+	p := NewGemini("test-key", srv.URL, true)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model:  "gemini-3-pro-image",
+		Events: []Event{{Kind: "user_message", Text: "draw"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var final Delta
+	for d := range ch {
+		if d.Done {
+			final = d
+		}
+	}
+	if final.StopReason != "error" || final.Err == nil ||
+		!strings.Contains(final.Err.Error(), "IMAGE_SAFETY") {
+		t.Fatalf("final = %+v, want error stop carrying IMAGE_SAFETY", final)
+	}
+}
+
+func TestGeminiContentsAssistantImage(t *testing.T) {
+	events := []Event{
+		{Kind: "user_message", Text: "draw a cat"},
+		{Kind: "assistant_image", ImageHash: strings.Repeat("a", 64), ImageData: []byte{1, 2, 3}},
+		{Kind: "assistant_image", ImageHash: strings.Repeat("b", 64)}, // beyond cap / deleted: no bytes
+		{Kind: "user_message", Text: "make the sky darker"},
+	}
+	got := geminiContentsFromEvents(events)
+	// user / model(inlineData + placeholder text) / user
+	if len(got) != 3 {
+		t.Fatalf("len(contents) = %d, want 3: %+v", len(got), got)
+	}
+	if got[1].Role != genai.RoleModel || len(got[1].Parts) != 2 {
+		t.Fatalf("contents[1] = %+v, want model with 2 parts", got[1])
+	}
+	blob := got[1].Parts[0].InlineData
+	if blob == nil || blob.MIMEType != "image/png" || len(blob.Data) != 3 {
+		t.Fatalf("inline part = %+v, want image/png with 3 bytes", got[1].Parts[0])
+	}
+	if got[1].Parts[1].Text != "[earlier image omitted]" {
+		t.Fatalf("placeholder = %q, want '[earlier image omitted]'", got[1].Parts[1].Text)
 	}
 }

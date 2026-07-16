@@ -42,7 +42,7 @@ func New(reg Registry, modelID string, keys Keys) (ChatProvider, error) {
 		if keys.Gemini == "" {
 			return nil, AppError{"auth", "Gemini API key not set.", false}
 		}
-		return NewGemini(keys.Gemini, ""), nil
+		return NewGemini(keys.Gemini, "", m.OutputsImage()), nil
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", m.Provider)
 	}

@@ -22,8 +22,7 @@ type ModelInfo struct {
 	// InputModalities / OutputModalities declare what a model can consume and
 	// produce. Both are optional and default to ["text"]; the only allowed
 	// values today are "text" and "image" (image support, e.g. Nano Banana 2,
-	// is not yet wired into the app — see the appapi startup gate that
-	// disables any persona pinned to a model without "text" output).
+	// is rendered via the gemini adapter's image mode — see OutputsImage).
 	InputModalities  []string `yaml:"input_modalities,omitempty" json:"inputModalities,omitempty"`
 	OutputModalities []string `yaml:"output_modalities,omitempty" json:"outputModalities,omitempty"`
 }
@@ -100,4 +99,16 @@ func (r Registry) ByID(id string) (ModelInfo, bool) {
 		}
 	}
 	return ModelInfo{}, false
+}
+
+// OutputsImage reports whether the model declares "image" among its output
+// modalities. Drives the gemini adapter's image mode and the appapi persona
+// gate.
+func (m ModelInfo) OutputsImage() bool {
+	for _, v := range m.OutputModalities {
+		if v == "image" {
+			return true
+		}
+	}
+	return false
 }

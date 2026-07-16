@@ -12,14 +12,17 @@ import (
 )
 
 type geminiProvider struct {
-	apiKey  string
-	baseURL string
+	apiKey      string
+	baseURL     string
+	imageOutput bool
 }
 
 // NewGemini builds a Gemini provider. baseURL may be empty for the default
-// endpoint (tests pass an httptest URL).
-func NewGemini(apiKey, baseURL string) ChatProvider {
-	return &geminiProvider{apiKey: apiKey, baseURL: baseURL}
+// endpoint (tests pass an httptest URL). imageOutput selects image mode:
+// responseModalities TEXT+IMAGE and no function tools (the API rejects tools
+// alongside image output), for models whose registry entry outputs image.
+func NewGemini(apiKey, baseURL string, imageOutput bool) ChatProvider {
+	return &geminiProvider{apiKey: apiKey, baseURL: baseURL, imageOutput: imageOutput}
 }
 
 func (p *geminiProvider) Stream(ctx context.Context, req ChatRequest) (<-chan Delta, error) {
@@ -60,7 +63,9 @@ func (p *geminiProvider) Stream(ctx context.Context, req ChatRequest) (<-chan De
 	if sys != "" {
 		cfg.SystemInstruction = genai.NewContentFromText(sys, genai.RoleUser)
 	}
-	if tools := buildGeminiTools(req.Tools); len(tools) > 0 {
+	if p.imageOutput {
+		cfg.ResponseModalities = []string{"TEXT", "IMAGE"}
+	} else if tools := buildGeminiTools(req.Tools); len(tools) > 0 {
 		cfg.Tools = tools
 	}
 
@@ -72,6 +77,7 @@ func (p *geminiProvider) Stream(ctx context.Context, req ChatRequest) (<-chan De
 			haveUsage   bool
 			stopReason  string
 			sawToolCall bool
+			finishErr   error
 		)
 		for resp, serr := range client.Models.GenerateContentStream(ctx, req.Model, contents, cfg) {
 			if serr != nil {
@@ -124,6 +130,12 @@ func (p *geminiProvider) Stream(ctx context.Context, req ChatRequest) (<-chan De
 						case <-ctx.Done():
 							return
 						}
+					case part.InlineData != nil:
+						select {
+						case out <- Delta{Image: &ImageBlob{MIME: part.InlineData.MIMEType, Data: part.InlineData.Data}}:
+						case <-ctx.Done():
+							return
+						}
 					case part.Text != "" && !part.Thought:
 						select {
 						case out <- Delta{Text: part.Text}:
@@ -141,6 +153,9 @@ func (p *geminiProvider) Stream(ctx context.Context, req ChatRequest) (<-chan De
 					stopReason = "max_tokens"
 				default:
 					stopReason = "error"
+					// SAFETY / IMAGE_SAFETY / PROHIBITED_CONTENT etc. — carry the
+					// reason so the run error says why generation stopped.
+					finishErr = fmt.Errorf("gemini: generation stopped: %s", cand.FinishReason)
 				}
 			}
 		}
@@ -148,6 +163,9 @@ func (p *geminiProvider) Stream(ctx context.Context, req ChatRequest) (<-chan De
 			stopReason = "tool_use"
 		}
 		final := Delta{Done: true, StopReason: stopReason}
+		if finishErr != nil {
+			final.Err = finishErr
+		}
 		if haveUsage {
 			u := usage
 			final.Usage = &u
@@ -182,6 +200,15 @@ func geminiContentsFromEvents(events []Event) []*genai.Content {
 			appendPart(genai.RoleUser, genai.NewPartFromText(e.Text))
 		case "assistant_text":
 			appendPart(genai.RoleModel, genai.NewPartFromText(e.Text))
+		case "assistant_image":
+			// Inflated bytes replay inline so refinement edits the actual image;
+			// an event without bytes (beyond the cap, or file deleted) degrades
+			// to a placeholder the model can still anchor ordering on.
+			if len(e.ImageData) > 0 {
+				appendPart(genai.RoleModel, genai.NewPartFromBytes(e.ImageData, "image/png"))
+			} else {
+				appendPart(genai.RoleModel, genai.NewPartFromText("[earlier image omitted]"))
+			}
 		case "assistant_tool_call":
 			// Drop a tool_call that has no result anywhere — emitting it would
 			// leave a trailing functionCall with no functionResponse.
