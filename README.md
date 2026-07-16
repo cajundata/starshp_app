@@ -70,6 +70,8 @@ plus pure-Go provider SDKs.
   with an Anthropic model.
 - **Anthropic API key** — optional, required only to chat with Claude
   models listed in `models.yaml`.
+- **Gemini API key** — optional, required only to chat with Gemini models
+  listed in `models.yaml`.
 - A directory of per-chapter markdown textbooks
   (`<book>/chapter-NN.md` layout, acctutor-compatible) — optional, only
   needed for RAG features.
@@ -192,7 +194,7 @@ The list of models a persona's `model:` field may reference:
 models:
   - display: Claude Opus 4.7      # label shown in the UI
     id: claude-opus-4-7           # identifier sent to the provider
-    provider: anthropic           # "anthropic", "openai", or "openai_compat"
+    provider: anthropic           # "anthropic", "openai", "gemini", or "openai_compat"
   - display: GPT-5.4
     id: gpt-5.4-2026-03-05
     provider: openai
@@ -298,6 +300,7 @@ environment variable, since it determines where `.env` itself is found.
 | `STARSHP_HOME` | OS app directory | Overrides the app directory. Real env var only (absolute path), not a `.env` entry. |
 | `OPENAI_API_KEY` | — | OpenAI key (chat + embeddings). |
 | `ANTHROPIC_API_KEY` | — | Anthropic key (chat only). |
+| `GEMINI_API_KEY` | — | Gemini key (chat only). |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI embedding model. |
 | `APP_DB_PATH` | `<app-dir>/app.db` | Chat history DB. |
 | `RAG_DB_PATH` | `<app-dir>/rag.db` | RAG index DB. |

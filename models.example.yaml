@@ -8,9 +8,9 @@
 # Each entry needs:
 #   display     — human-readable name shown in the UI
 #   id          — the provider's model identifier sent on API calls
-#   provider    — "anthropic", "openai", or "openai_compat" (Ollama / LM Studio
-#                 / vLLM / any OpenAI-Chat-Completions-compatible local server;
-#                 also set base_url, and optionally api_key_env)
+#   provider    — "anthropic", "openai", "gemini", or "openai_compat" (Ollama /
+#                 LM Studio / vLLM / any OpenAI-Chat-Completions-compatible
+#                 local server; also set base_url, and optionally api_key_env)
 #   max_context — (optional) context-window size in tokens; supplies the
 #                 denominator in the conversation footer HUD. Omit to display
 #                 absolute tokens with no denominator.
@@ -31,6 +31,14 @@ models:
     id: gpt-5.4-2026-03-05
     provider: openai
     max_context: 400000
+  - display: Gemini 3 Pro
+    id: gemini-3-pro
+    provider: gemini
+    max_context: 1000000
+  - display: Gemini 3 Flash
+    id: gemini-3-flash
+    provider: gemini
+    max_context: 1000000
 
   # ---------------------------------------------------------------------------
   # Local model via Ollama (https://ollama.com).
