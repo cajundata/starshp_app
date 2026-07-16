@@ -14,8 +14,6 @@ Tags: `[feat]` new feature · `[chg]` change to existing behavior · `[fix]` kno
 
 <!-- triaged, picked for the next cycle -->
 
-[feat] markdown prompt/context library, replacing the SQLite presets system: a multi-select list of saved prompts/context (toggle via checkbox/click, active items highlighted) feeding the current discussion's system prompt, plus a full-surface in-app raw-markdown editor. Design: docs/superpowers/specs/2026-05-21-starshp-prompt-library-design.md. Ready to implement — app rename complete.
-
 ## Someday
 
 <!-- maybe-later, not committed to a cycle -->
@@ -25,11 +23,5 @@ Tags: `[feat]` new feature · `[chg]` change to existing behavior · `[fix]` kno
 [feat] per-model "Test connection" button in a model-registry settings UI so a user can validate a local entry's `base_url` without sending a real chat turn
 [feat] curated starter-model recommendations for local entries (e.g., suggested Ollama IDs by Apple Silicon RAM tier and by Windows GPU VRAM tier) shown inline when a user adds a new local model
 
-- **Multi-persona threads (Spec 2).** `@Persona` routing within one conversation,
-  with baton-pass context: a persona receives the operator's messages plus the
-  immediately preceding persona's output, not the full shared thread. Requires
-  deciding how a mid-thread persona switch interacts with the `active_for_replay`
-  run model. Spec 1 (one persona per conversation) shipped first deliberately, so
-  personas could be lived with before this design risk is taken.
 - Mention polish (from multi-persona final review): Ctrl/Cmd+Enter with the @-popup open should send, not insert; click-away should dismiss the popup; auto-title could strip a leading @mention.
 - Mention test hardening: parser rows for `@scout!` / `@scout,`; a dedicated first-turn/no-predecessor canonicalEvents test; `found` flag in TestSendMessageWithMentionDoesNotRepin.
