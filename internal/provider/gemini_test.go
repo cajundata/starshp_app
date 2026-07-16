@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/genai"
 )
@@ -230,5 +231,120 @@ func TestGeminiStreamLegacyMessagesFallback(t *testing.T) {
 	s := string(body)
 	if !strings.Contains(s, `"hi"`) || !strings.Contains(s, `"yes?"`) || !strings.Contains(s, "You are helpful.") {
 		t.Fatalf("legacy fallback request missing content: %s", s)
+	}
+}
+
+func TestGeminiStreamToolCall(t *testing.T) {
+	srv := newGeminiFake(t, []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"safe_math","args":{"expr":"2+2"}}},{"functionCall":{"name":"safe_math","args":{"expr":"3+3"}}}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}`,
+	}, nil)
+	defer srv.Close()
+
+	p := NewGemini("test-key", srv.URL)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model:  "gemini-3-pro",
+		Tools:  []ToolDef{{Name: "safe_math", Description: "evaluate", InputSchema: json.RawMessage(`{"type":"object"}`)}},
+		Events: []Event{{Kind: "user_message", Text: "add"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var calls []*ToolCall
+	var final Delta
+	for d := range ch {
+		if d.Err != nil {
+			t.Fatalf("delta err: %v", d.Err)
+		}
+		if d.ToolCall != nil {
+			calls = append(calls, d.ToolCall)
+		}
+		if d.Done {
+			final = d
+		}
+	}
+	if len(calls) != 2 {
+		t.Fatalf("got %d tool calls, want 2", len(calls))
+	}
+	if calls[0].ID == "" || calls[1].ID == "" || calls[0].ID == calls[1].ID {
+		t.Fatalf("IDs not unique/non-empty: %q, %q", calls[0].ID, calls[1].ID)
+	}
+	if calls[0].Name != "safe_math" || string(calls[0].Input) != `{"expr":"2+2"}` {
+		t.Fatalf("call[0] = %+v", calls[0])
+	}
+	if final.StopReason != "tool_use" {
+		t.Fatalf("StopReason = %q, want tool_use", final.StopReason)
+	}
+}
+
+func TestGeminiStreamToolResultRoundTrip(t *testing.T) {
+	// A replay containing a tool call + result must POST functionCall and
+	// functionResponse parts back to the API.
+	var body []byte
+	srv := newGeminiFake(t, []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"4"}]},"finishReason":"STOP"}]}`,
+	}, &body)
+	defer srv.Close()
+
+	p := NewGemini("test-key", srv.URL)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model: "gemini-3-pro",
+		Events: []Event{
+			{Kind: "user_message", Text: "add 2+2"},
+			{Kind: "assistant_tool_call", ToolCallID: "c1", ToolName: "safe_math", ToolInput: json.RawMessage(`{"expr":"2+2"}`)},
+			{Kind: "tool_result", ToolCallID: "c1", ToolName: "safe_math", Text: "4"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	for range ch {
+	}
+	s := string(body)
+	if !strings.Contains(s, `"functionCall"`) || !strings.Contains(s, `"functionResponse"`) {
+		t.Fatalf("request lacks functionCall/functionResponse: %s", s)
+	}
+}
+
+func TestGeminiStreamCancellation(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := w.(http.Flusher)
+		fmt.Fprintf(w, "data: %s\r\n\r\n", `{"candidates":[{"content":{"role":"model","parts":[{"text":"first"}]}}]}`)
+		fl.Flush()
+		select {
+		case <-r.Context().Done(): // client hung up
+		case <-release: // safety valve so the test can't wedge
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	p := NewGemini("test-key", srv.URL)
+	ch, err := p.Stream(ctx, ChatRequest{
+		Model:  "gemini-3-pro",
+		Events: []Event{{Kind: "user_message", Text: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	first := <-ch
+	if first.Text != "first" {
+		t.Fatalf("first delta = %+v, want text 'first'", first)
+	}
+	cancel()
+	// The channel must terminate (either a Done frame with a ctx error, or
+	// simply closing). Drain with a timeout guard.
+	done := make(chan struct{})
+	go func() {
+		for range ch {
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream did not terminate after cancel")
 	}
 }
