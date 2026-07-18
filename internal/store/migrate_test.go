@@ -406,7 +406,7 @@ CREATE TABLE conversation_events (
 	if err := s.CreateRun("c1", "e1", "r1", "gemini", "m", "auto_grounded_default", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AppendAssistantImage("c1", "e1", "r1", strings.Repeat("ab", 32)); err != nil {
+	if _, err := s.AppendAssistantImage("c1", "e1", "r1", strings.Repeat("ab", 32), nil); err != nil {
 		t.Fatalf("AppendAssistantImage on migrated db: %v", err)
 	}
 }

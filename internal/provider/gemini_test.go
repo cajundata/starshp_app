@@ -559,3 +559,83 @@ func TestGeminiContentsAssistantImage(t *testing.T) {
 		t.Fatalf("placeholder = %q, want '[earlier image omitted]'", got[1].Parts[1].Text)
 	}
 }
+
+func TestGeminiStreamImageDeltaCapturesSignature(t *testing.T) {
+	// "c2lnLWltZy0x" is base64 for "sig-img-1".
+	srv := newGeminiFake(t, []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"inlineData":{"mimeType":"image/jpeg","data":"aGVsbG8="},"thoughtSignature":"c2lnLWltZy0x"}]},"finishReason":"STOP"}]}`,
+	}, nil)
+	defer srv.Close()
+
+	p := NewGemini("test-key", srv.URL, true)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model:  "gemini-3-pro-image",
+		Events: []Event{{Kind: "user_message", Text: "draw"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var img *ImageBlob
+	for d := range ch {
+		if d.Err != nil {
+			t.Fatalf("delta err: %v", d.Err)
+		}
+		if d.Image != nil {
+			img = d.Image
+		}
+	}
+	if img == nil || img.MIME != "image/jpeg" {
+		t.Fatalf("image = %+v, want mime image/jpeg", img)
+	}
+	if string(img.ThoughtSignature) != "sig-img-1" {
+		t.Fatalf("signature = %q, want sig-img-1", img.ThoughtSignature)
+	}
+}
+
+func TestGeminiContentsAssistantImageEchoesSignatureAndMime(t *testing.T) {
+	var body []byte
+	srv := newGeminiFake(t, []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`,
+	}, &body)
+	defer srv.Close()
+
+	p := NewGemini("test-key", srv.URL, true)
+	ch, err := p.Stream(context.Background(), ChatRequest{
+		Model: "gemini-3-pro-image",
+		Events: []Event{
+			{Kind: "user_message", Text: "draw"},
+			{Kind: "assistant_image", ImageHash: strings.Repeat("a", 64),
+				ImageData:    []byte{1, 2, 3},
+				ToolMetadata: json.RawMessage(`{"thought_signature":"c2lnLWltZy0x","mime":"image/jpeg"}`)},
+			{Kind: "user_message", Text: "make the sky darker"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	for range ch {
+	}
+	s := string(body)
+	if !strings.Contains(s, `"thoughtSignature":"c2lnLWltZy0x"`) {
+		t.Fatalf("request lacks echoed image thoughtSignature: %.400s", s)
+	}
+	if !strings.Contains(s, `"mimeType":"image/jpeg"`) {
+		t.Fatalf("request lacks stored mime: %.400s", s)
+	}
+}
+
+func TestGeminiContentsAssistantImageNoMetadataFallsBackToPNG(t *testing.T) {
+	events := []Event{
+		{Kind: "assistant_image", ImageHash: strings.Repeat("a", 64), ImageData: []byte{1}},
+	}
+	got := geminiContentsFromEvents(events)
+	if len(got) != 1 || got[0].Parts[0].InlineData == nil {
+		t.Fatalf("contents = %+v", got)
+	}
+	if got[0].Parts[0].InlineData.MIMEType != "image/png" {
+		t.Fatalf("mime = %q, want image/png fallback", got[0].Parts[0].InlineData.MIMEType)
+	}
+	if len(got[0].Parts[0].ThoughtSignature) != 0 {
+		t.Fatal("must not invent a signature when none stored")
+	}
+}

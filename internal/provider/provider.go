@@ -79,9 +79,13 @@ type ToolCall struct {
 
 // ImageBlob is one generated image emitted mid-stream by an image-capable
 // provider. Data is the raw (already base64-decoded) file bytes.
+// ThoughtSignature is Gemini's encrypted reasoning-state token attached to
+// the image part; multi-turn image editing requires echoing it verbatim on
+// replay, or the model regenerates instead of editing (smoke 73).
 type ImageBlob struct {
-	MIME string
-	Data []byte
+	MIME             string
+	Data             []byte
+	ThoughtSignature []byte
 }
 
 // Delta is one frame of a streaming response.

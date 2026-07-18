@@ -401,7 +401,7 @@ func imageTurn(t *testing.T, st *store.Store, convID, userText, personaID, model
 		t.Fatal(err)
 	}
 	for _, h := range hashes {
-		if _, err := st.AppendAssistantImage(convID, u.TurnID, runID, h); err != nil {
+		if _, err := st.AppendAssistantImage(convID, u.TurnID, runID, h, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -428,6 +428,35 @@ func TestCanonicalEvents_OwnImageKeepsHash(t *testing.T) {
 	}
 	if got[1].Kind != store.EventKindAssistantImage || got[1].ImageHash != strings.Repeat("aa", 32) {
 		t.Fatalf("own image event = %+v", got[1])
+	}
+}
+
+func TestCanonicalEvents_OwnImageCarriesMetadata(t *testing.T) {
+	st := openStore(t)
+	conv, _ := st.CreateConversation("c")
+	u, _ := st.AppendUserMessage(conv.ID, "draw")
+	runID := uuid.NewString()
+	_ = st.CreateRun(conv.ID, u.TurnID, runID, "gemini", "gemini-3-pro-image", "auto_grounded_default", "artist")
+	meta := json.RawMessage(`{"thought_signature":"c2ln","mime":"image/jpeg"}`)
+	if _, err := st.AppendAssistantImage(conv.ID, u.TurnID, runID, strings.Repeat("aa", 32), meta); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.CompleteRun(runID, store.RunTotals{}, "end_turn")
+	turnID, curRunID := currentTurn(t, st, conv.ID, "darker", "artist", "gemini-3-pro-image")
+
+	rows, err := st.GetProviderReplayEvents(conv.ID, curRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := canonicalEvents(rows, turnID, "artist", nil)
+	var imgEv *provider.Event
+	for i := range got {
+		if got[i].Kind == store.EventKindAssistantImage {
+			imgEv = &got[i]
+		}
+	}
+	if imgEv == nil || string(imgEv.ToolMetadata) != string(meta) {
+		t.Fatalf("image event metadata = %+v, want %s", imgEv, meta)
 	}
 }
 

@@ -172,7 +172,7 @@ func TestAppendAssistantImageAndReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	hash := strings.Repeat("ab", 32) // 64 hex chars
-	ev, err := s.AppendAssistantImage(conv.ID, u.TurnID, runID, hash)
+	ev, err := s.AppendAssistantImage(conv.ID, u.TurnID, runID, hash, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,5 +196,36 @@ func TestAppendAssistantImageAndReplay(t *testing.T) {
 	}
 	if len(prov) != 2 || prov[1].Kind != EventKindAssistantImage || prov[1].ImageHash != hash {
 		t.Fatalf("provider events = %+v", prov)
+	}
+}
+
+func TestAppendAssistantImageMetadataRoundTrip(t *testing.T) {
+	s := openTestStore(t) // match the file's existing helper name
+	conv, _ := s.CreateConversation("c")
+	u, _ := s.AppendUserMessage(conv.ID, "draw")
+	runID := "run-img-meta"
+	if err := s.CreateRun(conv.ID, u.TurnID, runID, "gemini", "gemini-3-pro-image", "auto_grounded_default", "artist"); err != nil {
+		t.Fatal(err)
+	}
+	meta := json.RawMessage(`{"thought_signature":"c2ln","mime":"image/jpeg"}`)
+	if _, err := s.AppendAssistantImage(conv.ID, u.TurnID, runID, strings.Repeat("ab", 32), meta); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CompleteRun(runID, RunTotals{}, "end_turn"); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.GetProviderReplayEvents(conv.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || string(rows[1].ToolMetadata) != string(meta) {
+		t.Fatalf("replayed metadata = %s, want %s", rows[1].ToolMetadata, meta)
+	}
+	// nil metadata stores NULL and replays empty.
+	u2, _ := s.AppendUserMessage(conv.ID, "again")
+	runID2 := "run-img-meta-2"
+	_ = s.CreateRun(conv.ID, u2.TurnID, runID2, "gemini", "gemini-3-pro-image", "auto_grounded_default", "artist")
+	if _, err := s.AppendAssistantImage(conv.ID, u2.TurnID, runID2, strings.Repeat("cd", 32), nil); err != nil {
+		t.Fatal(err)
 	}
 }

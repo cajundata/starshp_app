@@ -131,8 +131,12 @@ func (p *geminiProvider) Stream(ctx context.Context, req ChatRequest) (<-chan De
 							return
 						}
 					case part.InlineData != nil:
+						img := &ImageBlob{MIME: part.InlineData.MIMEType, Data: part.InlineData.Data}
+						if len(part.ThoughtSignature) > 0 {
+							img.ThoughtSignature = part.ThoughtSignature
+						}
 						select {
-						case out <- Delta{Image: &ImageBlob{MIME: part.InlineData.MIMEType, Data: part.InlineData.Data}}:
+						case out <- Delta{Image: img}:
 						case <-ctx.Done():
 							return
 						}
@@ -203,9 +207,30 @@ func geminiContentsFromEvents(events []Event) []*genai.Content {
 		case "assistant_image":
 			// Inflated bytes replay inline so refinement edits the actual image;
 			// an event without bytes (beyond the cap, or file deleted) degrades
-			// to a placeholder the model can still anchor ordering on.
+			// to a placeholder the model can still anchor ordering on. The stored
+			// thought signature is echoed verbatim — never invented — or the
+			// model loses its reasoning chain and regenerates (smoke 73).
 			if len(e.ImageData) > 0 {
-				appendPart(genai.RoleModel, genai.NewPartFromBytes(e.ImageData, "image/png"))
+				mime := "image/png"
+				part := &genai.Part{}
+				if len(e.ToolMetadata) > 0 {
+					var meta struct {
+						ThoughtSignature string `json:"thought_signature"`
+						MIME             string `json:"mime"`
+					}
+					if err := json.Unmarshal(e.ToolMetadata, &meta); err == nil {
+						if meta.MIME != "" {
+							mime = meta.MIME
+						}
+						if meta.ThoughtSignature != "" {
+							if sig, derr := base64.StdEncoding.DecodeString(meta.ThoughtSignature); derr == nil {
+								part.ThoughtSignature = sig
+							}
+						}
+					}
+				}
+				part.InlineData = &genai.Blob{MIMEType: mime, Data: e.ImageData}
+				appendPart(genai.RoleModel, part)
 			} else {
 				appendPart(genai.RoleModel, genai.NewPartFromText("[earlier image omitted]"))
 			}

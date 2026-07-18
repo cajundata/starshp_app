@@ -167,8 +167,11 @@ func (s *Store) AppendToolResult(
 // AppendAssistantImage persists one generated image the model emitted, by
 // content hash. The bytes live in the imagestore (<app-dir>/images/); the
 // event log carries only the reference, so a deleted file degrades to a
-// placeholder rather than corrupting replay.
-func (s *Store) AppendAssistantImage(convID, turnID, runID, imageHash string) (ConversationEvent, error) {
+// placeholder rather than corrupting replay. metadata is a nullable
+// provider-opaque payload ({"thought_signature":..., "mime":...}) written
+// verbatim to tool_metadata and echoed on provider replay — Gemini image
+// models require the signature back for multi-turn editing.
+func (s *Store) AppendAssistantImage(convID, turnID, runID, imageHash string, metadata json.RawMessage) (ConversationEvent, error) {
 	id := uuid.NewString()
 	seq, err := nextSequenceIndex(s, convID)
 	if err != nil {
@@ -177,13 +180,19 @@ func (s *Store) AppendAssistantImage(convID, turnID, runID, imageHash string) (C
 	ev := ConversationEvent{
 		ID: id, ConversationID: convID, TurnID: turnID, RunID: runID,
 		SequenceIndex: seq, Kind: EventKindAssistantImage, ImageHash: imageHash,
-		CreatedAt: time.Now().UnixMilli(),
+		ToolMetadata: metadata,
+		CreatedAt:    time.Now().UnixMilli(),
+	}
+	var metaArg any
+	if len(metadata) > 0 {
+		metaArg = string(metadata)
 	}
 	_, err = s.db.Exec(
 		`INSERT INTO conversation_events
             (id, conversation_id, turn_id, run_id, sequence_index, kind,
-             image_hash, is_error, created_at)
-         VALUES (?,?,?,?,?,?,?,0,?)`,
-		ev.ID, convID, turnID, runID, ev.SequenceIndex, ev.Kind, imageHash, ev.CreatedAt)
+             image_hash, tool_metadata, is_error, created_at)
+         VALUES (?,?,?,?,?,?,?,?,0,?)`,
+		ev.ID, convID, turnID, runID, ev.SequenceIndex, ev.Kind, imageHash,
+		metaArg, ev.CreatedAt)
 	return ev, err
 }

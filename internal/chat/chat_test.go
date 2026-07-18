@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -551,6 +552,44 @@ func TestSend_ImageDeltas_PersistInterleavedAndEmitSink(t *testing.T) {
 	}
 	if h, _ := imageSinks[0].Payload["hash"].(string); h != evs[2].ImageHash {
 		t.Fatalf("sink hash = %q, want %q", h, evs[2].ImageHash)
+	}
+}
+
+func TestSend_ImageDeltaPersistsSignatureMetadata(t *testing.T) {
+	st := openStore(t)
+	conv, _ := st.CreateConversation("c")
+	svc := New(st)
+	images := newFakeImages()
+	prov := &scriptedProvider{iterations: [][]provider.Delta{{
+		{Image: &provider.ImageBlob{MIME: "image/jpeg", Data: []byte("png-1"),
+			ThoughtSignature: []byte("sig-img-1")}},
+		{Done: true, StopReason: "end_turn"},
+	}}}
+	_, err := svc.Send(context.Background(), SendParams{
+		ConversationID: conv.ID, UserText: "draw", Model: "gemini-3-pro-image",
+		Provider: prov, Registry: tools.NewRegistry(time.Second),
+		Resolver: emptyResolver{}, RetrievalMode: RetrievalAutoGroundedDefault,
+		Sink: &captureSink{}, Images: images,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs, _ := st.GetProviderReplayEvents(conv.ID, "")
+	if len(evs) != 2 || evs[1].Kind != store.EventKindAssistantImage {
+		t.Fatalf("events = %+v", evs)
+	}
+	var meta struct {
+		ThoughtSignature string `json:"thought_signature"`
+		MIME             string `json:"mime"`
+	}
+	if err := json.Unmarshal(evs[1].ToolMetadata, &meta); err != nil {
+		t.Fatalf("metadata unmarshal: %v (raw %s)", err, evs[1].ToolMetadata)
+	}
+	if meta.MIME != "image/jpeg" {
+		t.Fatalf("mime = %q", meta.MIME)
+	}
+	if got, _ := base64.StdEncoding.DecodeString(meta.ThoughtSignature); string(got) != "sig-img-1" {
+		t.Fatalf("signature = %q, want sig-img-1", got)
 	}
 }
 

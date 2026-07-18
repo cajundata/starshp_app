@@ -6,6 +6,7 @@ package chat
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -46,10 +47,12 @@ type ImageStore interface {
 }
 
 // maxInlineImages caps how many of the persona's own prior images ride back
-// into provider context as inline bytes (newest first). Gemini's inline
-// request payload tops out around 20 MB and each PNG runs 1–2 MB; older
-// images degrade to a textual placeholder instead of hard-failing the call.
-const maxInlineImages = 6
+// into provider context as inline bytes (newest first). Each replayed image
+// carries its ~1.4MB thought signature (~1.9MB as base64) on top of ~1MB of
+// image data, and Gemini's inline request payload tops out around 20 MB —
+// 4 keeps comfortable headroom. Older images degrade to a textual
+// placeholder instead of hard-failing the call.
+const maxInlineImages = 4
 
 // SinkEventKind names the emitted lifecycle events.
 type SinkEventKind string
@@ -304,7 +307,8 @@ func (s *Service) runLoop(ctx context.Context, p SendParams, runID, turnID, grou
 					hash, err := putImage(p.Images, d.Image.Data)
 					if err != nil {
 						persistErr, persistCode = err, "persist_image"
-					} else if _, err := s.st.AppendAssistantImage(p.ConversationID, turnID, runID, hash); err != nil {
+					} else if _, err := s.st.AppendAssistantImage(p.ConversationID, turnID, runID, hash,
+						imageEventMetadata(d.Image)); err != nil {
 						persistErr, persistCode = err, "persist_image"
 					} else {
 						emit(p.Sink, SinkImage, p.ConversationID, runID, turnID,
@@ -591,7 +595,7 @@ func canonicalEvents(rows []store.ConversationEvent, currentTurnID, currentPerso
 				ToolInput: r.ToolInput, IsError: r.IsError,
 				ImageHash: r.ImageHash,
 			}
-			if r.Kind == store.EventKindAssistantToolCall {
+			if r.Kind == store.EventKindAssistantToolCall || r.Kind == store.EventKindAssistantImage {
 				ev.ToolMetadata = r.ToolMetadata
 			}
 			out = append(out, ev)
@@ -701,6 +705,27 @@ func putImage(images ImageStore, data []byte) (string, error) {
 		return "", errors.New("image store unavailable: cannot persist generated image")
 	}
 	return images.Put(data)
+}
+
+// imageEventMetadata packages the provider-opaque per-image payload persisted
+// to tool_metadata: the real mime type and, when present, Gemini's thought
+// signature (base64) — echoed verbatim on replay for multi-turn editing.
+func imageEventMetadata(img *provider.ImageBlob) json.RawMessage {
+	m := map[string]string{}
+	if img.MIME != "" {
+		m["mime"] = img.MIME
+	}
+	if len(img.ThoughtSignature) > 0 {
+		m["thought_signature"] = base64.StdEncoding.EncodeToString(img.ThoughtSignature)
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 func errorCodeFromMetadata(raw json.RawMessage) string {
