@@ -67,6 +67,14 @@ New decisions made in this brainstorm:
   store carries only `image_hash`. If a future model emits another format,
   a mime column is a small additive migration then.
 - **Click-to-enlarge, save-as, and other viewer polish → BACKLOG Someday.**
+- **Post-smoke corrections (2026-07-17, smoke 73):** Nano Banana 2 attaches a
+  thought signature to its image parts; multi-turn editing requires echoing it
+  verbatim, so `assistant_image` rows persist `{"thought_signature","mime"}` in
+  the existing `tool_metadata` column and the adapter echoes both on replay.
+  NB2 also emits `image/jpeg`, superseding "PNG is assumed" — the mime is
+  stored in metadata and the asset handler sniffs the served content type;
+  `.png` file naming remains a content-hash convention only. The refinement
+  cap dropped 6 → 4 to keep signature-laden requests under the payload limit.
 
 ## User-visible surface
 

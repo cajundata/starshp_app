@@ -84,7 +84,9 @@ func TestReadRejectsInvalidHash(t *testing.T) {
 
 func TestHandlerServesStoredImage(t *testing.T) {
 	s := newStore(t)
-	hash, _ := s.Put([]byte("png-payload"))
+	// Real PNG magic bytes followed by minimal payload
+	pngData := append([]byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, []byte("png-payload")...)
+	hash, _ := s.Put(pngData)
 	srv := httptest.NewServer(s.Handler())
 	defer srv.Close()
 
@@ -100,8 +102,25 @@ func TestHandlerServesStoredImage(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want image/png", ct)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	if string(body) != "png-payload" {
-		t.Fatalf("body = %q", body)
+	if string(body) != string(pngData) {
+		t.Fatalf("body mismatch")
+	}
+}
+
+func TestHandlerServesSniffedContentType(t *testing.T) {
+	s := newStore(t)
+	// Minimal JPEG magic — enough for http.DetectContentType.
+	jpeg := append([]byte{0xFF, 0xD8, 0xFF, 0xE0}, []byte("fakejpegbody")...)
+	hash, _ := s.Put(jpeg)
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/appimages/" + hash + ".png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); ct != "image/jpeg" {
+		t.Fatalf("Content-Type = %q, want image/jpeg (sniffed)", ct)
 	}
 }
 

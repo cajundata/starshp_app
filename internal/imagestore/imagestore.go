@@ -87,7 +87,9 @@ func (s *Store) Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "image/png")
+		// Nano Banana 2 emits JPEG despite the .png content-hash naming
+		// convention — sniff the real type rather than trusting the suffix.
+		w.Header().Set("Content-Type", http.DetectContentType(data))
 		_, _ = w.Write(data)
 	})
 }

@@ -36,3 +36,4 @@ Tags: `[feat]` new feature · `[chg]` change to existing behavior · `[fix]` kno
 - Image viewer polish: click-to-enlarge, save-as, copy image, bottom-pin rescroll on image load — Spec B deferred.
 - Configurable refinement image cap (constant 6 in v1) — Spec B deferred.
 - Persona re-pin edge: a persona moved off gemini loses its historical images from its own context (adapter skip); a gemini model without image input could reject inflated bytes — Spec B deferred.
+- Multimodal baton: pass real image bytes to text personas whose models declare image input (smoke 74 — critique personas currently see only the textual image note) — Spec B deferred.
