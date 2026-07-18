@@ -208,12 +208,13 @@ llama3.2` complete, register the Llama 3.2 entry from
 72. [x] **Image generation renders in-thread.** As Visual Designer: "draw a
     small cartoon cat". Interleaved text + image render in one attributed
     bubble; a `<sha256>.png` appears under `<app-dir>/images/`.
-73. [ ] **Refinement context.** Follow up: "make the sky darker". The reply
+73. [x] **Refinement context.** Follow up: "make the sky darker". The reply
     edits the prior image (same subject, darker sky) — refinement context
     works. *First run (2026-07-16) failed: refinements regenerated a new
     image. Root cause: NB2's image-part thought signatures were dropped on
     replay; fixed 2026-07-17 (signature+mime persisted in event metadata and
-    echoed). Re-run on the fixed build.*
+    echoed). Re-run on the fixed build 2026-07-17: consistently edits the
+    prior image — pass.*
 74. [x] **Cross-persona reference.** `@`-mention a text persona:
     "@<text-persona> critique the image". Its reply shows it received the
     attributed block (it references the image textually); no error.
