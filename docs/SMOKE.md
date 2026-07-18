@@ -202,21 +202,27 @@ llama3.2` complete, register the Llama 3.2 entry from
 
 ## Spec B — image generation (Nano Banana 2)
 
-71. [ ] **Registry and persona load.** Add the Nano Banana 2 entry to
+71. [x] **Registry and persona load.** Add the Nano Banana 2 entry to
     `models.yaml` and the visual-designer persona; restart. Persona picker
     shows Visual Designer with no startup banner.
-72. [ ] **Image generation renders in-thread.** As Visual Designer: "draw a
+72. [x] **Image generation renders in-thread.** As Visual Designer: "draw a
     small cartoon cat". Interleaved text + image render in one attributed
     bubble; a `<sha256>.png` appears under `<app-dir>/images/`.
 73. [ ] **Refinement context.** Follow up: "make the sky darker". The reply
     edits the prior image (same subject, darker sky) — refinement context
-    works.
-74. [ ] **Cross-persona reference.** `@`-mention a text persona:
+    works. *First run (2026-07-16) failed: refinements regenerated a new
+    image. Root cause: NB2's image-part thought signatures were dropped on
+    replay; fixed 2026-07-17 (signature+mime persisted in event metadata and
+    echoed). Re-run on the fixed build.*
+74. [x] **Cross-persona reference.** `@`-mention a text persona:
     "@<text-persona> critique the image". Its reply shows it received the
     attributed block (it references the image textually); no error.
-75. [ ] **Missing image placeholder.** Delete the newest PNG from
+    *Pass-by-design 2026-07-17: the critic sees prompts + the textual image
+    note only — v1 boundary. Multimodal baton (real bytes to image-input
+    text models) banked in BACKLOG Someday.*
+75. [x] **Missing image placeholder.** Delete the newest PNG from
     `<app-dir>/images/`, reopen the conversation. The bubble shows the
     "image unavailable" placeholder; other images still render.
-76. [ ] **Replay after restart.** Restart the app, reopen the conversation.
+76. [x] **Replay after restart.** Restart the app, reopen the conversation.
     All images replay in position; footer shows sane token counts after the
     next image turn.
