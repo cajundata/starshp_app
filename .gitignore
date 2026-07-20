@@ -8,6 +8,7 @@
 node_modules
 *.exe
 frontend/package.json.md5
+.DS_Store
 
 # Local smoke-test fixtures (assignment _json folders, etc.)
 .smoke/
